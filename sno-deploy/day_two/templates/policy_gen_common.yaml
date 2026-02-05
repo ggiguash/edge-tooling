@@ -1,0 +1,97 @@
+apiVersion: ran.openshift.io/v1
+kind: PolicyGenTemplate
+metadata:
+  name: "common"
+  namespace: "common"
+spec:
+  bindingRules:
+    common: "true"
+  sourceFiles:
+    # Create operators policies that will be installed in all clusters
+    - fileName: SriovSubscription.yaml
+      policyName: "sriov-sub-policy"
+      spec:
+        channel: "${SNO_CONFIG_OPERATOR_CHANNEL}"
+    - fileName: SriovSubscriptionNS.yaml
+      policyName: "sriov-sub-policy"
+    - fileName: SriovSubscriptionOperGroup.yaml
+      policyName: "sriov-sub-policy"
+    - fileName: PtpSubscription.yaml
+      policyName: "ptp-sub-policy"
+      spec:
+        channel: "${SNO_CONFIG_OPERATOR_CHANNEL}"
+    - fileName: PtpSubscriptionNS.yaml
+      policyName: "ptp-sub-policy"
+    - fileName: PtpSubscriptionOperGroup.yaml
+      policyName: "ptp-sub-policy"
+    # PAO Subscription currently does not contain a stable channel
+    # We're using the openshift release version as the channel here to avoid pull errors
+    - fileName: PaoSubscription.yaml
+      policyName: "pao-sub-policy"
+      spec:
+        channel: "${SNO_CONFIG_OPENSHIFT_RELEASE}"
+    - fileName: PaoSubscriptionNS.yaml
+      policyName: "pao-sub-policy"
+    - fileName: PaoSubscriptionOperGroup.yaml
+      policyName: "pao-sub-policy"
+    - fileName: ClusterLogSubscription.yaml
+      policyName: "log-sub-policy"
+      spec:
+        channel: "${SNO_CONFIG_OPERATOR_CHANNEL}"
+    - fileName: ClusterLogOperGroup.yaml
+      policyName: "log-sub-policy"
+    - fileName: ClusterLogNS.yaml
+      policyName: "log-sub-policy"
+    - fileName: StorageNS.yaml
+      policyName: "storage-sub-policy"
+    - fileName: StorageOperGroup.yaml
+      policyName: "storage-sub-policy"
+    - fileName: StorageSubscription.yaml
+      policyName: "storage-sub-policy"
+      spec:
+        channel: "${SNO_CONFIG_OPERATOR_CHANNEL}"
+    - fileName: extra-manifest/01-container-mount-ns-and-kubelet-conf-master.yaml
+      policyName: ""
+    - fileName: extra-manifest/01-container-mount-ns-and-kubelet-conf-master.yaml
+      policyName: ""
+    - fileName: extra-manifest/03-sctp-machine-config-master.yaml
+      policyName: ""
+    - fileName: extra-manifest/03-sctp-machine-config-worker.yaml
+      policyName: ""
+    - fileName: extra-manifest/04-accelerated-container-startup-master.yaml
+      policyName: ""
+    - fileName: extra-manifest/04-accelerated-container-startup-worker.yaml
+      policyName: ""
+    # DISABLED:
+    #
+    # These are currently commented out since we create a single CatalogSource that the operators use
+    #
+    # These CRs are in support of installation from a disconnected registry
+    # - fileName: ClusterLogCatSource.yaml
+    #   policyName: "log-sub-policy"
+    #   spec:
+    #     image: registry.example.com:5000/olm/far-edge-clo:latest
+    # - fileName: PtpCatSource.yaml
+    #   policyName: "ptp-sub-policy"
+    #   spec:
+    #     image: registry.example.com:5000/olm/far-edge-ptp:latest
+    # - fileName: StorageCatSource.yaml
+    #   policyName: "storage-sub-policy"
+    #   spec:
+    #     image: registry.example.com:5000/olm/far-edge-lso:latest
+    # - fileName: SriovCatSource.yaml
+    #   policyName: "sriov-sub-policy"
+    #   spec:
+    #     image: registry.example.com:5000/olm/far-edge-sriov:latest
+
+    - fileName: DisconnectedICSP.yaml
+      policyName: "disc-icsp-policy"
+      spec:
+        repositoryDigestMirrors:
+          - mirrors:
+              - registry.redhat.com:5000
+            source: registry.redhat.io
+    # - fileName: OperatorHub.yaml
+    #   policyName: "oper-hub-policy"
+    - fileName: ReduceMonitoringFootprint.yaml
+      policyName: "mon-offload-policy"

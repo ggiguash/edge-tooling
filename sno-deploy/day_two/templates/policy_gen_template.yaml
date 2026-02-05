@@ -1,0 +1,81 @@
+apiVersion: ran.openshift.io/v1
+kind: PolicyGenTemplate
+metadata:
+  name: "du-sno"
+  namespace: "du-sno-policies"
+spec:
+  bindingRules:
+    sites: "${SNO_CONFIG_HOSTNAME}"
+  mcp: "master"
+  sourceFiles:
+    # DISABLED:
+    #
+    # SRI-OV is not currently not in the scope here
+    # However, we still install the operator to simulate load
+    #
+    # - fileName: SriovNetwork.yaml
+    #   policyName: "sriov-nw-fh-policy"
+    #   metadata:
+    #     name: "sriov-nw-du-fh"
+    #   spec:
+    #     resourceName: du_fh
+    #     vlan: 140
+    # - fileName: SriovNetworkNodePolicy.yaml
+    #   policyName: "sriov-nnp-fh-policy"
+    #   metadata:
+    #     name: "sriov-nnp-du-fh"
+    #   spec:
+    #     deviceType: netdevice
+    #     isRdma: true
+    #     nicSelector:
+    #       pfNames: ["${SNO_CONFIG_NET_INTERFACE}"]
+    #     numVfs: 8
+    #     priority: 10
+    #     resourceName: du_fh
+    # - fileName: SriovNetwork.yaml
+    #   policyName: "sriov-nw-mh-policy"
+    #   metadata:
+    #     name: "sriov-nw-du-mh"
+    #   spec:
+    #     resourceName: du_mh
+    #     vlan: 150
+    # - fileName: SriovNetworkNodePolicy.yaml
+    #   policyName: "sriov-nnp-mh-policy"
+    #   metadata:
+    #     name: "sriov-nnp-du-mh"
+    #   spec:
+    #     deviceType: vfio-pci
+    #     isRdma: false
+    #     nicSelector:
+    #       pfNames: ["${SNO_CONFIG_NET_INTERFACE}"]
+    #     numVfs: 8
+    #     priority: 10
+    #     resourceName: du_mh
+    - fileName: PerformanceProfile.yaml
+      policyName: "perfprofile-policy"
+      metadata:
+        name: openshift-node-performance-profile
+      spec:
+        cpu:
+          isolated: "${SNO_CONFIG_ISOLATED_CORES}"
+          reserved: "${SNO_CONFIG_RESERVED_CORES}"
+        hugepages:
+          defaultHugepagesSize: 1G
+          pages:
+            - size: 1G
+              count: ${SNO_CONFIG_HUGE_PAGES}
+    - fileName: TunedPerformancePatch.yaml
+      policyName: "tuned-perf-patch-policy"
+      spec:
+        profile:
+          - name: performance-patch
+            data: |
+              [main]
+              summary=Configuration changes profile inherited from performance created tuned
+              include=openshift-node-performance-openshift-node-performance-profile
+              [bootloader]
+              cmdline_crash=nohz_full=${SNO_CONFIG_ISOLATED_CORES}
+              [sysctl]
+              kernel.timer_migration=1
+              [service]
+              service.stalld=start,enable
