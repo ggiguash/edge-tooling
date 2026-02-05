@@ -1,0 +1,3 @@
+[submodule "two-node-toolbox"]
+	path = two-node-toolbox
+	url = git@github.com:openshift-eng/two-node-toolbox.git
