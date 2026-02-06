@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/detect-new-tools.sh",
+            "timeout": 10,
+            "statusMessage": "Checking for new tool directories..."
+          }
+        ]
+      }
+    ]
+  }
+}
