@@ -1,0 +1,21 @@
+# SAM Configuration Example
+# Copy this file to samconfig.toml and customize for your deployment
+
+version = 0.1
+
+[default]
+[default.global.parameters]
+stack_name = "ec2-watchman"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+region = "us-east-1"
+resolve_s3 = true
+parameter_overrides = "ScheduleExpression=rate(1 hour)"
+image_repositories = []
+

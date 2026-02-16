@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: EC2 Watchman - Automated EC2 instance lifecycle management
+
+Conditions:
+  HasSlackWebhook: !Not [!Equals [!Ref SlackWebhookURL, ""]]
+
+Parameters:
+  ScheduleExpression:
+    Type: String
+    Default: rate(1 hour)
+    Description: CloudWatch Events schedule expression (e.g., rate(1 hour) or cron(0 * * * ? *))
+  
+  LambdaMemorySize:
+    Type: Number
+    Default: 256
+    Description: Lambda function memory size in MB
+  
+  LambdaTimeout:
+    Type: Number
+    Default: 300
+    Description: Lambda function timeout in seconds
+  
+  SlackWebhookURL:
+    Type: String
+    Default: ""
+    Description: Slack webhook URL for notifications (optional, leave empty to disable)
+
+Resources:
+  EC2WatchmanFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ec2-watchman
+      Runtime: python3.11
+      Handler: lambda_function.lambda_handler
+      CodeUri: ./
+      Timeout: !Ref LambdaTimeout
+      MemorySize: !Ref LambdaMemorySize
+      Environment:
+        Variables:
+          LOG_LEVEL: INFO
+          SLACK_WEBHOOK_URL: !If [HasSlackWebhook, !Ref SlackWebhookURL, ""]
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - ec2:DescribeRegions
+                - ec2:DescribeInstances
+                - ec2:DescribeInstanceStatus
+                - ec2:StopInstances
+                - ec2:DescribeTags
+                - ec2:CreateTags
+              Resource: '*'
+      Events:
+        ScheduledEvent:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref ScheduleExpression
+            Enabled: true
+            Description: Run EC2 watchman on schedule
+
+  EC2WatchmanLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${EC2WatchmanFunction}'
+      RetentionInDays: 14
+
+Outputs:
+  LambdaFunctionArn:
+    Description: ARN of the EC2 Watchman Lambda function
+    Value: !GetAtt EC2WatchmanFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaFunctionArn'
+  
+  ScheduleExpression:
+    Description: Schedule expression for the Lambda function
+    Value: !Ref ScheduleExpression
+    Export:
+      Name: !Sub '${AWS::StackName}-ScheduleExpression'
+
