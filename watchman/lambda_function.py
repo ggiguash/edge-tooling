@@ -57,8 +57,8 @@ def should_shutdown_instance(instance: Dict) -> bool:
         if age_hours < keep_hours:
             return False
     
-    # Shutdown if older than 24 hours (or after keep period)
-    return age_hours >= 24
+    # Shutdown if older than 12 hours (or after keep period)
+    return age_hours >= 12
 
 
 def get_all_regions() -> List[str]:
