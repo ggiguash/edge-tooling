@@ -96,41 +96,49 @@ def send_slack_notification(instance_id: str, instance_name: str, region: str, a
             "text": "EC2 Instance Shutdown Notification",
             "blocks": [
                 {
-                    "type": "header",
-                    "text": {
-                        "type": "plain_text",
-                        "text": "⚠️ EC2 Instance Shutdown"
-                    }
-                },
-                {
-                    "type": "section",
-                    "fields": [
-                        {
-                            "type": "mrkdwn",
-                            "text": f"*Instance ID:*\n`{instance_id}`"
-                        },
-                        {
-                            "type": "mrkdwn",
-                            "text": f"*Name:*\n{display_name}"
-                        },
-                        {
-                            "type": "mrkdwn",
-                            "text": f"*Region:*\n`{region}`"
-                        },
-                        {
-                            "type": "mrkdwn",
-                            "text": f"*Age:*\n{age_hours:.2f} hours"
-                        }
-                    ]
-                },
-                {
-                    "type": "context",
-                    "elements": [
-                        {
-                            "type": "mrkdwn",
-                            "text": f"Instance is being shut down by EC2 Watchman"
-                        }
-                    ]
+                      "type": "rich_text",
+                      "elements": [
+                          {
+                              "type": "rich_text_section",
+                              "elements": [
+                                  {
+                                      "type": "emoji",
+                                      "name": "warning"
+                                  },
+                                  {
+                                      "type": "link",
+                                      "url": "https://github.com/openshift-eng/edge-tooling/tree/main/watchman",
+                                      "text": "EC2 Watchman"
+                                  },
+                                  {
+                                      "type": "text",
+                                      "text": " (Shutdown): "
+                                  },
+                                  {
+                                      "type": "text",
+                                      "style": {
+                                          "bold": true
+                                      },
+                                      "text": f"{display_name}"
+                                  },
+                                  {
+                                      "type": "text",
+                                      "text": f" after {age_hours:.2f} hours ("
+                                  },
+                                  {
+                                      "type": "text",
+                                      "style": {
+                                          "code": true
+                                      },
+                                      "text": f"{instance_id} @ {region}"
+                                  },
+                                  {
+                                      "type": "text",
+                                      "text": ")"
+                                  }
+                              ]
+                          }
+                      ]
                 }
             ]
         }
