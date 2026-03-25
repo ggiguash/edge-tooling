@@ -1,0 +1,28 @@
+versions:
+  auto_discover: true
+  override: []  # e.g., ["4.18", "4.19", "4.20", "4.21", "4.22", "4.23", "5.0"]
+
+topologies:
+  - name: SNO
+    job_patterns: ["sno", "single-node", "metal-single-node"]
+    exclude_patterns: ["telco"]
+  - name: TNA
+    job_patterns: ["two-node", "tna"]
+    exclude_patterns: ["telco"]
+  - name: TNF
+    job_patterns: ["tnf", "two-node-fencing"]
+    exclude_patterns: ["telco"]
+
+payloads_per_stream: 5
+
+jira:
+  project: "OCPBUGS"
+  component: "Edge Enablement"
+
+output:
+  report_dir: "./reports"
+
+slack:
+  webhook_url: ""
+  channel: "#edge-enablement-payload-manager"
+  enabled: false

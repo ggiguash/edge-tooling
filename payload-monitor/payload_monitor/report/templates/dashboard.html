@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edge Payload Monitor</title>
+  <style>{{ css }}</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Edge Payload Monitor</h1>
+    <div class="meta">SNO / TNA / TNF topology health across OpenShift nightly payloads</div>
+  </div>
+  <div style="text-align:right">
+    <div class="meta">Generated: {{ report.generated_at }}</div>
+    {% set has_ai = [] %}{% for item in all_failing %}{% if item.job.deep_analysis %}{% if has_ai.append(1) %}{% endif %}{% endif %}{% endfor %}
+    {% if has_ai %}
+    <div class="meta" style="margin-top:4px">
+      <span style="color:var(--green)">● AI-enriched via Claude</span>
+      {% if report.ai_cost %}<span style="margin-left:6px">({{ report.ai_cost }})</span>{% endif %}
+    </div>
+    {% else %}
+    <div class="meta" style="margin-top:4px">
+      <span style="color:var(--text-muted)">○ Data only</span>
+      <span style="margin-left:4px">— run <code style="font-size:12px;color:var(--accent)">/edge-payload-monitor</code> for AI analysis</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if report.skip_prow or report.skip_sippy or report.skip_jira %}
+<div class="skip-banner">
+  <strong>Note:</strong> This report was generated with limited data.
+  {% if report.skip_prow %}
+  <span class="skip-flag">--skip-prow</span> Prow artifact fetching was skipped — Error column, Failing Tests, and Failure Details will be empty.
+  {% endif %}
+  {% if report.skip_sippy %}
+  <span class="skip-flag">--skip-sippy</span> Sippy regression check was skipped — Sippy Job Regressions section is not available.
+  {% endif %}
+  {% if report.skip_jira %}
+  <span class="skip-flag">JIRA_TOKEN not set</span> JIRA integration is disabled — Related JIRA Bugs and bug matching are not available. Set the <code>JIRA_TOKEN</code> environment variable to enable.
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- Overview: Timeline + Summary Cards side by side -->
+<div class="overview-layout">
+  <div class="overview-left">
+    <h2 style="margin-top:0">Payload Timeline</h2>
+    <div class="timeline">
+      {% for stream in report.streams %}
+      <div class="timeline-row">
+        <div class="timeline-label">{{ stream.version }}</div>
+        <div class="timeline-dots">
+          {% for payload in stream.payloads | reverse %}
+          <a href="{{ payload.url }}" target="_blank"
+             class="timeline-dot {{ payload.phase | lower }}"
+             title="{{ payload.tag }} — {{ payload.phase }}">
+            <span class="tooltip">
+              {{ payload.tag }}<br>
+              {{ payload.phase }}
+              {% if payload.failing_edge_jobs %}
+              <br>{{ payload.failing_edge_jobs | length }} edge failure{{ 's' if payload.failing_edge_jobs | length != 1 else '' }}
+              {% endif %}
+            </span>
+            {% if payload.phase == 'Accepted' %}A{% else %}R{% endif %}
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="overview-right">
+    <h2 style="margin-top:0">Version Status</h2>
+    <div class="summary-grid">
+      {% for stream in report.streams %}
+      {% set latest = stream.latest_payload %}
+      {% set failing_count = stream.total_edge_failures %}
+      <div class="summary-card">
+        <div class="version">{{ stream.version }}</div>
+        {% if latest %}
+        <div class="status {% if failing_count == 0 %}healthy{% elif failing_count <= 2 %}degraded{% else %}failing{% endif %}">
+          {% if failing_count == 0 %}Healthy{% elif failing_count <= 2 %}Degraded{% else %}Failing{% endif %}
+        </div>
+        <div class="detail">
+          Latest: {{ latest.phase }}
+          <br>{{ failing_count }} edge failure{{ 's' if failing_count != 1 else '' }} in last {{ stream.payloads | length }} builds
+        </div>
+        {% else %}
+        <div class="status">No data</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- Findings Summary -->
+{% set ns = namespace(
+  total_failures=all_failing|length,
+  blocking_failures=0,
+  informing_failures=0,
+  rejected_payloads=0,
+  total_payloads=0,
+  affected_topos=[],
+  affected_versions=[],
+  regression_count=all_regressions|length,
+  component_regression_count=component_regressions|length,
+  bugs_found=report.jira_bugs|length,
+  bugs_suggested=report.suggested_bugs|length
+) %}
+{% for item in all_failing %}
+  {% if item.job.job_type.value == 'blocking' %}{% set ns.blocking_failures = ns.blocking_failures + 1 %}{% endif %}
+  {% if item.job.job_type.value == 'informing' %}{% set ns.informing_failures = ns.informing_failures + 1 %}{% endif %}
+{% endfor %}
+{% for stream in report.streams %}
+  {% for p in stream.payloads %}
+    {% set ns.total_payloads = ns.total_payloads + 1 %}
+    {% if p.phase == 'Rejected' %}{% set ns.rejected_payloads = ns.rejected_payloads + 1 %}{% endif %}
+  {% endfor %}
+{% endfor %}
+
+<div class="findings-summary">
+  <h2 style="border-bottom:none;margin-top:0;padding-bottom:0">Findings Summary</h2>
+
+  {% if ns.total_failures == 0 and ns.regression_count == 0 and ns.component_regression_count == 0 %}
+  <div class="finding healthy">
+    All edge jobs are passing across all monitored payloads. No regressions detected.
+  </div>
+  {% else %}
+
+  {% if ns.total_failures > 0 %}
+  <div class="finding {% if ns.blocking_failures > 0 %}critical{% else %}warning{% endif %}">
+    <strong>{{ ns.total_failures }} edge job failure{{ 's' if ns.total_failures != 1 else '' }}</strong> detected
+    ({{ ns.blocking_failures }} blocking, {{ ns.informing_failures }} informing)
+    across {{ ns.total_payloads }} payload{{ 's' if ns.total_payloads != 1 else '' }}.
+    {% if ns.rejected_payloads > 0 %}
+    <strong>{{ ns.rejected_payloads }} payload{{ 's' if ns.rejected_payloads != 1 else '' }} rejected.</strong>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if ns.regression_count > 0 %}
+  <div class="finding warning">
+    <strong>{{ ns.regression_count }} Sippy regression{{ 's' if ns.regression_count != 1 else '' }}</strong> detected with significant pass rate drops.
+  </div>
+  {% endif %}
+
+  {% if ns.component_regression_count > 0 %}
+  <div class="finding warning">
+    <strong>{{ ns.component_regression_count }} component regression{{ 's' if ns.component_regression_count != 1 else '' }}</strong> on Single Node vs HA topology (see Component Readiness section below).
+  </div>
+  {% endif %}
+
+  <div class="finding actions">
+    <strong>Suggested Actions:</strong>
+    <ul>
+      {% if ns.blocking_failures > 0 %}
+      <li>Investigate <strong>blocking job failures</strong> immediately — these prevent payload acceptance.</li>
+      {% endif %}
+      {% if ns.bugs_suggested > 0 %}
+      <li>File <strong>{{ ns.bugs_suggested }} suggested JIRA bug{{ 's' if ns.bugs_suggested != 1 else '' }}</strong> for untracked failures (see Suggested New Bugs section below).</li>
+      {% endif %}
+      {% if ns.bugs_found > 0 %}
+      <li>Review <strong>{{ ns.bugs_found }} existing JIRA bug{{ 's' if ns.bugs_found != 1 else '' }}</strong> for progress updates.</li>
+      {% endif %}
+      {% if ns.regression_count > 0 %}
+      <li>Triage <strong>Sippy regressions</strong> — check if they correspond to known issues or need new bugs filed.</li>
+      {% endif %}
+      {% if ns.component_regression_count > 0 %}
+      <li>Review <strong>{{ ns.component_regression_count }} component regression{{ 's' if ns.component_regression_count != 1 else '' }}</strong> where Single Node is underperforming compared to HA.</li>
+      {% endif %}
+      {% if ns.informing_failures > 0 and ns.blocking_failures == 0 %}
+      <li>Monitor <strong>informing job failures</strong> — not blocking yet but may escalate.</li>
+      {% endif %}
+      {% if ns.total_failures == 0 and ns.regression_count > 0 %}
+      <li>Review Sippy regressions to determine if they indicate emerging issues.</li>
+      {% endif %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Filters -->
+<h2>Nightly Payload — Edge Job Failures <span style="font-weight:normal;color:var(--text-muted);font-size:13px">(<span id="visible-count">{{ all_failing | length }}</span> total)</span></h2>
+
+{% if all_failing %}
+<div class="filters">
+  <span style="color:var(--text-muted);font-size:12px;padding:4px 0">Topology:</span>
+  <button class="filter-btn active" data-group="topology" data-value="all">All</button>
+  {% for topo in topologies %}
+  <button class="filter-btn" data-group="topology" data-value="{{ topo }}">{{ topo }}</button>
+  {% endfor %}
+
+  <span style="color:var(--text-muted);font-size:12px;padding:4px 0;margin-left:12px">Type:</span>
+  <button class="filter-btn active" data-group="jobtype" data-value="all">All</button>
+  <button class="filter-btn" data-group="jobtype" data-value="blocking">Blocking</button>
+  <button class="filter-btn" data-group="jobtype" data-value="informing">Informing</button>
+
+  <span style="color:var(--text-muted);font-size:12px;padding:4px 0;margin-left:12px">Version:</span>
+  <button class="filter-btn active" data-group="version" data-value="all">All</button>
+  {% for v in versions %}
+  <button class="filter-btn" data-group="version" data-value="{{ v }}">{{ v }}</button>
+  {% endfor %}
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th class="sortable" data-col="0">Job</th>
+      <th class="sortable" data-col="1">Version</th>
+      <th class="sortable" data-col="2">Payload</th>
+      <th class="sortable" data-col="3">Topology</th>
+      <th class="sortable" data-col="4">Type</th>
+      <th class="sortable" data-col="5">Date</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in all_failing %}
+    <tr class="job-row" data-topology="{{ item.job.topology }}" data-jobtype="{{ item.job.job_type.value }}" data-version="{{ item.version }}" data-row-index="{{ loop.index }}">
+      <td><a href="{{ item.job.prow_url }}" target="_blank">{{ item.job.name }}</a></td>
+      <td>{{ item.version }}</td>
+      <td><a href="{{ item.payload_url }}" target="_blank">{{ item.payload_tag | truncate(30) }}</a></td>
+      <td><span class="badge {{ item.job.topology | lower }}">{{ item.job.topology }}</span></td>
+      <td><span class="badge {{ item.job.job_type.value }}">{{ item.job.job_type.value }}</span></td>
+      <td style="white-space:nowrap;font-size:12px;color:var(--text-muted)">{{ item.date }}</td>
+      <td><a href="#detail-{{ loop.index }}" class="detail-link">View Details ↓</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if all_failing | length > 5 %}
+<button class="expand-btn" id="expand-jobs-btn" onclick="expandSection('jobs')">Show all {{ all_failing | length }} failing jobs</button>
+{% endif %}
+{% else %}
+<div class="empty-state">No failing edge jobs found across monitored payloads.</div>
+{% endif %}
+
+<!-- Failure Details -->
+{% if all_failing %}
+<h2>Nightly Payload — Failure Analysis</h2>
+{% for detail in all_failing %}
+<details id="detail-{{ loop.index }}" class="detail-row" data-topology="{{ detail.job.topology }}" data-jobtype="{{ detail.job.job_type.value }}" data-version="{{ detail.version }}" data-row-index="{{ loop.index }}">
+  <summary>
+    <span class="badge {{ detail.job.topology | lower }}">{{ detail.job.topology }}</span>
+    <span class="badge {{ detail.job.job_type.value }}">{{ detail.job.job_type.value }}</span>
+    {% if detail.job.deep_analysis %}<span class="badge ai-analyzed">AI Analyzed</span>{% endif %}
+    {{ detail.job.name }} ({{ detail.version }})
+  </summary>
+  <div class="content">
+    <p><strong>Payload:</strong> <a href="{{ detail.payload_url }}" target="_blank">{{ detail.payload_tag }}</a></p>
+    <p><strong>Prow Job:</strong> <a href="{{ detail.job.prow_url }}" target="_blank">View in Prow</a></p>
+
+    {% if detail.job.deep_analysis %}
+    <div class="deep-analysis-card">
+      <h3>AI Root Cause Analysis</h3>
+      <div class="da-field">
+        <span class="da-label">Root Cause:</span>
+        <span>{{ detail.job.deep_analysis.root_cause }}</span>
+      </div>
+      <div class="da-field">
+        <span class="da-label">Failure Type:</span>
+        <span class="badge da-type">{{ detail.job.deep_analysis.failure_type }}</span>
+      </div>
+      <div class="da-field">
+        <span class="da-label">Impact:</span>
+        <span>{{ detail.job.deep_analysis.impact }}</span>
+      </div>
+      {% if detail.job.deep_analysis.suspect_prs %}
+      <div class="da-field">
+        <span class="da-label">Suspect PRs:</span>
+        <ul style="margin:4px 0 0 20px">
+          {% for pr in detail.job.deep_analysis.suspect_prs %}
+          <li><a href="{{ pr }}" target="_blank">{{ pr }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+      <div class="da-field">
+        <span class="da-label">Recommendation:</span>
+        <span>{{ detail.job.deep_analysis.recommendation }}</span>
+      </div>
+    </div>
+    {% elif detail.job.job_type.value == 'informing' %}
+    <div class="claude-suggestion">
+      For deeper analysis of this informing job, use Claude directly:<br>
+      <code>/ci:prow-job-analyze-test-failure {{ detail.job.prow_url }}</code>
+    </div>
+    {% endif %}
+
+    {% if detail.job.failing_tests %}
+    <h3>Failing Tests ({{ detail.job.failing_tests | length }})</h3>
+    {% for test in detail.job.failing_tests %}
+    <details style="margin-left:12px">
+      <summary>{{ test.name }}</summary>
+      <div class="content">
+        <pre>{{ test.error_message }}</pre>
+      </div>
+    </details>
+    {% endfor %}
+    {% endif %}
+  </div>
+</details>
+{% endfor %}
+{% if all_failing | length > 5 %}
+<button class="expand-btn" id="expand-details-btn" onclick="expandSection('details')">Show all {{ all_failing | length }} failure details</button>
+{% endif %}
+{% endif %}
+
+<!-- Sippy Regressions -->
+{% if all_regressions %}
+<h2>Sippy Job Regressions</h2>
+<div class="meta" style="margin-bottom:8px">Source: <a href="https://sippy.dptools.openshift.org" target="_blank">Sippy Jobs</a> — jobs with pass rate drop &gt;10% or below 80% (≥3 runs). Jobs with fewer than 3 runs are excluded due to insufficient data.</div>
+<div class="filters">
+  <span style="color:var(--text-muted);font-size:12px;padding:4px 0">Topology:</span>
+  <button class="filter-btn active" data-group="regtopology" data-value="all">All</button>
+  {% for topo in topologies %}
+  <button class="filter-btn" data-group="regtopology" data-value="{{ topo }}">{{ topo }}</button>
+  {% endfor %}
+
+  <span style="color:var(--text-muted);font-size:12px;padding:4px 0;margin-left:12px">Version:</span>
+  <button class="filter-btn active" data-group="regversion" data-value="all">All</button>
+  {% for v in versions %}
+  <button class="filter-btn" data-group="regversion" data-value="{{ v }}">{{ v }}</button>
+  {% endfor %}
+</div>
+<table>
+  <thead>
+    <tr>
+      <th class="sortable" data-col="0">Job</th>
+      <th class="sortable" data-col="1">Topology</th>
+      <th class="sortable" data-col="2">Version</th>
+      <th class="sortable" data-col="3">Runs</th>
+      <th class="sortable" data-col="4">Current Pass Rate</th>
+      <th class="sortable" data-col="5">Previous Pass Rate</th>
+      <th class="sortable" data-col="6">Change</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in all_regressions %}
+    <tr class="regression-row sortable-row" data-row-index="{{ loop.index }}" data-regtopology="{{ r.topology }}" data-regversion="{{ r.version }}">
+      <td><a href="{{ r.triage_url }}" target="_blank">{{ r.test_name | truncate(80) }}</a></td>
+      <td><span class="badge {{ r.topology | lower }}">{{ r.topology }}</span></td>
+      <td>{{ r.version }}</td>
+      <td>{{ r.current_runs }}</td>
+      <td>
+        <span class="pass-rate {% if r.sample_pass_rate < 70 %}low{% elif r.sample_pass_rate < 90 %}medium{% else %}high{% endif %}">
+          {{ "%.1f" | format(r.sample_pass_rate) }}%
+        </span>
+      </td>
+      <td>{{ "%.1f" | format(r.basis_pass_rate) }}%</td>
+      <td>
+        {% set change = r.sample_pass_rate - r.basis_pass_rate %}
+        <span class="pass-rate {% if change < -10 %}low{% elif change < 0 %}medium{% else %}high{% endif %}">
+          {{ "%+.1f" | format(change) }}%
+        </span>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if all_regressions|length > 5 %}
+<button class="expand-btn" id="expand-regressions-btn" onclick="expandSection('regressions')">Show all {{ all_regressions|length }} regressions</button>
+{% endif %}
+{% endif %}
+
+
+<!-- Component Readiness: HA vs Single Node -->
+{% if component_regressions %}
+<h2>Component Readiness — HA vs Single Node</h2>
+<div class="meta" style="margin-bottom:8px">
+  Source: <a href="https://sippy.dptools.openshift.org/sippy-ng/component_readiness/main" target="_blank">Sippy Component Readiness</a> — components with statistically significant regressions on Single Node compared to HA topology (Fisher's exact test, 95% confidence).
+</div>
+<div class="filters" id="cr-filters">
+  <span style="color:var(--text-muted);font-size:12px;padding:4px 0">Platform:</span>
+  <button class="filter-btn active" data-group="crplatform" data-value="all">All</button>
+  {% for p in cr_platforms %}
+  <button class="filter-btn" data-group="crplatform" data-value="{{ p }}">{{ p }}</button>
+  {% endfor %}
+
+  <span style="color:var(--text-muted);font-size:12px;padding:4px 0;margin-left:12px">Version:</span>
+  <button class="filter-btn active" data-group="crversion" data-value="all">All</button>
+  {% for v in cr_versions %}
+  <button class="filter-btn" data-group="crversion" data-value="{{ v }}">{{ v }}</button>
+  {% endfor %}
+</div>
+
+<table id="cr-table">
+  <thead>
+    <tr>
+      <th class="sortable" data-col="0">Component</th>
+      <th class="sortable" data-col="1">Test</th>
+      <th class="sortable" data-col="2">Version</th>
+      <th class="sortable" data-col="3">Variant</th>
+      <th class="sortable" data-col="4">HA Pass Rate</th>
+      <th class="sortable" data-col="5">SNO Pass Rate</th>
+      <th class="sortable" data-col="6">Delta</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for cr in component_regressions %}
+    <tr class="cr-row" data-row-index="{{ loop.index }}" data-crplatform="{{ cr.variants.get('Platform', '') }}" data-crversion="{{ cr.version }}">
+      <td>{{ cr.component }}</td>
+      <td>
+        {% if cr.detail_url %}
+        <a href="{{ cr.detail_url }}" target="_blank">{{ cr.test_name | truncate(70) }}</a>
+        {% else %}
+        {{ cr.test_name | truncate(70) }}
+        {% endif %}
+      </td>
+      <td>{{ cr.version }}</td>
+      <td style="font-size:12px;color:var(--text-muted)">
+        {% set parts = [] %}
+        {% if cr.variants.get('Platform') %}{% set _ = parts.append(cr.variants['Platform']) %}{% endif %}
+        {% if cr.variants.get('Architecture') %}{% set _ = parts.append(cr.variants['Architecture']) %}{% endif %}
+        {% if cr.variants.get('Network') %}{% set _ = parts.append(cr.variants['Network']) %}{% endif %}
+        {{ parts | join(' / ') }}
+      </td>
+      <td>
+        <span class="pass-rate high">{{ "%.1f" | format(cr.base_pass_rate) }}%</span>
+        <span style="font-size:11px;color:var(--text-muted)">({{ cr.base_success }}/{{ cr.base_success + cr.base_failure }})</span>
+      </td>
+      <td>
+        <span class="pass-rate {% if cr.sample_pass_rate < 70 %}low{% elif cr.sample_pass_rate < 90 %}medium{% else %}high{% endif %}">
+          {{ "%.1f" | format(cr.sample_pass_rate) }}%
+        </span>
+        <span style="font-size:11px;color:var(--text-muted)">({{ cr.sample_success }}/{{ cr.sample_success + cr.sample_failure }})</span>
+      </td>
+      <td>
+        {% set delta = cr.sample_pass_rate - cr.base_pass_rate %}
+        <span class="pass-rate {% if delta < -10 %}low{% elif delta < 0 %}medium{% else %}high{% endif %}">
+          {{ "%+.1f" | format(delta) }}%
+        </span>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if component_regressions|length > 5 %}
+<button class="expand-btn" id="expand-cr-btn" onclick="expandSection('cr')">Show all {{ component_regressions|length }} component regressions</button>
+{% endif %}
+{% endif %}
+
+<!-- JIRA Bugs -->
+{% if report.jira_bugs %}
+<h2>Related JIRA Bugs</h2>
+{% for bug in report.jira_bugs %}
+<div class="jira-card">
+  <div>
+    <a href="{{ bug.url }}" target="_blank" class="key">{{ bug.key }}</a>
+    <span class="summary">{{ bug.summary }}</span>
+  </div>
+  <div>
+    <span class="status-badge {% if bug.status in ['New', 'Open', 'In Progress'] %}failure{% else %}success{% endif %}">
+      {{ bug.status }}
+    </span>
+    {% if bug.assignee %}
+    <span style="font-size:12px;color:var(--text-muted);margin-left:8px">{{ bug.assignee }}</span>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+
+<!-- Suggested Bugs -->
+{% if report.suggested_bugs %}
+<h2>Suggested New Bugs</h2>
+<div class="meta" style="margin-bottom:8px">Failing edge jobs (SNO/TNA/TNF) with no existing JIRA bug matching the job name in summary or description. Deduplicated by job name across payloads.</div>
+{% for bug in report.suggested_bugs %}
+<div class="suggest-card">
+  <div class="title">{{ bug.title }}</div>
+  <div class="meta">
+    <span class="badge {{ bug.topology | lower }}">{{ bug.topology }}</span>
+    {{ bug.version }} | {{ bug.job_name }}
+  </div>
+  {% if bug.failing_tests %}
+  <div class="tests">
+    Failing tests:
+    <ul>
+    {% for t in bug.failing_tests[:3] %}
+      <li>{{ t }}</li>
+    {% endfor %}
+    {% if bug.failing_tests | length > 3 %}
+      <li>... and {{ bug.failing_tests | length - 3 }} more</li>
+    {% endif %}
+    </ul>
+  </div>
+  {% endif %}
+  <a href="{{ bug.create_url }}" target="_blank" class="create-btn">Create in JIRA</a>
+</div>
+{% endfor %}
+{% endif %}
+
+<script>{{ js }}</script>
+</body>
+</html>
