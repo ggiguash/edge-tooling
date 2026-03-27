@@ -174,11 +174,8 @@ The generated HTML report is a single self-contained file (no external dependenc
 ## Development
 
 ```bash
-# Install dev dependencies
+# Install dependencies
 pip install -r requirements.txt
-
-# Run tests
-python -m pytest tests/
 
 # Run with verbose output
 python -m payload_monitor --verbose
