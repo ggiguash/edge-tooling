@@ -117,7 +117,7 @@ def send_slack_notification(instance_id: str, instance_name: str, region: str, a
                                   {
                                       "type": "text",
                                       "style": {
-                                          "bold": true
+                                          "bold": True
                                       },
                                       "text": f"{display_name}"
                                   },
@@ -128,7 +128,7 @@ def send_slack_notification(instance_id: str, instance_name: str, region: str, a
                                   {
                                       "type": "text",
                                       "style": {
-                                          "code": true
+                                          "code": True
                                       },
                                       "text": f"{instance_id} @ {region}"
                                   },
