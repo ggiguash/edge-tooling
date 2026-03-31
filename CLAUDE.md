@@ -232,7 +232,7 @@ All cluster files are stored in `~/.sno-deploy/$CLUSTER/`:
 
 ## Payload Monitor (payload-monitor/)
 
-Automated monitoring tool for OpenShift nightly payload health across edge topologies (SNO, TNA, TNF). Produces an interactive HTML dashboard with optional AI-powered root cause analysis via the `/edge-payload-monitor` Claude Code skill.
+Automated monitoring tool for OpenShift nightly payload health across edge topologies (SNO, TNA, TNF). Produces an interactive HTML dashboard with optional AI-powered root cause analysis via the `/ee-payload-monitor` Claude Code skill.
 
 For full documentation, architecture, CLI reference, and configuration details, see `payload-monitor/README.md`.
 

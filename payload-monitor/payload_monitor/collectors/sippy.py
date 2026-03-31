@@ -60,18 +60,21 @@ def fetch_edge_tests(release: str, config: Config) -> list[dict]:
 
 def identify_regressions(
     edge_jobs: list[dict],
-    pass_rate_threshold: float = 80.0,
     min_runs: int = 3,
 ) -> list[Regression]:
-    """Identify jobs with significant pass rate drops as regressions.
+    """Identify jobs that are getting worse over time.
 
-    Jobs with fewer than min_runs are excluded (insufficient data to confirm regression).
+    Uses Sippy's pre-computed net_improvement field which handles edge cases
+    (e.g. zero runs in either period). A negative net_improvement means the
+    job's pass rate dropped compared to the previous period.
+    Jobs with fewer than min_runs are excluded (insufficient data).
     """
     regressions = []
 
     for job in edge_jobs:
         current_pass = job.get("current_pass_percentage", 0)
         previous_pass = job.get("previous_pass_percentage", 0)
+        net_improvement = job.get("net_improvement", 0)
         current_runs = job.get("current_runs", 0)
         name = job.get("name", "")
         topology = job.get("_topology", "")
@@ -82,25 +85,21 @@ def identify_regressions(
         if current_runs < min_runs:
             continue
 
-        # Flag as regression if pass rate dropped significantly or is below threshold
-        is_regression = False
-        if previous_pass > 0 and (previous_pass - current_pass) > 10:
-            is_regression = True
-        if current_pass < pass_rate_threshold and current_runs >= 5:
-            is_regression = True
+        # Flag as regression if the job is getting worse over time
+        if net_improvement >= 0:
+            continue
 
-        if is_regression:
-            regressions.append(Regression(
-                test_name=name,
-                test_id=str(job.get("id", "")),
-                component=jira_component,
-                capability="",
-                basis_pass_rate=previous_pass,
-                sample_pass_rate=current_pass,
-                topology=topology,
-                triage_url=triage_url,
-                current_runs=current_runs,
-            ))
+        regressions.append(Regression(
+            test_name=name,
+            test_id=str(job.get("id", "")),
+            component=jira_component,
+            capability="",
+            basis_pass_rate=previous_pass,
+            sample_pass_rate=current_pass,
+            topology=topology,
+            triage_url=triage_url,
+            current_runs=current_runs,
+        ))
 
     return regressions
 

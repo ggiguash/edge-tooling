@@ -1,4 +1,4 @@
-# Edge Payload Monitor
+# Edge Enablement Payload Monitor
 
 Automated monitoring tool for OpenShift nightly payload health across edge topologies (SNO, TNA, TNF). Fetches data from the amd64 release controller, Sippy Component Readiness, Prow CI, and JIRA to produce an interactive HTML dashboard.
 
@@ -60,7 +60,7 @@ python -m payload_monitor --merge-analysis reports/analysis-2026-03-25.json --ou
 
 **Standalone CLI**: Run `python -m payload_monitor` to collect data and generate an HTML dashboard.
 
-**Claude Code skill**: Run `/edge-payload-monitor` to also get AI-powered root cause analysis for blocking job failures, using marketplace CI skills from [ai-helpers](https://github.com/openshift-eng/ai-helpers).
+**Claude Code skill**: Run `/ee-payload-monitor` to also get AI-powered root cause analysis for blocking job failures, using marketplace CI skills from [ai-helpers](https://github.com/openshift-eng/ai-helpers).
 
 ### Performance and Token Efficiency
 
@@ -89,19 +89,13 @@ Configuration is hardcoded in `payload_monitor/config.py`. The defaults are:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `JIRA_TOKEN` | For JIRA features | Atlassian Cloud API token or PAT (read-only) |
-| `JIRA_EMAIL` | Optional | Email for Basic auth (if not using PAT) |
+| `JIRA_TOKEN` | For JIRA features | Atlassian Cloud Personal Access Token (read-only) |
 
 To obtain a token, go to [Atlassian API Tokens](https://id.atlassian.com/manage-profile/security/api-tokens) and create a new token. **Use read-only permissions** — this tool only searches for existing bugs and never creates or modifies JIRA issues. The "Create in JIRA" links open the browser for manual review before submission.
 
 Set it in your shell before running:
 
 ```bash
-# Option 1: API token with email (Basic auth)
-export JIRA_EMAIL="your-email"
-export JIRA_TOKEN="your-api-token"
-
-# Option 2: Personal Access Token (Bearer auth)
 export JIRA_TOKEN="your-pat-here"
 ```
 
@@ -157,18 +151,18 @@ The generated HTML report is a single self-contained file (no external dependenc
 - **Component Readiness**: HA vs Single Node topology regressions detected by Fisher's exact test
 - **JIRA integration**: Matching existing bugs and suggested new bugs with pre-filled create links
 
-## Scheduling
+## How to run the tooling
 
-### Cron (daily at 6:00 AM UTC)
+### Terminal
 
 ```bash
-0 6 * * * cd /path/to/payload-monitor && python -m payload_monitor --output reports/daily-$(date +\%Y-\%m-\%d).html
+python -m payload_monitor --output reports/daily-$(date +\%Y-\%m-\%d).html
 ```
 
-### Claude Code (manual)
+### Claude Code skill
 
 ```
-/edge-payload-monitor
+/ee-payload-monitor
 ```
 
 ## Development
@@ -184,5 +178,3 @@ python -m payload_monitor --verbose
 ## Future Roadmap
 
 - Slack notifications to `@edge-enablement-payload-manager` with daily report summary
-- Web portal integration (serve reports via simple HTTP server)
-- Historical trend database (SQLite) for cross-day analysis

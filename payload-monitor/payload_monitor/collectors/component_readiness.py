@@ -15,19 +15,11 @@ CR_API_URL = f"{BASE_URL}/api/component_readiness"
 
 # Status codes from Sippy Component Readiness
 STATUS_REGRESSION = -400
-STATUS_NO_DATA = -100
-STATUS_OK = 100
 
 # Only these versions have ha-vs-single views in Sippy
 VIEW_PATTERN = "{version}-ha-vs-single"
 
 _session = create_session()
-
-
-def _view_url(version: str) -> str:
-    """Build the Sippy Component Readiness UI URL for a version."""
-    view = VIEW_PATTERN.format(version=version)
-    return f"{BASE_URL}/sippy-ng/component_readiness/main?view={view}"
 
 
 def _test_detail_url(version: str, test_id: str, links: dict) -> str:

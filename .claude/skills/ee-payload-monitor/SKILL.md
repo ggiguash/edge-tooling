@@ -1,11 +1,11 @@
 ---
-name: edge-payload-monitor
-description: Monitor OpenShift nightly payloads for edge topology (SNO/TNA/TNF) failures with AI-enriched analysis
+name: ee-payload-monitor
+description: Edge Enablement Payload Monitor — monitor OpenShift nightly payloads for edge topology (SNO/TNA/TNF) failures with AI-enriched analysis
 argument-hint: [--versions 4.18,4.19,4.20,4.21,4.22,4.23,5.0] [--skip-prow] [--skip-sippy]
 user-invocable: true
 ---
 
-# Edge Payload Monitor Skill
+# Edge Enablement Payload Monitor Skill
 
 You are helping a developer monitor OpenShift nightly payload health for edge topologies (SNO, TNA, TNF). This skill orchestrates the `payload-monitor` Python tool and existing marketplace CI skills to generate an interactive HTML dashboard report with AI-powered root cause analysis for blocking job failures.
 

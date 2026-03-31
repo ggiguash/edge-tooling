@@ -1,6 +1,5 @@
 """Search JIRA for existing bugs related to edge topology failures."""
 
-import base64
 import logging
 import os
 import urllib.parse
@@ -24,17 +23,11 @@ _session = create_session()
 def _get_headers() -> dict:
     """Get request headers with auth if available.
 
-    Supports two auth modes:
-    - JIRA_TOKEN alone: Bearer token (Atlassian Cloud PAT)
-    - JIRA_EMAIL + JIRA_TOKEN: Basic auth (email + API token)
+    Uses JIRA_TOKEN as a Bearer token (Atlassian Cloud PAT).
     """
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     token = os.environ.get("JIRA_TOKEN")
-    email = os.environ.get("JIRA_EMAIL")
-    if email and token:
-        creds = base64.b64encode(f"{email}:{token}".encode()).decode()
-        headers["Authorization"] = f"Basic {creds}"
-    elif token:
+    if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
 

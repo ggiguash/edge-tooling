@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Edge Payload Monitor</title>
+  <title>Edge Enablement Payload Monitor</title>
   <style>{{ css | safe }}</style>
 </head>
 <body>
 
 <div class="header">
   <div>
-    <h1>Edge Payload Monitor</h1>
+    <h1>Edge Enablement Payload Monitor</h1>
     <div class="meta">SNO / TNA / TNF topology health across OpenShift nightly payloads</div>
   </div>
   <div style="text-align:right">
@@ -340,8 +340,8 @@
 
 <!-- Sippy Regressions -->
 {% if all_regressions %}
-<h2>Sippy Job Regressions</h2>
-<div class="meta" style="margin-bottom:8px">Source: <a href="https://sippy.dptools.openshift.org" target="_blank">Sippy Jobs</a> — jobs with pass rate drop &gt;10% or below 80% (≥3 runs). Jobs with fewer than 3 runs are excluded due to insufficient data.</div>
+<h2>Sippy Job Regressions Status</h2>
+<div class="meta" style="margin-bottom:8px">Source: <a href="https://sippy.dptools.openshift.org" target="_blank">Sippy Jobs</a> — jobs with net improvement drop &gt;10% or pass rate below 80% (≥5 runs). Jobs with fewer than 3 runs are excluded due to insufficient data.</div>
 <div class="filters">
   <span style="color:var(--text-muted);font-size:12px;padding:4px 0">Topology:</span>
   <button class="filter-btn active" data-group="regtopology" data-value="all">All</button>
