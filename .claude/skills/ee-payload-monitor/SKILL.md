@@ -1,7 +1,7 @@
 ---
 name: ee-payload-monitor
 description: Edge Enablement Payload Monitor — monitor OpenShift nightly payloads for edge topology (SNO/TNA/TNF) failures with AI-enriched analysis
-argument-hint: [--versions 4.18,4.19,4.20,4.21,4.22,4.23,5.0] [--skip-prow] [--skip-sippy]
+argument-hint: [--versions 4.18,4.19,4.20,4.21,4.22,4.23,5.0] [--skip-prow] [--skip-sippy] [--skip-timing]
 user-invocable: true
 ---
 
@@ -54,6 +54,7 @@ Parse `$ARGUMENTS` to determine options:
 - **`--versions X,Y,Z`**: Override which OCP versions to monitor (e.g., `--versions 4.18,4.19`)
 - **`--skip-prow`**: Skip Prow artifact fetching (faster, less detail)
 - **`--skip-sippy`**: Skip Sippy regression check
+- **`--skip-timing`**: Skip install/upgrade timing collection
 - If `$ARGUMENTS` is empty: use defaults (all configured versions)
 
 ### Step 2: Install Prerequisites (if needed)
@@ -74,7 +75,7 @@ Run the payload monitor Python tool to collect data and generate the base report
 cd payload-monitor && .venv/bin/python -m payload_monitor --output reports/report-$(date +%Y-%m-%d).html [OPTIONS]
 ```
 
-Pass through any relevant flags (`--versions`, `--skip-prow`, `--skip-sippy`).
+Pass through any relevant flags (`--versions`, `--skip-prow`, `--skip-sippy`, `--skip-timing`).
 
 **Important:** If a report with the same filename already exists, the tool automatically appends a timestamp (e.g., `report-2026-03-25-143027.html`). Capture the actual output path from the tool's log line:
 - `Report: /path/to/report-{name}.html`

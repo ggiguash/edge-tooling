@@ -1,5 +1,7 @@
 """Data models for payload monitoring."""
 
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -86,6 +88,14 @@ class Payload:
     def failing_edge_jobs(self) -> list[JobRun]:
         return [j for j in self.jobs if j.result == JobResult.FAILURE]
 
+    @property
+    def blocking_edge_failures(self) -> list[JobRun]:
+        return [j for j in self.jobs if j.result == JobResult.FAILURE and j.job_type == JobType.BLOCKING]
+
+    @property
+    def informing_edge_failures(self) -> list[JobRun]:
+        return [j for j in self.jobs if j.result == JobResult.FAILURE and j.job_type == JobType.INFORMING]
+
 
 @dataclass
 class Regression:
@@ -164,6 +174,14 @@ class StreamReport:
     def total_edge_failures(self) -> int:
         return sum(len(p.failing_edge_jobs) for p in self.payloads)
 
+    @property
+    def total_blocking_edge_failures(self) -> int:
+        return sum(len(p.blocking_edge_failures) for p in self.payloads)
+
+    @property
+    def total_informing_edge_failures(self) -> int:
+        return sum(len(p.informing_edge_failures) for p in self.payloads)
+
 
 @dataclass
 class MonitorReport:
@@ -175,4 +193,46 @@ class MonitorReport:
     skip_prow: bool = False
     skip_sippy: bool = False
     skip_jira: bool = False
+    skip_timing: bool = False
+    timing_report: Optional[TimingReport] = None
     data_errors: list[str] = field(default_factory=list)
+
+
+@dataclass
+class TimingRun:
+    job_name: str
+    topology: str
+    release: str
+    start_time: str
+    duration_seconds: int
+    result: str  # "S" or "F"
+    run_type: str  # "install" or "upgrade"
+    variant: dict = field(default_factory=dict)
+    step_durations: dict[str, float] = field(default_factory=dict)
+
+    @property
+    def is_success(self) -> bool:
+        return self.result == "S"
+
+    @property
+    def duration_minutes(self) -> float:
+        return self.duration_seconds / 60.0
+
+    @property
+    def install_duration_seconds(self) -> float:
+        """Return install step duration if available, else 0."""
+        for key in ("install", "setup"):
+            if key in self.step_durations:
+                return self.step_durations[key]
+        return 0.0
+
+
+@dataclass
+class TimingReport:
+    last_updated: str = ""
+    runs: dict[str, TimingRun] = field(default_factory=dict)
+    phase_durations: dict[str, dict[str, float]] = field(default_factory=dict)
+
+    @property
+    def successful_runs(self) -> list[TimingRun]:
+        return [r for r in self.runs.values() if r.is_success]

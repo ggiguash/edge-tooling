@@ -30,7 +30,18 @@
   </div>
 </div>
 
-{% if report.skip_prow or report.skip_sippy or report.skip_jira %}
+<!-- Tab Navigation -->
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="payload-health">Payload Health</button>
+  {% if timing_html %}
+  <button class="tab-btn" data-tab="timing-insights">Timing Insights</button>
+  {% endif %}
+</div>
+
+<!-- Tab: Payload Health -->
+<div class="tab-panel active" id="tab-payload-health">
+
+{% if report.skip_prow or report.skip_sippy or report.skip_jira or report.skip_timing %}
 <div class="skip-banner">
   <strong>Note:</strong> This report was generated with limited data.
   {% if report.skip_prow %}
@@ -40,7 +51,10 @@
   <span class="skip-flag">--skip-sippy</span> Sippy regression check was skipped — Sippy Job Regressions section is not available.
   {% endif %}
   {% if report.skip_jira %}
-  <span class="skip-flag">JIRA_TOKEN</span> not set - JIRA integration is disabled. Set the <code>JIRA_TOKEN</code> env variable to enable related JIRA Bugs and Bug matching.
+  <span class="skip-flag">JIRA</span> integration is temporarily disabled (work in progress). Bug matching and suggested bugs sections are not available.
+  {% endif %}
+  {% if report.skip_timing %}
+  <span class="skip-flag">Insights</span> Timing insights are disabled by default. Use <code>--with-timing</code> to include install/upgrade timing data.
   {% endif %}
 </div>
 {% endif %}
@@ -56,62 +70,126 @@
 </div>
 {% endif %}
 
-<!-- Overview: Timeline + Summary Cards side by side -->
-<div class="overview-layout">
-  <div class="overview-left">
-    <h2 style="margin-top:0">Payload Timeline</h2>
-    <div class="timeline">
-      {% for stream in report.streams %}
-      <div class="timeline-row">
-        <div class="timeline-label">{{ stream.version }}</div>
-        <div class="timeline-dots">
-          {% for payload in stream.payloads | reverse %}
-          <a href="{{ payload.url }}" target="_blank"
-             class="timeline-dot {{ payload.status.value | lower }}"
-             title="{{ payload.tag }} — {{ payload.status.value }}">
-            <span class="tooltip">
-              {{ payload.tag }}<br>
-              {{ payload.status.value }}
-              {% if payload.failing_edge_jobs %}
-              <br>{{ payload.failing_edge_jobs | length }} edge failure{{ 's' if payload.failing_edge_jobs | length != 1 else '' }}
-              {% endif %}
-            </span>
-            {{ 'A' if payload.status.value == 'Accepted' else 'R' if payload.status.value == 'Rejected' else 'P' }}
-          </a>
+<!-- Edge Enablement Jobs Health Overview -->
+<h2 style="margin-top:0">Edge Enablement Jobs Health Overview</h2>
+<div class="health-overview">
+  <div class="health-header">
+    <div class="health-header-left">Version</div>
+    <div class="health-header-status">Status</div>
+    <div class="health-header-counts">Blocking / Informing</div>
+    <div class="health-header-topos">Topology</div>
+    <div class="health-header-trend">Trend</div>
+    <div class="health-header-timeline">
+      <span>Payload History</span>
+      <span class="time-arrow">older &#8594; newer</span>
+    </div>
+  </div>
+  {% for stream in report.streams %}
+  {% set latest = stream.latest_payload %}
+  {% set blocking_count = stream.total_blocking_edge_failures %}
+  {% set informing_count = stream.total_informing_edge_failures %}
+  {# Collect affected topologies #}
+  {% set affected_topos = [] %}
+  {% for p in stream.payloads %}
+    {% for j in p.failing_edge_jobs %}
+      {% if j.topology and j.topology not in affected_topos %}
+        {% if affected_topos.append(j.topology) %}{% endif %}
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+  {# Compute trend: compare recent half vs older half #}
+  {% set mid = (stream.payloads | length // 2) | int %}
+  {% set recent_fails = namespace(count=0) %}
+  {% set older_fails = namespace(count=0) %}
+  {% for p in stream.payloads %}
+    {% if loop.index0 < mid %}
+      {% set recent_fails.count = recent_fails.count + (p.blocking_edge_failures | length) + (p.informing_edge_failures | length) %}
+    {% else %}
+      {% set older_fails.count = older_fails.count + (p.blocking_edge_failures | length) + (p.informing_edge_failures | length) %}
+    {% endif %}
+  {% endfor %}
+  <div class="health-row">
+    <div class="health-version">{{ stream.version }}</div>
+    <div class="health-status {% if blocking_count > 0 %}critical clickable{% elif informing_count > 0 %}warning clickable{% else %}healthy{% endif %}"
+         {% if blocking_count > 0 or informing_count > 0 %}onclick="jumpToFailures('{{ stream.version }}')" title="View all edge failures for {{ stream.version }}"{% endif %}>
+      {% if blocking_count > 0 %}Critical{% elif informing_count > 0 %}Warning{% else %}Healthy{% endif %}
+    </div>
+    <div class="health-counts">
+      {% if latest %}
+      {% if blocking_count > 0 %}
+      <a class="health-count red clickable" onclick="jumpToFailures('{{ stream.version }}','blocking')" title="View blocking failures for {{ stream.version }}">{{ blocking_count }}</a>
+      {% else %}
+      <span class="health-count">{{ blocking_count }}</span>
+      {% endif %}
+      <span class="health-count-sep">/</span>
+      {% if informing_count > 0 %}
+      <a class="health-count yellow clickable" onclick="jumpToFailures('{{ stream.version }}','informing')" title="View informing failures for {{ stream.version }}">{{ informing_count }}</a>
+      {% else %}
+      <span class="health-count">{{ informing_count }}</span>
+      {% endif %}
+      {% else %}
+      <span class="health-count" style="color:var(--text-muted)">&mdash;</span>
+      {% endif %}
+    </div>
+    <div class="health-topos">
+      {% for t in affected_topos | sort %}
+      <span class="badge {{ t | lower }}">{{ t }}</span>
+      {% endfor %}
+      {% if not affected_topos %}
+      <span style="color:var(--text-muted);font-size:12px">&mdash;</span>
+      {% endif %}
+    </div>
+    <div class="health-trend">
+      {% if blocking_count == 0 and informing_count == 0 %}
+      <span class="trend-indicator stable" title="No failures">&#9644;</span>
+      {% elif recent_fails.count > older_fails.count %}
+      <span class="trend-indicator worsening" title="More failures in recent payloads ({{ recent_fails.count }} recent vs {{ older_fails.count }} older)">&#9660; worsening</span>
+      {% elif recent_fails.count < older_fails.count %}
+      <span class="trend-indicator improving" title="Fewer failures in recent payloads ({{ recent_fails.count }} recent vs {{ older_fails.count }} older)">&#9650; improving</span>
+      {% else %}
+      <span class="trend-indicator stable" title="Failure rate unchanged ({{ recent_fails.count }} in each half)">&#9644; stable</span>
+      {% endif %}
+    </div>
+    <div class="health-timeline">
+      {% for payload in stream.payloads | reverse %}
+      {% set b_fails = payload.blocking_edge_failures %}
+      {% set i_fails = payload.informing_edge_failures %}
+      <a href="{{ payload.url }}" target="_blank"
+         class="timeline-dot {% if b_fails %}edge-critical{% elif i_fails %}edge-warning{% elif payload.status.value == 'Rejected' %}rejected-noedge{% else %}edge-healthy{% endif %}"
+         title="{{ payload.tag }}">
+        <span class="tooltip">
+          {{ payload.tag }}<br>
+          Payload: {{ payload.status.value }}
+          {% if b_fails %}
+          <br><strong>{{ b_fails | length }} blocking edge failure{{ 's' if b_fails | length != 1 else '' }}:</strong>
+          {% for j in b_fails %}
+          <br>&#9656; {{ j.name }} ({{ j.topology }})
           {% endfor %}
-        </div>
-      </div>
+          {% endif %}
+          {% if i_fails %}
+          <br>{{ i_fails | length }} informing edge failure{{ 's' if i_fails | length != 1 else '' }}
+          {% endif %}
+          {% if not b_fails and not i_fails and payload.status.value == 'Rejected' %}
+          <br>Rejected for non-edge reasons
+          {% endif %}
+          {% if not b_fails and not i_fails and payload.status.value == 'Accepted' %}
+          <br>All edge jobs passing
+          {% endif %}
+        </span>
+        {{ 'A' if payload.status.value == 'Accepted' else 'R' if payload.status.value == 'Rejected' else 'P' }}
+      </a>
       {% endfor %}
     </div>
   </div>
-  <div class="overview-right">
-    <h2 style="margin-top:0">Version Status</h2>
-    <div class="summary-grid">
-      {% for stream in report.streams %}
-      {% set latest = stream.latest_payload %}
-      {% set failing_count = stream.total_edge_failures %}
-      <div class="summary-card">
-        <div class="version">{{ stream.version }}</div>
-        {% if latest %}
-        <div class="status {% if failing_count == 0 %}healthy{% elif failing_count <= 2 %}degraded{% else %}failing{% endif %}">
-          {% if failing_count == 0 %}Healthy{% elif failing_count <= 2 %}Degraded{% else %}Failing{% endif %}
-        </div>
-        <div class="detail">
-          Latest: <span style="color:{% if latest.status.value == 'Accepted' %}var(--green){% elif latest.status.value == 'Rejected' %}var(--red){% else %}var(--text-muted){% endif %}">{{ latest.status.value }}</span>
-          <br>{{ failing_count }} edge failure{{ 's' if failing_count != 1 else '' }} in last {{ stream.payloads | length }} builds
-        </div>
-        {% else %}
-        <div class="status">No data</div>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
-    <div class="status-legend">
-      <span class="legend-item"><span class="legend-dot healthy"></span> Healthy: 0 edge failures</span>
-      <span class="legend-item"><span class="legend-dot degraded"></span> Degraded: 1–2 edge failures</span>
-      <span class="legend-item"><span class="legend-dot failing"></span> Failing: 3+ edge failures</span>
-      <span class="legend-hint">Edge failures counted across last {{ report.streams[0].payloads | length if report.streams else 5 }} payloads per stream</span>
-    </div>
+  {% endfor %}
+  <div class="health-legend">
+    <span class="health-legend-colors">
+      <span><span style="color:var(--green)">&#9679;</span> no edge issues</span>
+      <span><span style="color:var(--yellow)">&#9679;</span> informing failures</span>
+      <span><span style="color:var(--red)">&#9679;</span> blocking failures</span>
+      <span><span style="color:var(--text-muted)">&#9679;</span> non-edge rejection</span>
+    </span>
+    <span class="health-legend-note">across last {{ report.streams[0].payloads | length if report.streams else 5 }} payloads per stream</span>
   </div>
 </div>
 
@@ -144,65 +222,77 @@
   <h2 style="border-bottom:none;margin-top:0;padding-bottom:0">Findings Summary</h2>
 
   {% if ns.total_failures == 0 and ns.regression_count == 0 and ns.component_regression_count == 0 %}
-  <div class="finding healthy">
+  <div class="fs-healthy-banner">
     All edge jobs are passing across all monitored payloads. No regressions detected.
   </div>
   {% else %}
 
-  {% if ns.total_failures > 0 %}
-  <div class="finding {% if ns.blocking_failures > 0 %}critical{% else %}warning{% endif %}">
-    <strong>{{ ns.total_failures }} edge job failure{{ 's' if ns.total_failures != 1 else '' }}</strong> detected
-    ({{ ns.blocking_failures }} blocking, {{ ns.informing_failures }} informing)
-    across {{ ns.total_payloads }} payload{{ 's' if ns.total_payloads != 1 else '' }}.
-    {% if ns.rejected_payloads > 0 %}
-    <strong>{{ ns.rejected_payloads }} payload{{ 's' if ns.rejected_payloads != 1 else '' }} rejected.</strong>
-    {% endif %}
+  {% set priority = namespace(n=0) %}
+
+  {# P1: Blocking failures — highest priority #}
+  {% if ns.blocking_failures > 0 %}
+  {% set priority.n = priority.n + 1 %}
+  <div class="fs-priority-item fs-priority-critical">
+    <div class="fs-priority-header">
+      <span class="fs-priority-badge fs-badge-critical">P{{ priority.n }}</span>
+      <span class="fs-priority-title">{{ ns.blocking_failures }} Blocking Failure{{ 's' if ns.blocking_failures != 1 else '' }}</span>
+      <span class="fs-priority-meta">{{ ns.rejected_payloads }} payload{{ 's' if ns.rejected_payloads != 1 else '' }} rejected — prevents payload acceptance</span>
+      <a class="fs-action-chip fs-action-critical" onclick="jumpToFailures(null,'blocking')">Investigate &#8594;</a>
+    </div>
+    {# AI analysis sub-items injected here by JS #}
+    <div id="ai-highlights-container"></div>
   </div>
   {% endif %}
 
+  {# P2: Informing failures #}
+  {% if ns.informing_failures > 0 %}
+  {% set priority.n = priority.n + 1 %}
+  <div class="fs-priority-item fs-priority-warning">
+    <div class="fs-priority-header">
+      <span class="fs-priority-badge fs-badge-warning">P{{ priority.n }}</span>
+      <span class="fs-priority-title">{{ ns.informing_failures }} Informing Failure{{ 's' if ns.informing_failures != 1 else '' }}</span>
+      <span class="fs-priority-meta">across {{ ns.total_payloads }} payload{{ 's' if ns.total_payloads != 1 else '' }} — not blocking yet, may escalate</span>
+      <a class="fs-action-chip" onclick="jumpToFailures(null,'informing')">Monitor &#8594;</a>
+    </div>
+  </div>
+  {% endif %}
+
+  {# P3: Sippy regressions #}
   {% if ns.regression_count > 0 %}
-  <div class="finding warning">
-    <strong>{{ ns.regression_count }} Sippy regression{{ 's' if ns.regression_count != 1 else '' }}</strong> detected with significant pass rate drops.
+  {% set priority.n = priority.n + 1 %}
+  <div class="fs-priority-item fs-priority-warning">
+    <div class="fs-priority-header">
+      <span class="fs-priority-badge fs-badge-warning">P{{ priority.n }}</span>
+      <span class="fs-priority-title">{{ ns.regression_count }} Sippy Regression{{ 's' if ns.regression_count != 1 else '' }}</span>
+      <span class="fs-priority-meta">significant pass rate drops detected</span>
+      <a class="fs-action-chip" href="#section-sippy-regressions">Triage &#8594;</a>
+    </div>
   </div>
   {% endif %}
 
+  {# P4: Component regressions #}
   {% if ns.component_regression_count > 0 %}
-  <div class="finding warning">
-    <strong>{{ ns.component_regression_count }} component regression{{ 's' if ns.component_regression_count != 1 else '' }}</strong> on Single Node vs HA topology (see Component Readiness section below).
+  {% set priority.n = priority.n + 1 %}
+  <div class="fs-priority-item fs-priority-info">
+    <div class="fs-priority-header">
+      <span class="fs-priority-badge fs-badge-info">P{{ priority.n }}</span>
+      <span class="fs-priority-title">{{ ns.component_regression_count }} Component Regression{{ 's' if ns.component_regression_count != 1 else '' }}</span>
+      <span class="fs-priority-meta">SNO underperforming vs HA topology</span>
+      <a class="fs-action-chip" href="#section-component-readiness">Review &#8594;</a>
+    </div>
   </div>
   {% endif %}
 
-  <div class="finding actions">
-    <strong>Suggested Actions:</strong>
-    <ul>
-      {% if ns.blocking_failures > 0 %}
-      <li>Investigate <strong>blocking job failures</strong> immediately — these prevent payload acceptance.</li>
-      {% endif %}
-      {% if ns.bugs_suggested > 0 %}
-      <li>File <strong>{{ ns.bugs_suggested }} suggested JIRA bug{{ 's' if ns.bugs_suggested != 1 else '' }}</strong> for untracked failures (see Suggested New Bugs section below).</li>
-      {% endif %}
-      {% if ns.bugs_found > 0 %}
-      <li>Review <strong>{{ ns.bugs_found }} existing JIRA bug{{ 's' if ns.bugs_found != 1 else '' }}</strong> for progress updates.</li>
-      {% endif %}
-      {% if ns.regression_count > 0 %}
-      <li>Triage <strong>Sippy regressions</strong> — check if they correspond to known issues or need new bugs filed.</li>
-      {% endif %}
-      {% if ns.component_regression_count > 0 %}
-      <li>Review <strong>{{ ns.component_regression_count }} component regression{{ 's' if ns.component_regression_count != 1 else '' }}</strong> where Single Node is underperforming compared to HA.</li>
-      {% endif %}
-      {% if ns.informing_failures > 0 and ns.blocking_failures == 0 %}
-      <li>Monitor <strong>informing job failures</strong> — not blocking yet but may escalate.</li>
-      {% endif %}
-      {% if ns.total_failures == 0 and ns.regression_count > 0 %}
-      <li>Review Sippy regressions to determine if they indicate emerging issues.</li>
-      {% endif %}
-    </ul>
-  </div>
+  {# No blocking failures — AI container still needed for JS, placed hidden #}
+  {% if ns.blocking_failures == 0 %}
+  <div id="ai-highlights-container" style="display:none"></div>
+  {% endif %}
+
   {% endif %}
 </div>
 
 <!-- Filters -->
-<h2>Nightly Payload — Edge Job Failures <span style="font-weight:normal;color:var(--text-muted);font-size:13px">(<span id="visible-count">{{ all_failing | length }}</span> total)</span></h2>
+<h2 id="section-edge-failures">Nightly Payload — Edge Job Failures <span style="font-weight:normal;color:var(--text-muted);font-size:13px">(<span id="visible-count">{{ all_failing | length }}</span> total)</span></h2>
 
 {% if all_failing %}
 <div class="filters">
@@ -340,7 +430,7 @@
 
 <!-- Sippy Regressions -->
 {% if all_regressions %}
-<h2>Sippy Job Regressions Status</h2>
+<h2 id="section-sippy-regressions">Sippy Job Regressions Status</h2>
 <div class="meta" style="margin-bottom:8px">Source: <a href="https://sippy.dptools.openshift.org" target="_blank">Sippy Jobs</a> — jobs with net improvement drop &gt;10% or pass rate below 80% (≥5 runs). Jobs with fewer than 3 runs are excluded due to insufficient data.</div>
 <div class="filters">
   <span style="color:var(--text-muted);font-size:12px;padding:4px 0">Topology:</span>
@@ -398,7 +488,7 @@
 
 <!-- Component Readiness: HA vs Single Node -->
 {% if component_regressions %}
-<h2>Component Readiness — HA vs Single Node</h2>
+<h2 id="section-component-readiness">Component Readiness — HA vs Single Node</h2>
 <div class="meta" style="margin-bottom:8px">
   Source: <a href="https://sippy.dptools.openshift.org/sippy-ng/component_readiness/main" target="_blank">Sippy Component Readiness</a> — components with statistically significant regressions on Single Node compared to HA topology (Fisher's exact test, 95% confidence).
 </div>
@@ -474,7 +564,7 @@
 
 <!-- JIRA Bugs -->
 {% if report.jira_bugs %}
-<h2>Related JIRA Bugs</h2>
+<h2 id="section-jira-bugs">Related JIRA Bugs</h2>
 {% for bug in report.jira_bugs %}
 <div class="jira-card">
   <div>
@@ -495,7 +585,7 @@
 
 <!-- Suggested Bugs -->
 {% if report.suggested_bugs %}
-<h2>Suggested New Bugs</h2>
+<h2 id="section-suggested-bugs">Suggested New Bugs</h2>
 <div class="meta" style="margin-bottom:8px">Failing edge jobs (SNO/TNA/TNF) with no existing JIRA bug matching the job name. Deduplicated by job name across payloads and versions.</div>
 {% for bug in report.suggested_bugs %}
 <div class="suggest-card">
@@ -532,6 +622,15 @@
   </div>
 </div>
 {% endfor %}
+{% endif %}
+
+</div><!-- /tab-payload-health -->
+
+<!-- Tab: Timing Insights -->
+{% if timing_html %}
+<div class="tab-panel" id="tab-timing-insights">
+{{ timing_html | safe }}
+</div>
 {% endif %}
 
 <script>{{ js | safe }}</script>

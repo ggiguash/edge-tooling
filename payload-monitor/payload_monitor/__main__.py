@@ -10,7 +10,7 @@ from pathlib import Path
 import click
 
 from .analyzer import analyze
-from .collectors import component_readiness, prow, sippy
+from .collectors import component_readiness, prow, sippy, timing
 from .collectors.release_controller import collect as collect_payloads, discover_streams
 from .config import Config
 from .models import JobResult, JobType, MonitorReport
@@ -69,11 +69,14 @@ def _collect_blocking_jobs(report: MonitorReport) -> list[dict]:
               help="Skip Prow artifact fetching (faster, less detail)")
 @click.option("--skip-sippy", is_flag=True, default=False,
               help="Skip Sippy regression and Component Readiness checks")
+@click.option("--with-timing", is_flag=True, default=False,
+              help="Include install/upgrade timing insights (disabled by default)")
 @click.option("--merge-analysis", "merge_analysis_path", type=click.Path(exists=True), default=None,
               help="Merge analysis JSON into an existing HTML report (or into --from-json data)")
 def main(
     versions, output_path, from_json, export_json,
-    open_browser, verbose, skip_prow, skip_sippy, merge_analysis_path,
+    open_browser, verbose, skip_prow, skip_sippy, with_timing,
+    merge_analysis_path,
 ):
     """Edge Enablement Payload Monitor — monitor OpenShift nightly payloads for edge topology failures."""
     _setup_logging(verbose)
@@ -142,12 +145,19 @@ def main(
     # Component Readiness are all independent once the version list is known.
     logger.info("Step 2: Collecting data (RC payloads, Sippy, Component Readiness)...")
     data_errors = []
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    timing_report = None
+    with ThreadPoolExecutor(max_workers=4) as pool:
         rc_future = pool.submit(collect_payloads, config, stream_names)
 
         if not skip_sippy:
             sippy_future = pool.submit(sippy.collect, config, active_versions)
             cr_future = pool.submit(component_readiness.collect, active_versions)
+
+        if with_timing:
+            cache_path = Path(config.report_dir) / "timing_cache.json"
+            timing_future = pool.submit(
+                timing.collect, config, active_versions, cache_path, days=7,
+            )
 
         try:
             stream_reports = rc_future.result()
@@ -179,6 +189,15 @@ def main(
             logger.info("  Skipping Sippy/Component Readiness (--skip-sippy)")
             comp_regs = []
 
+        if with_timing:
+            try:
+                timing_report = timing_future.result()
+            except Exception as e:
+                logger.error(f"Timing collection failed: {e}")
+                data_errors.append(f"Timing: {e}")
+        else:
+            logger.info("  Skipping timing collection (use --with-timing to enable)")
+
     # Step 3: Enrich failing jobs with Prow data
     if not skip_prow:
         logger.info("Step 3: Fetching Prow artifacts for failing jobs...")
@@ -196,12 +215,18 @@ def main(
         component_regressions=comp_regs,
         skip_prow=skip_prow,
         skip_sippy=skip_sippy,
+        skip_timing=not with_timing,
+        timing_report=timing_report,
         data_errors=data_errors,
     )
 
     # Step 4: Analyze and find JIRA matches
-    logger.info("Step 4: Analyzing failures and searching JIRA...")
-    analyze(report, config)
+    # TODO: JIRA integration is temporarily disabled (work in progress).
+    # Uncomment the lines below to re-enable:
+    # logger.info("Step 4: Analyzing failures and searching JIRA...")
+    # analyze(report, config)
+    report.skip_jira = True
+    logger.info("Step 4: Skipping JIRA analysis (temporarily disabled — work in progress)")
 
     # Generate HTML report
     generate_html(report, html_path)

@@ -25,6 +25,7 @@ from ..models import (
     StreamReport,
     SuggestedBug,
 )
+from .timing_section import render_timing_section
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,11 @@ def _build_template_context(report: MonitorReport) -> dict:
     ))
     versions = sorted(set(stream.version for stream in report.streams))
 
+    # Generate timing HTML if available
+    timing_html = ""
+    if report.timing_report and not report.skip_timing:
+        timing_html = render_timing_section(report.timing_report)
+
     return {
         "report": report,
         "all_failing": all_failing,
@@ -104,6 +110,7 @@ def _build_template_context(report: MonitorReport) -> dict:
         "reg_versions": sorted(set(
             r.version for r in all_regressions if r.version
         )),
+        "timing_html": timing_html,
     }
 
 

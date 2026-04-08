@@ -14,6 +14,17 @@ TOPOLOGIES = [
     Topology("TNF", ["tnf", "fencing"], ["telco"], "Two Node Fencing"),
 ]
 
+INSTALL_PHASES = [
+    "install should succeed: cluster bootstrap",
+    "install should succeed: cluster creation",
+    "install should succeed: infrastructure",
+    "install should succeed: configuration",
+    "install should succeed: cluster operator stability",
+    "install should succeed: pre configuration",
+    "install should succeed: post check",
+    "install should succeed: overall",
+]
+
 JIRA_PROJECT = "OCPBUGS"
 PAYLOADS_PER_STREAM = 5
 REPORT_DIR = "./reports"

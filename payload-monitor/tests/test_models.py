@@ -116,6 +116,54 @@ class TestEnums:
         assert JobType.INFORMING.value == "informing"
 
 
+class TestPayloadEdgeFailureTypes:
+    def test_blocking_edge_failures(self):
+        blocking_fail = JobRun("j1", "", JobResult.FAILURE, JobType.BLOCKING, "SNO")
+        informing_fail = JobRun("j2", "", JobResult.FAILURE, JobType.INFORMING, "TNA")
+        blocking_pass = JobRun("j3", "", JobResult.SUCCESS, JobType.BLOCKING, "SNO")
+        payload = Payload("tag", "stream", "4.19", PayloadStatus.REJECTED,
+                          jobs=[blocking_fail, informing_fail, blocking_pass])
+        assert payload.blocking_edge_failures == [blocking_fail]
+
+    def test_informing_edge_failures(self):
+        blocking_fail = JobRun("j1", "", JobResult.FAILURE, JobType.BLOCKING, "SNO")
+        informing_fail = JobRun("j2", "", JobResult.FAILURE, JobType.INFORMING, "TNA")
+        payload = Payload("tag", "stream", "4.19", PayloadStatus.REJECTED,
+                          jobs=[blocking_fail, informing_fail])
+        assert payload.informing_edge_failures == [informing_fail]
+
+    def test_no_failures(self):
+        job = JobRun("j1", "", JobResult.SUCCESS, JobType.BLOCKING, "SNO")
+        payload = Payload("tag", "stream", "4.19", PayloadStatus.ACCEPTED, jobs=[job])
+        assert payload.blocking_edge_failures == []
+        assert payload.informing_edge_failures == []
+
+
+class TestStreamReportEdgeFailureTypes:
+    def test_total_blocking_and_informing(self):
+        b_fail = JobRun("j1", "", JobResult.FAILURE, JobType.BLOCKING, "SNO")
+        i_fail = JobRun("j2", "", JobResult.FAILURE, JobType.INFORMING, "TNA")
+        p1 = Payload("t1", "s", "4.19", PayloadStatus.REJECTED, jobs=[b_fail, i_fail])
+        p2 = Payload("t2", "s", "4.19", PayloadStatus.REJECTED, jobs=[b_fail])
+        stream = StreamReport("s", "4.19", payloads=[p1, p2])
+        assert stream.total_blocking_edge_failures == 2
+        assert stream.total_informing_edge_failures == 1
+
+    def test_no_failures(self):
+        job = JobRun("j1", "", JobResult.SUCCESS, JobType.BLOCKING, "SNO")
+        payload = Payload("t1", "s", "4.19", PayloadStatus.ACCEPTED, jobs=[job])
+        stream = StreamReport("s", "4.19", payloads=[payload])
+        assert stream.total_blocking_edge_failures == 0
+        assert stream.total_informing_edge_failures == 0
+
+    def test_informing_only(self):
+        i_fail = JobRun("j1", "", JobResult.FAILURE, JobType.INFORMING, "SNO")
+        payload = Payload("t1", "s", "4.19", PayloadStatus.ACCEPTED, jobs=[i_fail])
+        stream = StreamReport("s", "4.19", payloads=[payload])
+        assert stream.total_blocking_edge_failures == 0
+        assert stream.total_informing_edge_failures == 1
+
+
 class TestDataclassDefaults:
     def test_job_run_defaults(self):
         job = JobRun("name", "url", JobResult.SUCCESS, JobType.BLOCKING)

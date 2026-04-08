@@ -1,3 +1,16 @@
+// Tab switching
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+      document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+      btn.classList.add('active');
+      var panel = document.getElementById('tab-' + btn.dataset.tab);
+      if (panel) panel.classList.add('active');
+    });
+  });
+});
+
 // Filter functionality
 document.addEventListener('DOMContentLoaded', function() {
   const filterBtns = document.querySelectorAll('.filter-btn');
@@ -5,6 +18,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const detailRows = document.querySelectorAll('.detail-row');
   const crRows = document.querySelectorAll('.cr-row');
   const regressionRows = document.querySelectorAll('.regression-row');
+  const timingRows = document.querySelectorAll('.timing-row');
 
   // Track active filters per group
   const activeFilters = {};
@@ -46,25 +60,59 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
-  function applyFilters() {
-    // When filters are active, expand all to show filtered results
-    const hasFilters = Object.keys(activeFilters).length > 0;
-    if (hasFilters) {
-      sectionsCollapsed.jobs = false;
-      sectionsCollapsed.details = false;
-      sectionsCollapsed.regressions = false;
-      sectionsCollapsed.cr = false;
-      applyCollapse();
-      const jobsBtn = document.getElementById('expand-jobs-btn');
-      const detailsBtn = document.getElementById('expand-details-btn');
-      const regressionsBtn = document.getElementById('expand-regressions-btn');
-      const crBtn = document.getElementById('expand-cr-btn');
-      if (jobsBtn) jobsBtn.textContent = 'Show top ' + INITIAL_VISIBLE + ' only';
-      if (detailsBtn) detailsBtn.textContent = 'Show top ' + INITIAL_VISIBLE + ' only';
-      if (regressionsBtn) regressionsBtn.textContent = 'Show top ' + INITIAL_VISIBLE + ' only';
-      if (crBtn) crBtn.textContent = 'Show top ' + INITIAL_VISIBLE + ' only';
-    }
+  // Collapse rows beyond top 5 for jobs table and failure details
+  const INITIAL_VISIBLE = 5;
+  const sectionsCollapsed = { jobs: true, details: true, regressions: true, cr: true };
+  const sectionSelectors = { jobs: '.job-row', details: '.detail-row', regressions: '.regression-row', cr: '.cr-row' };
+  const sectionLabels = { jobs: ' failing jobs', details: ' failure details', regressions: ' regressions', cr: ' component regressions' };
 
+  // Count rows that pass the current filter (inline style.display is set by filters,
+  // collapsed-row class is separate — so style.display !== 'none' means "passes filter")
+  function countFiltered(selector) {
+    let count = 0;
+    document.querySelectorAll(selector).forEach(row => {
+      if (row.style.display !== 'none') count++;
+    });
+    return count;
+  }
+
+  function applyCollapse() {
+    Object.entries(sectionSelectors).forEach(([section, selector]) => {
+      let visibleIdx = 0;
+      document.querySelectorAll(selector).forEach(row => {
+        // Skip rows hidden by filters — don't count them toward the visible limit
+        if (row.style.display === 'none') {
+          row.classList.remove('collapsed-row');
+          return;
+        }
+        visibleIdx++;
+        if (sectionsCollapsed[section] && visibleIdx > INITIAL_VISIBLE) {
+          row.classList.add('collapsed-row');
+        } else {
+          row.classList.remove('collapsed-row');
+        }
+      });
+    });
+  }
+
+  function updateExpandButtons() {
+    Object.entries(sectionSelectors).forEach(([section, selector]) => {
+      const btn = document.getElementById('expand-' + section + '-btn');
+      if (!btn) return;
+      const filtered = countFiltered(selector);
+      if (filtered <= INITIAL_VISIBLE) {
+        // Not enough rows to need expand/collapse — hide the button
+        btn.style.display = 'none';
+        return;
+      }
+      btn.style.display = '';
+      btn.textContent = sectionsCollapsed[section]
+        ? 'Show all ' + filtered + (sectionLabels[section] || '')
+        : 'Show top ' + INITIAL_VISIBLE + ' only';
+    });
+  }
+
+  function applyFilters() {
     function isVisible(row) {
       for (const [group, values] of Object.entries(activeFilters)) {
         const rowValue = row.dataset[group];
@@ -91,68 +139,37 @@ document.addEventListener('DOMContentLoaded', function() {
       row.style.display = isVisible(row) ? '' : 'none';
     });
 
-    // Update counts
-    const visibleCount = document.querySelectorAll('.job-row:not([style*="display: none"])').length;
+    timingRows.forEach(row => {
+      row.style.display = isVisible(row) ? '' : 'none';
+    });
+
+    // When filters are active, expand all to show filtered results
+    const hasFilters = Object.keys(activeFilters).length > 0;
+    if (hasFilters) {
+      sectionsCollapsed.jobs = false;
+      sectionsCollapsed.details = false;
+      sectionsCollapsed.regressions = false;
+      sectionsCollapsed.cr = false;
+    }
+
+    applyCollapse();
+    updateExpandButtons();
+
+    // Update header count
+    const visibleCount = countFiltered('.job-row');
     const countEl = document.getElementById('visible-count');
     if (countEl) countEl.textContent = visibleCount;
   }
 
-  // Collapse rows beyond top 5 for jobs table and failure details
-  const INITIAL_VISIBLE = 5;
-  const sectionsCollapsed = { jobs: true, details: true, regressions: true, cr: true };
-
-  function applyCollapse() {
-    document.querySelectorAll('.job-row').forEach(row => {
-      const idx = parseInt(row.dataset.rowIndex);
-      if (sectionsCollapsed.jobs && idx > INITIAL_VISIBLE) {
-        row.classList.add('collapsed-row');
-      } else {
-        row.classList.remove('collapsed-row');
-      }
-    });
-    document.querySelectorAll('.detail-row').forEach(row => {
-      const idx = parseInt(row.dataset.rowIndex);
-      if (sectionsCollapsed.details && idx > INITIAL_VISIBLE) {
-        row.classList.add('collapsed-row');
-      } else {
-        row.classList.remove('collapsed-row');
-      }
-    });
-    document.querySelectorAll('.regression-row').forEach(row => {
-      const idx = parseInt(row.dataset.rowIndex);
-      if (sectionsCollapsed.regressions && idx > INITIAL_VISIBLE) {
-        row.classList.add('collapsed-row');
-      } else {
-        row.classList.remove('collapsed-row');
-      }
-    });
-    document.querySelectorAll('.cr-row').forEach(row => {
-      const idx = parseInt(row.dataset.rowIndex);
-      if (sectionsCollapsed.cr && idx > INITIAL_VISIBLE) {
-        row.classList.add('collapsed-row');
-      } else {
-        row.classList.remove('collapsed-row');
-      }
-    });
-  }
-
   // Apply initial collapse
   applyCollapse();
+  updateExpandButtons();
 
   // Toggle section expand/collapse (called from onclick)
-  const sectionSelectors = { jobs: '.job-row', details: '.detail-row', regressions: '.regression-row', cr: '.cr-row' };
-  const sectionLabels = { jobs: ' failing jobs', details: ' failure details', regressions: ' regressions', cr: ' component regressions' };
-
   window.expandSection = function(section) {
     sectionsCollapsed[section] = !sectionsCollapsed[section];
     applyCollapse();
-    const btn = document.getElementById('expand-' + section + '-btn');
-    if (btn) {
-      const total = document.querySelectorAll(sectionSelectors[section] || '.job-row').length;
-      btn.textContent = sectionsCollapsed[section]
-        ? 'Show all ' + total + (sectionLabels[section] || '')
-        : 'Show top ' + INITIAL_VISIBLE + ' only';
-    }
+    updateExpandButtons();
   };
 
   // "View Details" links: expand both sections, open the target detail, scroll to it
@@ -163,10 +180,7 @@ document.addEventListener('DOMContentLoaded', function() {
       sectionsCollapsed.jobs = false;
       sectionsCollapsed.details = false;
       applyCollapse();
-      const jobsBtn = document.getElementById('expand-jobs-btn');
-      const detailsBtn = document.getElementById('expand-details-btn');
-      if (jobsBtn) jobsBtn.textContent = 'Show top ' + INITIAL_VISIBLE + ' only';
-      if (detailsBtn) detailsBtn.textContent = 'Show top ' + INITIAL_VISIBLE + ' only';
+      updateExpandButtons();
 
       const targetId = this.getAttribute('href').substring(1);
       const detail = document.getElementById(targetId);
@@ -209,6 +223,7 @@ document.addEventListener('DOMContentLoaded', function() {
         tbody.appendChild(row);
       });
       applyCollapse();
+      updateExpandButtons();
     });
   });
 
@@ -268,6 +283,184 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     });
   });
+
+  // Jump to failures table with filters pre-applied
+  window.jumpToFailures = function(version, jobtype) {
+    // Reset all filters first
+    Object.keys(activeFilters).forEach(k => delete activeFilters[k]);
+    filterBtns.forEach(b => {
+      if (b.dataset.value === 'all') {
+        b.classList.add('active');
+      } else {
+        b.classList.remove('active');
+      }
+    });
+
+    // Activate version filter
+    if (version) {
+      const allBtn = document.querySelector('.filter-btn[data-group="version"][data-value="all"]');
+      const verBtn = document.querySelector('.filter-btn[data-group="version"][data-value="' + version + '"]');
+      if (allBtn) allBtn.classList.remove('active');
+      if (verBtn) verBtn.classList.add('active');
+      activeFilters.version = new Set([version]);
+    }
+
+    // Activate job type filter
+    if (jobtype) {
+      const allBtn = document.querySelector('.filter-btn[data-group="jobtype"][data-value="all"]');
+      const typeBtn = document.querySelector('.filter-btn[data-group="jobtype"][data-value="' + jobtype + '"]');
+      if (allBtn) allBtn.classList.remove('active');
+      if (typeBtn) typeBtn.classList.add('active');
+      activeFilters.jobtype = new Set([jobtype]);
+    }
+
+    applyFilters();
+
+    // Scroll to the failures heading
+    const heading = document.querySelector('#tab-payload-health h2:nth-of-type(2)');
+    if (heading) heading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  // Build AI Analysis Highlights from patched analysis cards
+  (function buildAIHighlights() {
+    var container = document.getElementById('ai-highlights-container');
+    if (!container) return;
+
+    var analysisCards = document.querySelectorAll('.deep-analysis-card');
+    if (analysisCards.length === 0) return;
+
+    var items = [];
+    analysisCards.forEach(function(card) {
+      var detail = card.closest('details');
+      if (!detail) return;
+
+      var detailId = detail.id;
+      var summary = detail.querySelector('summary');
+      if (!summary) return;
+
+      var badges = summary.querySelectorAll('.badge');
+      var topology = '', jobtype = '';
+      badges.forEach(function(b) {
+        if (b.classList.contains('sno') || b.classList.contains('tna') || b.classList.contains('tnf')) {
+          topology = b.textContent.trim();
+        } else if (b.classList.contains('blocking') || b.classList.contains('informing')) {
+          jobtype = b.textContent.trim();
+        }
+      });
+
+      var summaryText = summary.textContent.trim();
+      var match = summaryText.match(/(?:AI Analyzed)?\s*(.+?)\s*\((\d+\.\d+)\)\s*$/);
+      var jobName = match ? match[1].trim() : '';
+      var version = match ? match[2] : '';
+
+      var fields = card.querySelectorAll('.da-field');
+      var rootCause = '', failureType = '', recommendation = '';
+      fields.forEach(function(f) {
+        var label = f.querySelector('.da-label');
+        if (!label) return;
+        var labelText = label.textContent.trim().toLowerCase();
+        var typeEl = f.querySelector('.badge.da-type');
+        if (labelText.indexOf('root cause') === 0) {
+          rootCause = f.textContent.replace(label.textContent, '').trim();
+        } else if (labelText.indexOf('failure type') === 0 && typeEl) {
+          failureType = typeEl.textContent.trim();
+        } else if (labelText.indexOf('recommendation') === 0) {
+          recommendation = f.textContent.replace(label.textContent, '').trim();
+        }
+      });
+
+      items.push({ detailId: detailId, topology: topology, jobtype: jobtype, failureType: failureType, version: version, jobName: jobName, rootCause: rootCause, recommendation: recommendation });
+    });
+
+    if (items.length === 0) return;
+
+    // Build DOM elements
+    var wrapper = document.createElement('div');
+    wrapper.className = 'finding ai-highlights';
+
+    var title = document.createElement('div');
+    title.className = 'ai-highlights-title';
+    var dot = document.createElement('span');
+    dot.className = 'ai-dot';
+    dot.textContent = '\u25CF';
+    title.appendChild(dot);
+    var strong = document.createElement('strong');
+    strong.textContent = 'AI Root Cause Analysis \u2014 ' + items.length + ' blocking failure' + (items.length !== 1 ? 's' : '') + ' analyzed';
+    title.appendChild(strong);
+    wrapper.appendChild(title);
+
+    items.forEach(function(item) {
+      var card = document.createElement('div');
+      card.className = 'ai-highlight-item';
+      card.title = 'Click to view full analysis';
+      card.addEventListener('click', (function(id) {
+        return function() {
+          var d = document.getElementById(id);
+          if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+        };
+      })(item.detailId));
+
+      var header = document.createElement('div');
+      header.className = 'ai-highlight-header';
+
+      if (item.topology) {
+        var b1 = document.createElement('span');
+        b1.className = 'badge ' + item.topology.toLowerCase();
+        b1.textContent = item.topology;
+        header.appendChild(b1);
+      }
+      if (item.jobtype) {
+        var b2 = document.createElement('span');
+        b2.className = 'badge ' + item.jobtype.toLowerCase();
+        b2.textContent = item.jobtype;
+        header.appendChild(b2);
+      }
+      if (item.failureType) {
+        var b3 = document.createElement('span');
+        b3.className = 'badge da-type';
+        b3.textContent = item.failureType;
+        header.appendChild(b3);
+      }
+      if (item.version) {
+        var ver = document.createElement('span');
+        ver.style.cssText = 'color:var(--text-muted);font-size:12px';
+        ver.textContent = item.version;
+        header.appendChild(ver);
+      }
+      if (item.jobName) {
+        var name = document.createElement('span');
+        name.className = 'job-name';
+        name.textContent = item.jobName;
+        header.appendChild(name);
+      }
+      card.appendChild(header);
+
+      if (item.rootCause) {
+        var cause = document.createElement('div');
+        cause.className = 'ai-highlight-cause';
+        var lbl1 = document.createElement('span');
+        lbl1.className = 'da-label';
+        lbl1.textContent = 'Root Cause:';
+        cause.appendChild(lbl1);
+        cause.appendChild(document.createTextNode(' ' + item.rootCause));
+        card.appendChild(cause);
+      }
+      if (item.recommendation) {
+        var rec = document.createElement('div');
+        rec.className = 'ai-highlight-rec';
+        var lbl2 = document.createElement('span');
+        lbl2.className = 'da-label';
+        lbl2.textContent = 'Action:';
+        rec.appendChild(lbl2);
+        rec.appendChild(document.createTextNode(' ' + item.recommendation));
+        card.appendChild(rec);
+      }
+
+      wrapper.appendChild(card);
+    });
+
+    container.appendChild(wrapper);
+  })();
 
   // Copy full bug description to clipboard
   document.querySelectorAll('.copy-desc-btn').forEach(function(btn) {
