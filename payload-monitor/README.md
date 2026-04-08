@@ -28,34 +28,35 @@ python -m payload_monitor --merge-analysis reports/analysis-2026-03-25.json --ou
 3. **Analyzes failures** by fetching Prow job logs and extracting failing test names and error signatures
 4. **Queries Sippy** for job-level regressions (pass rate drops) across edge topologies
 5. **Queries Component Readiness** for statistically significant regressions on Single Node vs HA topology
-6. **Searches JIRA** for existing bugs matching failure signatures
-7. **Generates an HTML dashboard** with health summaries, failure details, regressions, and JIRA integration
+6. **Collects timing insights** (opt-in via `--with-timing`) for install/upgrade durations across SNO/TNA/TNF topologies
+7. **Searches JIRA** for existing bugs matching failure signatures
+8. **Generates an HTML dashboard** with health summaries, failure details, regressions, timing insights, and JIRA integration
 
 ## Architecture
 
 ```text
-                    +-------------------+
-                    |   CLI / Skill     |
-                    +--------+----------+
-                             |
-     +------------+----------+----------+------------+
-     |            |          |          |             |
-+----v-------+ +--v------+ +v--------+ +v----------+ +v-----------+
-| Release    | | Sippy   | | Comp.   | | Prow       | | JIRA      |
-| Controller | | Jobs    | | Ready.  | | Collector  | | Collector |
-+----+-------+ +---------+ +---------+ +-----+------+ +-----------+
-     |                                        |              |
-     +---------------------+------------------+--------------+
-                            |
-                   +--------v----------+
-                   |    Analyzer       |
-                   | (recurring fails, |
-                   |  JIRA matching)   |
-                   +--------+----------+
-                            |
-                   +--------v----------+
-                   |  HTML Dashboard   |
-                   +-------------------+
+                       +-------------------+
+                       |   CLI / Skill     |
+                       +--------+----------+
+                                |
+     +----------+----------+----+-----+----------+----------+
+     |          |          |          |          |           |
++----v-----+ +-v------+ +-v------+ +-v--------+ +v--------+ +v---------+
+| Release  | | Sippy  | | Comp.  | | Timing   | | Prow    | | JIRA     |
+| Ctrl     | | Jobs   | | Ready. | | (opt-in) | | Collect.| | Collect. |
++----+-----+ +--------+ +--------+ +----+-----+ +----+----+ +----------+
+     |                                   |            |           |
+     +---------------+------------------+-------------+-----------+
+                      |
+             +--------v----------+
+             |    Analyzer       |
+             | (recurring fails, |
+             |  JIRA matching)   |
+             +--------+----------+
+                      |
+             +--------v----------+
+             |  HTML Dashboard   |
+             +-------------------+
 ```
 
 ### Usage
@@ -117,6 +118,7 @@ Options:
   --open               Open report in browser after generation
   --skip-prow          Skip Prow artifact fetching (faster, less detail)
   --skip-sippy         Skip Sippy regression check
+  --with-timing        Include install/upgrade timing insights (disabled by default)
   --verbose            Enable verbose logging
   --help               Show this message and exit
 ```
@@ -147,12 +149,13 @@ These patterns are defined in `payload_monitor/config.py`.
 
 The generated HTML report is a single self-contained file (no external dependencies) with:
 
-- **Version health status**: Per-version health indicator with payload acceptance timeline
-- **Findings summary**: Actionable summary with suggested next steps
-- **Failing edge jobs**: Blocking and informing job failures across SNO/TNA/TNF topologies
+- **Health overview**: Per-version status badges, blocking/informing counts, topology badges, trend indicators, and payload acceptance timeline
+- **Findings summary**: Priority-ordered action items (P1–P4) with AI root cause highlights and inline action chips
+- **Failing edge jobs**: Blocking and informing job failures across SNO/TNA/TNF topologies with sortable, filterable tables
 - **Failure analysis**: Error messages, failing tests, and AI root cause analysis (when enriched via Claude skill)
 - **Sippy job regressions**: Edge jobs with significant pass rate drops compared to previous periods
 - **Component Readiness**: HA vs Single Node topology regressions detected by Fisher's exact test
+- **Timing insights** (opt-in): Install/upgrade duration stats, variant breakdowns, and phase duration trends per topology
 - **JIRA integration**: Matching existing bugs and suggested new bugs with pre-filled create links
 
 ## Development
