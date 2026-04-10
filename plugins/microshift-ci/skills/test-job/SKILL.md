@@ -6,8 +6,7 @@ user-invocable: true
 allowed-tools: Skill, WebFetch, Bash, Read, Write, Glob, Grep
 ---
 
-## Name
-microshift-ci:test-job
+# microshift-ci:test-job
 
 ## Synopsis
 ```bash

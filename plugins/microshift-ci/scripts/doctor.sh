@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Deterministic orchestration for analyze-ci:doctor.
+# Deterministic orchestration for microshift-ci:doctor.
 #
 # Two phases called by the doctor skill with LLM steps in between:
 #

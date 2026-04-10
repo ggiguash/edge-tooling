@@ -3,7 +3,7 @@
 Generate an HTML report from analyze-ci JSON files.
 
 Reads JSON summary files (from aggregate.py) and JSON bug mapping
-files (from analyze-ci:create-bugs) to produce a consolidated HTML report.
+files (from microshift-ci:create-bugs) to produce a consolidated HTML report.
 
 Usage:
     create-report.py [--workdir DIR] <release1,release2,...>
