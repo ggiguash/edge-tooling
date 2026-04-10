@@ -105,10 +105,17 @@ update_catalog() {
         # Compute relative path from repo root
         local rel_path="plugins/${plugin_name}"
 
+        local description
+        description=$(json_get "$plugin_file" ".description")
+        local version
+        version=$(json_get "$plugin_file" ".version")
+
         plugins_json=$(echo "$plugins_json" | jq \
             --arg name "$name" \
-            --arg path "$rel_path" \
-            '. += [{"name": $name, "path": $path}]')
+            --arg source "./$rel_path" \
+            --arg description "$description" \
+            --arg version "$version" \
+            '. += [{"name": $name, "source": $source, "description": $description, "version": $version}]')
 
         ((plugin_count++)) || true
     done < <(find "$PLUGINS_DIR" -maxdepth 3 -path '*/.claude-plugin/plugin.json' -print0)
@@ -117,8 +124,10 @@ update_catalog() {
     jq -n \
         --arg name "edge-tooling" \
         --arg desc "Claude Code plugins for OpenShift and edge computing workflows" \
+        --arg owner_name "brandisher" \
+        --arg owner_email "chad@redhat.com" \
         --argjson plugins "$plugins_json" \
-        '{"name": $name, "description": $desc, "plugins": $plugins}' \
+        '{"name": $name, "description": $desc, "owner": {"name": $owner_name, "email": $owner_email}, "plugins": $plugins}' \
         > "$MARKETPLACE_FILE"
 
     success "Catalog updated: $plugin_count plugin(s) found"
@@ -143,7 +152,7 @@ list_plugins() {
         [[ -z "$name" ]] && continue
 
         local plugin_path
-        plugin_path=$(jq -r --arg n "$name" '.plugins[] | select(.name == $n) | .path' "$MARKETPLACE_FILE")
+        plugin_path=$(jq -r --arg n "$name" '.plugins[] | select(.name == $n) | .source' "$MARKETPLACE_FILE")
         local plugin_json="${SCRIPT_DIR}/${plugin_path}/.claude-plugin/plugin.json"
 
         if [[ ! -f "$plugin_json" ]]; then
@@ -191,7 +200,7 @@ show_plugin() {
     fi
 
     local plugin_path
-    plugin_path=$(jq -r --arg n "$plugin_name" '.plugins[] | select(.name == $n) | .path' "$MARKETPLACE_FILE")
+    plugin_path=$(jq -r --arg n "$plugin_name" '.plugins[] | select(.name == $n) | .source' "$MARKETPLACE_FILE")
     if [[ -z "$plugin_path" || "$plugin_path" == "null" ]]; then
         error "Plugin not found: $plugin_name"
     fi
@@ -239,7 +248,7 @@ validate_plugin() {
     local plugin_dir
     if [[ -f "$MARKETPLACE_FILE" ]]; then
         local plugin_path
-        plugin_path=$(jq -r --arg n "$plugin_name" '.plugins[] | select(.name == $n) | .path' "$MARKETPLACE_FILE")
+        plugin_path=$(jq -r --arg n "$plugin_name" '.plugins[] | select(.name == $n) | .source' "$MARKETPLACE_FILE")
         if [[ -n "$plugin_path" && "$plugin_path" != "null" ]]; then
             plugin_dir="${SCRIPT_DIR}/${plugin_path}"
         fi

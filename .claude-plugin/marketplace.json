@@ -1,10 +1,16 @@
 {
   "name": "edge-tooling",
   "description": "Claude Code plugins for OpenShift and edge computing workflows",
+  "owner": {
+    "name": "brandisher",
+    "email": "chad@redhat.com"
+  },
   "plugins": [
     {
       "name": "hello-world",
-      "path": "plugins/hello-world"
+      "source": "./plugins/hello-world",
+      "description": "A simple hello-world plugin demonstrating the marketplace plugin structure",
+      "version": "1.0.0"
     }
   ]
 }
