@@ -34,7 +34,7 @@ SCRIPTS_DIR="$(find ~/.claude/plugins -path '*/microshift-ci/scripts' -type d 2>
 
 Set once at the start and reference throughout:
 ```bash
-WORKDIR=/tmp/analyze-ci-claude-workdir.$(date +%y%m%d)
+WORKDIR=/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)
 ```
 
 ## Implementation Steps
@@ -44,7 +44,7 @@ WORKDIR=/tmp/analyze-ci-claude-workdir.$(date +%y%m%d)
 **Goal**: Deterministically collect all failed jobs and download their artifacts before any LLM analysis.
 
 **Actions**:
-1. Run `WORKDIR=/tmp/analyze-ci-claude-workdir.$(date +%y%m%d)` using the `Bash` tool
+1. Run `WORKDIR=/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)` using the `Bash` tool
 2. Run the prepare script:
    ```bash
    bash ${SCRIPTS_DIR}/doctor.sh prepare --workdir ${WORKDIR} $ARGUMENTS --rebase

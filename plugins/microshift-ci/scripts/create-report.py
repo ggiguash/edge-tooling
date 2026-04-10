@@ -647,7 +647,7 @@ def main():
         sys.exit(1)
 
     if workdir is None:
-        workdir = f"/tmp/analyze-ci-claude-workdir.{datetime.now().strftime('%y%m%d')}"
+        workdir = f"/tmp/microshift-ci-claude-workdir.{datetime.now().strftime('%y%m%d')}"
 
     if not os.path.isdir(workdir):
         print(f"Error: work directory does not exist: {workdir}", file=sys.stderr)

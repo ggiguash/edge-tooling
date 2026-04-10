@@ -40,7 +40,7 @@ cmd_prepare() {
         esac
     done
 
-    WORKDIR="${WORKDIR:-/tmp/analyze-ci-claude-workdir.$(date +%y%m%d)}"
+    WORKDIR="${WORKDIR:-/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)}"
 
     if [[ -z "${releases_arg}" ]]; then
         echo "Error: releases argument required" >&2
@@ -208,7 +208,7 @@ cmd_finalize() {
         esac
     done
 
-    WORKDIR="${WORKDIR:-/tmp/analyze-ci-claude-workdir.$(date +%y%m%d)}"
+    WORKDIR="${WORKDIR:-/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)}"
 
     if [[ -z "${releases_arg}" ]]; then
         echo "Error: releases argument required" >&2
@@ -255,7 +255,7 @@ usage() {
     echo "  finalize [--workdir DIR] <releases>            Aggregate results and generate HTML" >&2
     echo "" >&2
     echo "  <releases>: comma-separated release versions (e.g., 4.18,4.19,4.20,main)" >&2
-    echo "  --workdir DIR: work directory (default: /tmp/analyze-ci-claude-workdir.YYMMDD)" >&2
+    echo "  --workdir DIR: work directory (default: /tmp/microshift-ci-claude-workdir.YYMMDD)" >&2
     exit 1
 }
 

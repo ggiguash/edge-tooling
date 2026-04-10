@@ -21,7 +21,7 @@ Analyzes a single Prow CI test job by scanning artifacts for errors and producin
 - `$ARGUMENTS` (required): Either a job URL or a local artifacts directory path:
   - **Prow URL**: `https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-microshift-release-4.21-periodics-e2e-aws-ovn-ocp-conformance-serial/1984108354347208704`
   - **GCS web URL**: `https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/periodic-ci-openshift-microshift-release-4.21-periodics-e2e-aws-ovn-ocp-conformance-serial/1984108354347208704`
-  - **Local artifacts directory**: `/tmp/analyze-ci-claude-workdir.260404/artifacts/1984108354347208704` (must contain `build-log.txt` and `finished.json`)
+  - **Local artifacts directory**: `/tmp/microshift-ci-claude-workdir.260404/artifacts/1984108354347208704` (must contain `build-log.txt` and `finished.json`)
 
 ## Goal
 Reduce noise for developers by processing large logs from a CI test pipeline and correctly classifying fatal errors with a false-positive rate of 0.01% and false-negative rate of 0.5%.
@@ -88,7 +88,7 @@ Where `${TEST_NAME}` is the test name directory (e.g., `e2e-aws-tests`, `e2e-aws
 
 Set once at the start and reference throughout:
 ```bash
-WORKDIR=/tmp/analyze-ci-claude-workdir.$(date +%y%m%d)
+WORKDIR=/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)
 mkdir -p ${WORKDIR}
 ```
 
