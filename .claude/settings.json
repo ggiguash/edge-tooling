@@ -1,12 +1,23 @@
 {
   "permissions": {
     "allow": [
+      "Read(//tmp/**)",
+      "Write(//tmp/**)",
+      "Bash(bash plugins/microshift-ci/scripts/*)",
+      "Bash(python3 plugins/microshift-ci/scripts/*)",
+      "Bash(curl:*)",
+      "Bash(date:*)",
+      "Bash(cat:*)",
+      "Bash(echo:*)",
+      "Bash(wc:*)",
+      "Bash(ls:*)",
+      "Bash(jq:*)",
       "Skill(ee-payload-monitor)",
+      "Skill(microshift-ci:create-bugs)",
       "Skill(microshift-ci:doctor)",
       "Skill(microshift-ci:prow-job)",
       "Skill(microshift-ci:test-job)",
-      "Skill(microshift-ci:test-scenario)",
-      "Skill(microshift-ci:create-bugs)"
+      "Skill(microshift-ci:test-scenario)"
     ]
   },
   "hooks": {
