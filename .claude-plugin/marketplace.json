@@ -17,6 +17,12 @@
       "source": "./plugins/microshift-ci",
       "description": "MicroShift CI Automation",
       "version": "1.0.0"
+    },
+    {
+      "name": "microshift-release",
+      "source": "./plugins/microshift-release",
+      "description": "Set of tools to perform MicroShift Release Testing activities",
+      "version": "1.0.0"
     }
   ]
 }
