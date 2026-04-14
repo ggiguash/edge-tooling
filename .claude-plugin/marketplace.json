@@ -11,6 +11,12 @@
       "source": "./plugins/hello-world",
       "description": "A simple hello-world plugin demonstrating the marketplace plugin structure",
       "version": "1.0.0"
+    },
+    {
+      "name": "microshift-ci",
+      "source": "./plugins/microshift-ci",
+      "description": "MicroShift CI Automation",
+      "version": "1.0.0"
     }
   ]
 }

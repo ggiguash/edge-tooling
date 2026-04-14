@@ -1,0 +1,50 @@
+# microshift-ci
+
+Analyze MicroShift CI failures, produce HTML reports, and create JIRA bugs.
+
+## Installation
+
+```text
+/plugin marketplace add openshift-eng/edge-tooling
+/plugin install microshift-ci
+```
+
+## Skills
+
+| Skill | Description |
+|---|---|
+| `/microshift-ci:doctor` | Analyze CI for multiple releases and produce an HTML summary |
+| `/microshift-ci:prow-job` | Root cause analysis of a single Prow job |
+| `/microshift-ci:test-job` | Comprehensive job metadata and scenario results |
+| `/microshift-ci:test-scenario` | Analyze individual test scenario results |
+| `/microshift-ci:create-bugs` | Search JIRA for duplicates and create bugs (dry-run by default) |
+
+## Usage
+
+### Full pipeline
+```text
+/microshift-ci:doctor 4.19,4.20,4.21,4.22
+```
+
+### Single job analysis
+```text
+/microshift-ci:prow-job https://prow.ci.openshift.org/view/gs/test-platform-results/logs/<job-name>/<job-id>
+```
+
+### Create bugs from analysis
+```text
+/microshift-ci:create-bugs 4.22           # dry-run
+/microshift-ci:create-bugs 4.22 --create  # interactive creation
+```
+
+## Requirements
+
+- `gcloud` CLI (authenticated for GCS access)
+- `gh` CLI (authenticated with access to openshift/microshift)
+- Jira MCP server configured (for bug correlation)
+- Python 3
+- **Category:** ci-cd
+
+## Author
+
+ggiguash
