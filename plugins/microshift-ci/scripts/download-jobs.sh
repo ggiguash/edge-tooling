@@ -145,18 +145,23 @@ main() {
     done < <(echo "${jobs_json}" | jq -r '.[] | [.build_id, .url] | @tsv')
     wait
 
-    # Count results
-    local ok=0 fail=0
+    # Count results and collect failed build IDs
+    local ok=0 fail=0 failed_ids=""
     if [[ -f "${status_file}" ]]; then
         ok=$(grep -c ':ok$' "${status_file}" 2>/dev/null || true)
         fail=$(grep -c ':fail$' "${status_file}" 2>/dev/null || true)
+        failed_ids=$(grep ':fail$' "${status_file}" 2>/dev/null | cut -d: -f1 || true)
     fi
     rm -f "${status_file}"
 
     echo "Done: ${ok} downloaded/cached, ${fail} failed." >&2
 
-    # Output enriched JSON with artifacts_dir added
-    echo "${jobs_json}" | jq --arg workdir "${WORKDIR}" '[.[] | . + {artifacts_dir: ($workdir + "/artifacts/" + .build_id)}]'
+    # Exclude failed downloads, then add artifacts_dir
+    local output_json="${jobs_json}"
+    for bid in ${failed_ids}; do
+        output_json=$(echo "${output_json}" | jq --arg id "${bid}" '[.[] | select(.build_id != $id)]')
+    done
+    echo "${output_json}" | jq --arg workdir "${WORKDIR}" '[.[] | . + {artifacts_dir: ($workdir + "/artifacts/" + .build_id)}]'
 }
 
 main "${@}"
