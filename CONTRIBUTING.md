@@ -91,6 +91,26 @@ Plugin components serve different roles. Choosing the right one matters.
 
 **Use a hook** when behavior should trigger automatically on an event (session start, before/after tool use).
 
+### CLI Tools vs MCP Servers
+
+When adding external tool integration, decide whether to use a traditional CLI tool (invoked via Bash) or an MCP server.
+
+**Use a CLI tool** when:
+
+- The tool is a one-shot operation (run command, get output)
+- The team already uses it outside of Claude Code (e.g., `oc`, `aws`, `gh`)
+- Output is plain text or simple structured data
+- No session state is needed between calls
+
+**Use an MCP server** when:
+
+- The integration needs to maintain state across multiple calls (e.g., an authenticated API session)
+- You want to expose multiple related operations as discrete, typed tools rather than parsing CLI flags
+- The data source is an API that benefits from structured request/response (e.g., Jira, GitHub, Slack)
+- You need Claude to discover available operations dynamically via tool schemas
+
+**Rule of thumb**: if you'd normally `curl` or call an API repeatedly with different parameters during a workflow, MCP is likely the better fit. If you'd normally run a shell command and parse the output, keep it as a CLI tool.
+
 ### Grouping Related Skills
 
 Use colon-based namespacing to group skills under a workflow domain. This keeps `/` autocomplete organized and signals that skills belong together.
