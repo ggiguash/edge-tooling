@@ -41,6 +41,12 @@
       "source": "./plugins/challenge",
       "description": "Adversarial hypothesis reviewer — systematically attacks theories and root cause analyses to find weaknesses before they find you",
       "version": "1.0.0"
+    },
+    {
+      "name": "two-node",
+      "source": "./plugins/two-node",
+      "description": "Two-node topology (TNA/TNF) workflow automation — RHEL verification, Jira integration, and more",
+      "version": "1.0.0"
     }
   ]
 }

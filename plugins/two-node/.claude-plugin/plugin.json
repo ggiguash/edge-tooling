@@ -1,6 +1,6 @@
 {
-  "name": "create-ocpedge-tnf-rhel-stories",
-  "description": "Create OCPEDGE stories for TNF RHEL verification tickets, link them, and set components",
+  "name": "two-node",
+  "description": "Two-node topology (TNA/TNF) workflow automation — RHEL verification, Jira integration, and more",
   "version": "1.0.0",
   "author": { "name": "lucaconsalvi" },
   "homepage": "https://github.com/openshift-eng/edge-tooling",
