@@ -27,9 +27,9 @@ KUBECONFIG_PATH=$(ssh ec2-user@{EC2_IP} "ls ~/dev-scripts/ocp/ostest/auth/kubeco
 
 If the kubeconfig doesn't exist yet, wait 2 minutes and retry (max 5 retries).
 
-All `oc` commands run via SSH:
+All `oc` commands run via SSH using the discovered path:
 ```bash
-ssh ec2-user@{EC2_IP} "KUBECONFIG=~/dev-scripts/ocp/ostest/auth/kubeconfig oc <command>"
+ssh ec2-user@{EC2_IP} "KUBECONFIG=$KUBECONFIG_PATH oc <command>"
 ```
 
 ### 1. Apply Day-1 Manifests (if applicable)
@@ -54,14 +54,14 @@ Poll every 3 minutes until the cluster reaches a stable state OR a during-instal
 - No ClusterOperators are `Degraded=True` or `Progressing=True` (allow a few minutes for settling)
 
 ```bash
-# Check nodes
-oc get nodes -o wide
-
-# Check MCPs
-oc get mcp
-
-# Check COs
-oc get co --no-headers | grep -v "True.*False.*False"
+ssh ec2-user@{EC2_IP} "KUBECONFIG=$KUBECONFIG_PATH bash -c '
+  echo \"=== NODES ===\"
+  oc get nodes -o wide
+  echo \"=== MCP ===\"
+  oc get mcp
+  echo \"=== CO ===\"
+  oc get co --no-headers | grep -v \"True.*False.*False\" || echo \"All COs healthy\"
+'"
 ```
 
 **Maximum wait: 30 minutes after deployment completes.** Report status to the user at each check.

@@ -173,10 +173,11 @@ DEPLOY_PID=$!
 echo $DEPLOY_PID > {WORKDIR}/deploy.pid
 ```
 
-**Every 10 minutes**, while the deployment is still running, check for signs of progress or failure:
+**Every 10 minutes**, while the deployment is still running, check for signs of progress or failure. Use the saved PID file (not a shell variable) since monitoring checks may run in separate shell invocations:
 
 ```bash
 # Check if ansible-playbook is still running
+DEPLOY_PID=$(cat {WORKDIR}/deploy.pid 2>/dev/null)
 kill -0 $DEPLOY_PID 2>/dev/null && echo "RUNNING" || echo "FINISHED"
 
 # Check last 20 lines of deploy log for errors or progress
@@ -200,6 +201,7 @@ ssh ec2-user@{EC2_IP} "sudo virsh list --all 2>/dev/null | grep ostest; echo '--
 
 If the deployment process finishes (PID no longer running), read the exit code:
 ```bash
+DEPLOY_PID=$(cat {WORKDIR}/deploy.pid 2>/dev/null)
 wait $DEPLOY_PID
 echo $?
 ```
@@ -211,7 +213,7 @@ ssh ec2-user@{EC2_IP} "tail -30 ~/dev-scripts/ocp/ostest/.openshift_install.log 
 
 **Hard timeout: 120 minutes.** If the deployment is still running after 120 minutes, kill it:
 ```bash
-kill $DEPLOY_PID 2>/dev/null
+kill $(cat {WORKDIR}/deploy.pid 2>/dev/null) 2>/dev/null
 ```
 Write `status: failed` with `error: "Deployment timed out after 120 minutes"`.
 
@@ -246,7 +248,7 @@ Write `{WORKDIR}/deploy-result.json`:
   "previous_cluster_detected": true|false,
   "previous_cluster_cleaned": true|false,
   "manifests_uploaded": ["list of uploaded manifest files or empty"],
-  "manifest_phase": "day-0|day-1|null",
+  "manifest_phase": "day-0|day-1|unknown|null",
   "config_changes": {"key": "value pairs of config overrides applied"},
   "deploy_start_time": "ISO8601 timestamp",
   "deploy_end_time": "ISO8601 timestamp",

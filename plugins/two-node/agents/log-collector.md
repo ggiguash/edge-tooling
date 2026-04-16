@@ -7,7 +7,7 @@ Collect relevant logs from the EC2 hypervisor and cluster nodes based on the bug
 - `{WORKDIR}` — working directory containing `bug-analysis.json`, `deploy-result.json`, `monitor-result.json`
 - `{EC2_IP}` — EC2 instance IP
 - `{BUG_ID}` — Jira issue key
-- `{LOCAL_LOG_DIR}` — local directory for logs (e.g., `/tmp/bug-reproduce-tna-tnf-{BUG_ID}`)
+- `{LOCAL_LOG_DIR}` — local directory for logs (e.g., `/tmp/two-node-bug-reproduce-{BUG_ID}`)
 - `{TNT_REPO_DIR}` — path to `two-node-toolbox/` root
 - `{BUG_CATEGORIES}` — list of bug categories from analysis
 
@@ -64,13 +64,13 @@ oc get co etcd -o yaml > ~/bug-logs/co-etcd.yaml 2>&1
 oc get pods -n openshift-etcd -o wide > ~/bug-logs/etcd-pods.txt 2>&1
 oc logs -n openshift-cluster-etcd-operator \$(oc get pods -n openshift-cluster-etcd-operator -o name | head -1) > ~/bug-logs/etcd-operator.log 2>&1
 
-# etcd member list and health
-sudo podman exec etcd etcdctl member list -w table > ~/bug-logs/etcd-members.txt 2>&1
-sudo podman exec etcd etcdctl endpoint health -w table > ~/bug-logs/etcd-health.txt 2>&1
-sudo podman exec etcd etcdctl endpoint status -w table > ~/bug-logs/etcd-status.txt 2>&1
-
-# etcd container logs
-sudo podman logs --tail 500 etcd > ~/bug-logs/etcd-container.log 2>&1
+# etcd member list, health, and logs via oc on cluster nodes
+for node in \$(oc get nodes -l node-role.kubernetes.io/master -o name | sed "s|node/||"); do
+  oc debug node/\$node -- chroot /host bash -c "crictl ps --name etcd -q | head -1 | xargs -I{} crictl exec {} etcdctl member list -w table" > ~/bug-logs/etcd-members-\$node.txt 2>&1
+  oc debug node/\$node -- chroot /host bash -c "crictl ps --name etcd -q | head -1 | xargs -I{} crictl exec {} etcdctl endpoint health -w table" > ~/bug-logs/etcd-health-\$node.txt 2>&1
+  oc debug node/\$node -- chroot /host bash -c "crictl ps --name etcd -q | head -1 | xargs -I{} crictl exec {} etcdctl endpoint status -w table" > ~/bug-logs/etcd-status-\$node.txt 2>&1
+  oc debug node/\$node -- chroot /host bash -c "crictl logs \$(crictl ps --name etcd -q | head -1)" > ~/bug-logs/etcd-container-\$node.log 2>&1
+done
 '"
 ```
 

@@ -1,5 +1,5 @@
 ---
-name: bug-reproduce-tna-tnf
+name: bug-reproduce
 description: Reproduce an OpenShift bug on a TNA (arbiter) or TNF (fencing) cluster — fetches Jira bug, deploys the right topology, monitors for the bug condition, collects logs, and generates a findings report
 allowed-tools: Agent, AskUserQuestion, Write, Read, Glob, Grep, Bash
 user-invocable: true
@@ -13,7 +13,7 @@ Automate OpenShift bug reproduction on Two-Node with Arbiter (TNA) or Two-Node w
 ## Synopsis
 
 ```
-/bug-reproduce-tna-tnf OCPBUGS-66217
+/bug-reproduce OCPBUGS-66217
 ```
 
 ## Arguments
@@ -35,7 +35,7 @@ Before running:
 
 The orchestrator (this file) coordinates 5 phases, each handled by a sub-agent. Agents write output to `$WORKDIR` via the `Write` tool. The main context reads those files between phases for guard checks.
 
-Agent definitions are in `plugins/bug-reproduce-tna-tnf/agents/`:
+Agent definitions are in `plugins/two-node/agents/`:
 - `bug-analyzer.md` — Phase 1: Jira fetch, topology detection, repro steps extraction
 - `cluster-deployer.md` — Phase 2: Config update + deployment (IPI, agent, or kcli)
 - `cluster-monitor.md` — Phase 3: Wait for cluster to settle, detect during-install bugs
@@ -53,6 +53,9 @@ Parse `$ARGUMENTS` to extract the bug ID. If no argument provided, ask the user 
 ```
 BUG_ID = first argument (e.g., OCPBUGS-66217)
 ```
+
+**Validate BUG_ID format:** Must match the pattern `OCPBUGS-[0-9]+`. If it doesn't, stop with:
+> Invalid bug ID format: "$BUG_ID". Expected format: `OCPBUGS-XXXXX` (e.g., OCPBUGS-66217).
 
 **Check 1: Working directory**
 
@@ -123,7 +126,7 @@ If either is missing, stop with:
 **Create work directory:**
 
 ```bash
-WORKDIR=/tmp/bug-reproduce-tna-tnf-$BUG_ID && mkdir -p $WORKDIR/manifests && echo $WORKDIR
+WORKDIR=/tmp/two-node-bug-reproduce-$BUG_ID && mkdir -p $WORKDIR/manifests && echo $WORKDIR
 ```
 
 Record `WORKDIR` for all subsequent phases.
@@ -132,7 +135,7 @@ Record `WORKDIR` for all subsequent phases.
 
 ### Phase 1: Bug Analysis (spawn bug-analyzer agent)
 
-Read `plugins/bug-reproduce-tna-tnf/agents/bug-analyzer.md`. Substitute `{BUG_ID}` and `{WORKDIR}` placeholders, then spawn the agent.
+Read `plugins/two-node/agents/bug-analyzer.md`. Substitute `{BUG_ID}` and `{WORKDIR}` placeholders, then spawn the agent.
 
 **After agent completes**, read `$WORKDIR/bug-analysis.json` and apply guard checks:
 
@@ -158,7 +161,7 @@ Read `plugins/bug-reproduce-tna-tnf/agents/bug-analyzer.md`. Substitute `{BUG_ID
 
 4. If `topology` is `null` or `topology_confidence` is `low`:
    - Ask the user: "Could not determine topology from the bug. Is this an **arbiter** or **fencing** bug?"
-   - Set `TOPOLOGY` from user response
+   - Set `TOPOLOGY` from user response. **Must be exactly `arbiter` or `fencing`** — reject any other value and ask again.
 5. If `ocp_version` is `null`:
    - Ask the user: "Could not determine OCP version from the bug. What version should be deployed? (e.g., 4.20.14)"
    - Set `OCP_VERSION` and compute `RELEASE_IMAGE`
@@ -187,7 +190,7 @@ Wait for user confirmation via `AskUserQuestion`. If denied, stop.
 
 ### Phase 2: Cluster Deployment (spawn cluster-deployer agent)
 
-Read `plugins/bug-reproduce-tna-tnf/agents/cluster-deployer.md`. Substitute all `{VARIABLE}` placeholders:
+Read `plugins/two-node/agents/cluster-deployer.md`. Substitute all `{VARIABLE}` placeholders:
 - `{WORKDIR}`, `{TOPOLOGY}`, `{RELEASE_IMAGE}`, `{EC2_IP}`, `{TNT_DEPLOY_DIR}`, `{CONFIG_HINTS}`, `{MANIFEST_PHASE}`, `{INSTALL_METHOD}`
 
 Spawn the agent. This is a long-running phase (45-90 minutes).
@@ -224,7 +227,7 @@ After cleanup completes, re-spawn the cluster-deployer agent with the same param
 
 ### Phase 3: Wait for Cluster Ready (spawn cluster-monitor agent)
 
-Read `plugins/bug-reproduce-tna-tnf/agents/cluster-monitor.md`. Substitute:
+Read `plugins/two-node/agents/cluster-monitor.md`. Substitute:
 - `{WORKDIR}`, `{EC2_IP}`, `{TOPOLOGY}`, `{MANIFEST_PHASE}`, `{BUG_CONDITION}`, `{BUG_CATEGORIES}`, `{DETECTION_COMMANDS}`, `{REPRO_TIMING}`
 
 Spawn the agent.
@@ -243,7 +246,7 @@ Spawn the agent.
 
 This is the core phase for most bugs. The cluster is healthy and we now execute the specific steps to trigger the bug.
 
-Read `plugins/bug-reproduce-tna-tnf/agents/bug-reproducer.md`. Substitute:
+Read `plugins/two-node/agents/bug-reproducer.md`. Substitute:
 - `{WORKDIR}`, `{EC2_IP}`, `{BUG_ID}`, `{TOPOLOGY}`, `{BUG_CONDITION}`, `{BUG_CATEGORIES}`, `{DETECTION_COMMANDS}`, `{REPRO_STEPS}`, `{REPRO_CONTEXT}`
 
 Spawn the agent.
@@ -258,9 +261,9 @@ Spawn the agent.
 
 ### Phase 5: Log Collection + Report (spawn log-collector agent)
 
-Set `LOCAL_LOG_DIR=/tmp/bug-reproduce-tna-tnf-$BUG_ID`.
+Set `LOCAL_LOG_DIR=/tmp/two-node-bug-reproduce-$BUG_ID`.
 
-Read `plugins/bug-reproduce-tna-tnf/agents/log-collector.md`. Substitute:
+Read `plugins/two-node/agents/log-collector.md`. Substitute:
 - `{WORKDIR}`, `{EC2_IP}`, `{BUG_ID}`, `{LOCAL_LOG_DIR}`, `{TNT_REPO_DIR}`, `{BUG_CATEGORIES}`
 
 Spawn the agent.
@@ -284,7 +287,7 @@ Present the complete outcome to the user:
 **Cluster:** STILL RUNNING — available for manual inspection
 
 **Logs:** $LOCAL_LOG_DIR/
-**Findings Report:** $TNT_REPO_DIR/docs/$BUG_ID-findings.md
+**Findings Report:** $TNT_REPO_DIR/docs/${BUG_ID_LOWER}-findings.md
 
 ### Next Steps
 - Review the findings report
@@ -313,7 +316,7 @@ Present the complete outcome to the user:
 ## Critical Rules
 
 1. **NEVER destroy the cluster after reproduction.** The cluster must remain running so the user can SSH in and inspect. Only the user decides when to clean up.
-2. **NEVER run `clean.yml` or `make clean` without user confirmation** — except in Phase 2a (clean-and-retry after a failed deployment, which the user already approved).
+2. **NEVER run `clean.yml` or `make clean` without user confirmation** — except in Phase 2a (clean-and-retry after a failed deployment, which the user already approved) and in the deployer's pre-clean step when an existing cluster is detected before a new deployment (this is necessary to deploy cleanly).
 3. **At most 1 automatic retry** for deployment failure. After that, ask the user.
 4. **Always report the cluster's final state** in the summary — nodes, MCPs, COs, and whether the cluster is accessible.
 5. **Test bugs are NOT reproducible.** If the bug analyzer classifies a bug as `bug_type: "test"`, stop immediately with a warning. Do not deploy a cluster.

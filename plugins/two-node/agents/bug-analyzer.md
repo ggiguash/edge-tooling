@@ -282,7 +282,6 @@ Write `{WORKDIR}/bug-analysis.json`:
     "oc get mcp master -o jsonpath='{.status.conditions[?(@.type==\"Degraded\")].message}'"
   ],
   "success_criteria": "All nodes Ready, all MCPs updated, no degraded operators",
-  "repro_context": "Key reproduction details extracted from comments — configs, results, timelines",
   "repro_timing": "during-install|post-install|both",
   "repro_steps": [
     {"step": 1, "action": "description of what to do", "command": "exact command if applicable", "check": "what to verify after"},

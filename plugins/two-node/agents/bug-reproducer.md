@@ -30,7 +30,9 @@ Read `{WORKDIR}/bug-analysis.json` carefully. Understand:
 Before executing any reproduction steps, confirm the cluster baseline:
 
 ```bash
-ssh ec2-user@{EC2_IP} "KUBECONFIG=~/dev-scripts/ocp/ostest/auth/kubeconfig bash -c '
+ssh ec2-user@{EC2_IP} "bash -c '
+  KP=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/.kcli/clusters/ostest/auth/kubeconfig 2>/dev/null)
+  export KUBECONFIG=\$KP
   echo \"=== NODES ===\"
   oc get nodes -o wide
   echo \"=== MCP ===\"
@@ -40,7 +42,7 @@ ssh ec2-user@{EC2_IP} "KUBECONFIG=~/dev-scripts/ocp/ostest/auth/kubeconfig bash 
 '"
 ```
 
-If the cluster is not healthy, note it but proceed — some reproduction steps may still be executable.
+If the cluster is not healthy, report the state to the user and ask whether to proceed with reproduction steps or stop. Do not silently continue — an unhealthy baseline can blur infrastructure failures with bug reproduction outcomes.
 
 ### 3. Execute Reproduction Steps
 
@@ -123,7 +125,9 @@ After executing the reproduction steps, actively check for the bug condition:
 
 ```bash
 # Generic health check after repro steps
-ssh ec2-user@{EC2_IP} "KUBECONFIG=~/dev-scripts/ocp/ostest/auth/kubeconfig bash -c '
+ssh ec2-user@{EC2_IP} "bash -c '
+  KP=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/.kcli/clusters/ostest/auth/kubeconfig 2>/dev/null)
+  export KUBECONFIG=\$KP
   echo \"=== NODES ===\"
   oc get nodes -o wide
   echo \"=== MCP ===\"
