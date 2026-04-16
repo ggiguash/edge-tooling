@@ -51,6 +51,14 @@ WORKDIR=/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)
    - Outputs a JSON summary listing all releases, job counts, and file paths
 4. Read the JSON output to know which releases have jobs to analyze and how many
 
+**Job JSON field names** (use these exactly — do NOT guess alternatives like `job_name`):
+- `job` — full job name
+- `build_id` — unique build identifier
+- `artifacts_dir` — local path to downloaded artifacts
+- `url` — Prow job URL
+- `status` — job result (`failure`, `FAILURE`, `SUCCESS`, `PENDING`)
+- `pr_number` — PR number (PR jobs only)
+
 **Error Handling**:
 - If `$ARGUMENTS` is empty, show usage and stop
 - If a release has no failed jobs, its jobs JSON will be an empty array — skip analysis for that release
