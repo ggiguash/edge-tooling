@@ -7,6 +7,12 @@
   },
   "plugins": [
     {
+      "name": "edge-scrum",
+      "source": "./plugins/edge-scrum",
+      "description": "Agents, skills, and workflows relevant to scrum process management for the OpenShift Edge Team",
+      "version": "1.0.0"
+    },
+    {
       "name": "hello-world",
       "source": "./plugins/hello-world",
       "description": "A simple hello-world plugin demonstrating the marketplace plugin structure",

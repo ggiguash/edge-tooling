@@ -1,0 +1,10 @@
+{
+  "name": "bug-reproduce-tna-tnf",
+  "description": "Automated OpenShift TNA/TNF bug reproduction from Jira tickets",
+  "version": "1.0.0",
+  "author": {
+    "name": "nhamza"
+  },
+  "homepage": "https://github.com/openshift-eng/edge-tooling",
+  "license": "Apache-2.0"
+}
