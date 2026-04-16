@@ -3,6 +3,7 @@ name: create-rhel-stories
 description: Create OCPEDGE stories for TNF RHEL verification tickets, link them, and set components
 argument-hint: "[--dry-run] <RHEL ticket keys or JQL>"
 user-invocable: true
+allowed-tools: Bash, Read, Glob, Grep, Agent, AskUserQuestion, mcp__mcp-atlassian__jira_search, mcp__mcp-atlassian__jira_get_issue, mcp__mcp-atlassian__jira_create_issue, mcp__mcp-atlassian__jira_create_issue_link
 ---
 
 # Create OCPEDGE Stories for TNF RHEL Verification Tickets
@@ -11,10 +12,10 @@ Create OCPEDGE stories for groups of related TNF RHEL verification tickets that 
 
 ## Prerequisites
 
-This command requires the `mcp-atlassian` MCP server for Jira access. This plugin includes an `.mcp.json` that configures it automatically. The user needs:
-- **`uvx`** installed (comes with [`uv`](https://docs.astral.sh/uv/getting-started/installation/))
+This command requires the `mcp-atlassian` MCP server for Jira access. This plugin includes an `.mcp.json` that configures it automatically using a pinned container image. The user needs:
+- **`podman`** installed
 - **`JIRA_USERNAME`** environment variable set with their Red Hat email
-- **`JIRA_PERSONAL_TOKEN`** environment variable set with a [Jira API token](https://id.atlassian.com/manage-profile/security/api-tokens)
+- **`JIRA_API_TOKEN`** environment variable set with a [Jira API token](https://id.atlassian.com/manage-profile/security/api-tokens)
 
 If the `mcp__mcp-atlassian__jira_search` tool is not available when the command runs, stop and show these setup instructions instead of proceeding.
 
@@ -32,6 +33,10 @@ Available subcommands:
 - `find-missing-clones <tickets_json>` — Find clone-linked tickets not in the current set (sibling clones to fetch)
 
 All subcommands accept/return JSON. Use Bash to call them.
+Pass `-` as the argument to read JSON from stdin (avoids ARG_MAX limits with large payloads):
+```bash
+echo '<large_json>' | python3 "${PLUGIN_DIR}/ocpedge_rhel_helper.py" group-tickets -
+```
 
 ## Input Formats
 
@@ -100,11 +105,13 @@ python3 "${PLUGIN_DIR}/ocpedge_rhel_helper.py" find-missing-clones '<tickets_jso
 
 This returns a JSON array of ticket keys that are referenced via clone links but weren't in the search results. For each missing key, fetch it with `jira_get_issue` and add it to the ticket set. Then run `find-missing-clones` again on the expanded set — repeat until no new clones are found (this walks the full clone tree via the parent).
 
-Typically one round is enough (the search results link to their parent, and fetching the parent reveals all siblings).
+Typically one round is enough (the search results link to their parent, and fetching the parent reveals all siblings). **Limit to 5 iterations maximum** to prevent infinite loops in case of circular clone references.
 
 ### Step 2: Fetch RHEL Ticket Details
 
-For each RHEL ticket, fetch full details:
+**If tickets were already returned with full details from Step 1** (JQL search includes the required fields), skip re-fetching and use those results directly.
+
+**Otherwise**, for each RHEL ticket, fetch full details:
 ```
 mcp__mcp-atlassian__jira_get_issue(
   issue_key="RHEL-XXXXX",
@@ -168,7 +175,11 @@ If an existing OCPEDGE story is found for a group:
 - **If the story is open** (not Closed): note it as already tracked. Check if all RHEL tickets in the group are linked to it — if some are missing links, those will be added in Step 7.
 - **If the story is Closed**: check the Preliminary Testing status of the RHEL tickets in the group:
   - If **all** tickets have Preliminary Testing = Pass (or are Closed), the work is done — skip, no action needed.
-  - If **some** tickets are still untested (Preliminary Testing = Requested or empty), create a **new** story linking only the untested tickets. Do NOT add links to the Closed story. Note the closed story in the plan for reference.
+  - If **some** tickets are still untested (Preliminary Testing = Requested or empty), present the user with options in Step 5:
+    - **Create new** story linking only the untested tickets
+    - **Skip** this group entirely
+    
+    Do NOT decide automatically — always ask the user which action to take for each Closed story with untested tickets.
 
 ### Step 5: Present the Plan
 
@@ -183,7 +194,7 @@ Before creating anything, present a summary table to the user and ask for confir
 |---|-------------|-------------|-----------------|
 | 1 | <summary> | RHEL-111, RHEL-222, RHEL-333 | None — will create |
 | 2 | <summary> | RHEL-444, RHEL-555 | OCPEDGE-789 (open) — will add missing links |
-| 3 | <summary> | RHEL-666, RHEL-777 | OCPEDGE-101 (Closed) — has untested tickets, will create new story |
+| 3 | <summary> | RHEL-666, RHEL-777 | OCPEDGE-101 (Closed) — has untested tickets: **create new / skip?** |
 | 4 | <summary> | RHEL-888 | OCPEDGE-202 (Closed) — all tickets passed, no action needed |
 | 5 | <summary> | RHEL-999 | OCPEDGE-303 (open) — fully linked, no action needed |
 

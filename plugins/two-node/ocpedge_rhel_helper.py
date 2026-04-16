@@ -72,9 +72,10 @@ def extract_clone_links(ticket: dict) -> list[str]:
     for link in ticket.get("issuelinks", []):
         link_type = link.get("type", {}).get("name", "").lower()
         if link_type in clone_types:
-            for direction in ["inwardIssue", "outwardIssue"]:
-                if direction in link:
-                    linked_keys.append(link[direction]["key"])
+            for direction in ["inwardIssue", "outwardIssue", "inward_issue", "outward_issue"]:
+                issue = link.get(direction)
+                if issue:
+                    linked_keys.append(issue["key"])
     return linked_keys
 
 
@@ -98,9 +99,10 @@ def extract_ocpedge_links(ticket: dict) -> list[str]:
     """Extract existing OCPEDGE issue keys from a ticket's issuelinks."""
     ocpedge_keys = []
     for link in ticket.get("issuelinks", []):
-        for direction in ["inwardIssue", "outwardIssue"]:
-            if direction in link:
-                key = link[direction]["key"]
+        for direction in ["inwardIssue", "outwardIssue", "inward_issue", "outward_issue"]:
+            issue = link.get(direction)
+            if issue:
+                key = issue["key"]
                 if key.startswith("OCPEDGE-"):
                     ocpedge_keys.append(key)
     return ocpedge_keys
@@ -235,9 +237,17 @@ def check_links(tickets: list[dict]) -> dict:
     return {"linked": linked, "unlinked": unlinked}
 
 
+def read_json_input() -> str:
+    """Read JSON input from CLI argument or stdin (use '-' for stdin)."""
+    if len(sys.argv) > 2 and sys.argv[2] != "-":
+        return sys.argv[2]
+    return sys.stdin.read()
+
+
 def main():
     if len(sys.argv) < 2:
-        print("Usage: ocpedge_rhel_helper.py <command> [args]", file=sys.stderr)
+        print("Usage: ocpedge_rhel_helper.py <command> [args | -]", file=sys.stderr)
+        print("  Pass '-' to read JSON from stdin instead of CLI args.", file=sys.stderr)
         sys.exit(1)
 
     command = sys.argv[1]
@@ -247,11 +257,11 @@ def main():
         print(json.dumps(parse_args(arguments), indent=2))
 
     elif command == "group-tickets":
-        data = json.loads(sys.argv[2])
+        data = json.loads(read_json_input())
         print(json.dumps(group_tickets(data), indent=2))
 
     elif command == "generate-description":
-        keys = json.loads(sys.argv[2])
+        keys = json.loads(read_json_input())
         print(generate_description(keys))
 
     elif command == "generate-summary":
@@ -259,11 +269,11 @@ def main():
         print(generate_summary(base_summary))
 
     elif command == "check-links":
-        data = json.loads(sys.argv[2])
+        data = json.loads(read_json_input())
         print(json.dumps(check_links(data), indent=2))
 
     elif command == "find-missing-clones":
-        data = json.loads(sys.argv[2])
+        data = json.loads(read_json_input())
         print(json.dumps(find_missing_clones(data), indent=2))
 
     else:

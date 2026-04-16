@@ -13,9 +13,9 @@ Install via Claude Code's plugin system:
 
 ## Prerequisites
 
-- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) (provides `uvx`)
+- [`podman`](https://podman.io/docs/installation) for running the MCP server container
 - `JIRA_USERNAME` environment variable set with your Red Hat email
-- `JIRA_PERSONAL_TOKEN` environment variable set with a [Jira API token](https://id.atlassian.com/manage-profile/security/api-tokens)
+- `JIRA_API_TOKEN` environment variable set with a [Jira API token](https://id.atlassian.com/manage-profile/security/api-tokens)
 
 The plugin includes an `.mcp.json` that automatically configures the `mcp-atlassian` MCP server.
 
