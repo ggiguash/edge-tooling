@@ -51,11 +51,16 @@ download_job() {
     # so we download into the parent and let gsutil create the BUILD_ID dir
     local parent="${WORKDIR}/artifacts"
     mkdir -p "${parent}"
-    if gsutil -q -m cp -r "${gcs_path}/" "${parent}/" 2>/dev/null; then
+    local dl_err
+    dl_err=$(mktemp)
+    if gsutil -q -m cp -r "${gcs_path}/" "${parent}/" 2>"${dl_err}"; then
         echo "  downloaded: ${build_id}" >&2
+        rm -f "${dl_err}"
         return 0
     else
         echo "  FAILED: ${build_id}" >&2
+        [[ -s "${dl_err}" ]] && cat "${dl_err}" >&2
+        rm -f "${dl_err}"
         return 1
     fi
 }
