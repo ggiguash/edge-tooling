@@ -1,5 +1,5 @@
 ---
-name: create-rhel-stories
+name: two-node:create-rhel-stories
 description: Create OCPEDGE stories for TNF RHEL verification tickets, link them, and set components
 argument-hint: "[--dry-run] <RHEL ticket keys or JQL>"
 user-invocable: true
@@ -42,12 +42,13 @@ echo '<large_json>' | python3 "${PLUGIN_DIR}/ocpedge_rhel_helper.py" group-ticke
 
 ### Option 1: Specific RHEL ticket keys
 ```
-/create-rhel-stories RHEL-12345 RHEL-12346 RHEL-12347
+/two-node:create-rhel-stories RHEL-12345 RHEL-12346 RHEL-12347
 ```
 
 ### Option 2: JQL query
-```
-/create-rhel-stories jql:project = RHEL AND component = "resource-agents" AND status != Closed ORDER BY created DESC
+
+```text
+/two-node:create-rhel-stories jql:project = RHEL AND component = "resource-agents" AND status != Closed ORDER BY created DESC
 ```
 
 ### Option 3: No arguments (auto-discover)
