@@ -201,6 +201,8 @@ If unclear, set `"bug_type": "unclear"`.
 
 ### 9a. Assess Dev-Scripts Environment Feasibility (skip if test bug)
 
+**If `bug_type` was set to `"test"` in step 9, skip this section entirely.**
+
 Check whether the bug's reproduction conditions can be met in a dev-scripts VM environment. Dev-scripts deploys libvirt VMs on EC2 — it has inherent limitations compared to real bare metal.
 
 **Conditions that dev-scripts CANNOT provide:**
@@ -242,6 +244,8 @@ Structure the steps as an ordered list in `repro_steps`. Include:
 - Expected outcome (what the bug looks like)
 
 ### 11. Determine Bug Condition and Detection (skip if test bug)
+
+**If `bug_type` was set to `"test"` in step 9, skip this section entirely.**
 
 Based on all gathered data, define:
 - **bug_condition**: What the bug looks like when reproduced (e.g., "start logs 'is not in the member list yet' in a loop", "MCP DEGRADED with bootstrap MC mismatch", "pcs status shows node UNCLEAN")
@@ -292,9 +296,9 @@ Write `{WORKDIR}/bug-analysis.json`:
   "logs_to_collect": ["bootkube-journal.log", "nto-controller.log", "bootstrapconfigdiff"],
   "install_method": "ipi|agent|kcli",
   "bug_type": "product|test|unclear",
-  "test_bug_reason": "explanation if bug_type is test — why this is a test issue, not a product issue",
-  "environment_feasible": true|false,
-  "environment_blockers": ["list of conditions dev-scripts cannot provide — only if environment_feasible is false"]
+  "test_bug_reason": "only present when bug_type is 'test' — why this is a test issue, not a product issue",
+  "environment_feasible": true|false,  // only present for product/unclear bugs (test bugs skip this)
+  "environment_blockers": ["only present when environment_feasible is false — conditions dev-scripts cannot provide"]
 }
 ```
 

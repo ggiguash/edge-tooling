@@ -24,7 +24,7 @@ The plugin includes an `.mcp.json` that automatically configures the `mcp-atlass
 1. Claude Code session open at the **[Two-Node Toolbox (TNT)](https://github.com/openshift-eng/two-node-toolbox) repo** (`two-node-toolbox/deploy/` or `two-node-toolbox/deploy/openshift-clusters/`). Running from any other directory will result in an error.
 2. EC2 instance running with `make inventory` completed
 3. EC2 configured (`./configure`) and SSH-accessible
-4. Pull secret at `roles/dev-scripts/install-dev/files/pull-secret.json`
+4. Pull secret at `deploy/openshift-clusters/roles/dev-scripts/install-dev/files/pull-secret.json` (relative to repo root)
 
 ## Skills
 
@@ -77,7 +77,7 @@ The cluster is **always left running** after the skill completes so the user can
 
 **Output:**
 - Logs saved to `/tmp/two-node-bug-reproduce-<BUG_ID>/`
-- Findings report written to `docs/<bug-id>-findings.md` in the TNT repo
+- Findings report written to `docs/<bug-id-lowercase>-findings.md` in the TNT repo
 - Cluster left running for manual inspection
 
 ## Authors

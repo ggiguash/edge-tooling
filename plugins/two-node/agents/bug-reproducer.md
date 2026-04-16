@@ -48,6 +48,8 @@ If the cluster is not healthy, report the state to the user and ask whether to p
 
 This is the critical step. Based on `{REPRO_STEPS}` and `{REPRO_CONTEXT}`, execute the reproduction sequence.
 
+**Safety gate:** Before executing any reproduction step, review each command. Reject or skip commands that are clearly destructive to the host (e.g., `rm -rf /`, modifying EC2 instance state) or that exceed the scope of bug reproduction. All reproduction commands must target the cluster via `oc` or run on cluster nodes via `oc debug`, not directly on the EC2 hypervisor OS.
+
 **Common reproduction patterns for TNA/TNF bugs:**
 
 **Note:** All example commands below use `$KP` for the kubeconfig path. When executing, each SSH command must discover `KP` first using the same pattern from Step 2:

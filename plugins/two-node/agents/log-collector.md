@@ -59,7 +59,7 @@ Based on `{BUG_CATEGORIES}`, collect targeted logs:
 **If `etcd` in categories:**
 ```bash
 ssh ec2-user@{EC2_IP} "bash -c '
-export KUBECONFIG=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null)
+export KUBECONFIG=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/.kcli/clusters/ostest/auth/kubeconfig 2>/dev/null)
 
 # etcd operator and pods
 oc get co etcd -o yaml > ~/bug-logs/co-etcd.yaml 2>&1
@@ -79,7 +79,7 @@ done
 **If `fencing` in categories:**
 ```bash
 ssh ec2-user@{EC2_IP} "bash -c '
-export KUBECONFIG=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null)
+export KUBECONFIG=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/.kcli/clusters/ostest/auth/kubeconfig 2>/dev/null)
 
 # Pacemaker status from each master node
 for node in \$(oc get nodes -l node-role.kubernetes.io/master -o name | sed \"s|node/||\"); do
@@ -100,7 +100,7 @@ oc logs -n openshift-machine-api deployment/metal3 --all-containers > ~/bug-logs
 **If `mco` in categories:**
 ```bash
 ssh ec2-user@{EC2_IP} "bash -c '
-export KUBECONFIG=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null)
+export KUBECONFIG=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/.kcli/clusters/ostest/auth/kubeconfig 2>/dev/null)
 
 # MCP and MC details
 oc get mcp -o yaml > ~/bug-logs/mcp-all.yaml 2>&1
@@ -124,7 +124,7 @@ done
 **If `nto` in categories:**
 ```bash
 ssh ec2-user@{EC2_IP} "bash -c '
-export KUBECONFIG=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null)
+export KUBECONFIG=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/.kcli/clusters/ostest/auth/kubeconfig 2>/dev/null)
 
 # NTO controller logs
 NTO_POD=\$(oc get pods -n openshift-cluster-node-tuning-operator -l name=cluster-node-tuning-operator -o name 2>/dev/null | head -1)
@@ -158,7 +158,7 @@ fi
 **If `networking` in categories:**
 ```bash
 ssh ec2-user@{EC2_IP} "bash -c '
-export KUBECONFIG=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null)
+export KUBECONFIG=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/.kcli/clusters/ostest/auth/kubeconfig 2>/dev/null)
 
 # OVN and network operator
 oc get co network -o yaml > ~/bug-logs/co-network.yaml 2>&1
@@ -185,7 +185,7 @@ oc get network.config cluster -o yaml > ~/bug-logs/network-config.yaml 2>&1
 **If `kubelet` in categories:**
 ```bash
 ssh ec2-user@{EC2_IP} "bash -c '
-export KUBECONFIG=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null)
+export KUBECONFIG=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/.kcli/clusters/ostest/auth/kubeconfig 2>/dev/null)
 
 # Kubelet logs and config from each node
 for node in \$(oc get nodes -o name | sed \"s|node/||\"); do
@@ -220,7 +220,7 @@ fi
 **If `upgrade` in categories:**
 ```bash
 ssh ec2-user@{EC2_IP} "bash -c '
-export KUBECONFIG=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null)
+export KUBECONFIG=\$(ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/.kcli/clusters/ostest/auth/kubeconfig 2>/dev/null)
 
 oc get clusterversion -o yaml > ~/bug-logs/clusterversion-full.yaml 2>&1
 oc get co -o yaml > ~/bug-logs/co-all.yaml 2>&1

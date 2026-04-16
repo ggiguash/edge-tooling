@@ -29,14 +29,14 @@ ssh ec2-user@{EC2_IP} "sudo virsh list --all 2>/dev/null | grep -c ostest || ech
 
 If VMs named `ostest_*` exist, a previous cluster is present. Check if kubeconfig exists:
 ```bash
-ssh ec2-user@{EC2_IP} "ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null && echo EXISTS || echo NONE"
+ssh ec2-user@{EC2_IP} "ls ~/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/openshift-metal3/dev-scripts/ocp/ostest/auth/kubeconfig 2>/dev/null || ls ~/.kcli/clusters/ostest/auth/kubeconfig 2>/dev/null && echo EXISTS || echo NONE"
 ```
 
 If a previous cluster exists:
 1. Write a warning in the output: `"previous_cluster_detected": true`
 2. Run cleanup before deploying:
 ```bash
-ssh ec2-user@{EC2_IP} "cd ~/dev-scripts && make clean 2>/dev/null; cd ~/openshift-metal3/dev-scripts && make clean 2>/dev/null; true"
+ssh ec2-user@{EC2_IP} "cd ~/dev-scripts && make clean 2>/dev/null; cd ~/openshift-metal3/dev-scripts && make clean 2>/dev/null; kcli delete cluster ostest -y 2>/dev/null; true"
 ```
 3. Wait 30 seconds for cleanup to complete, then verify no VMs remain:
 ```bash
