@@ -3,7 +3,7 @@ name: two-node:create-rhel-stories
 argument-hint: [--dry-run] <RHEL ticket keys or JQL>
 description: Create OCPEDGE stories for TNF RHEL verification tickets, link them, and set components
 user-invocable: true
-allowed-tools: Bash, Read, Glob, Grep, Agent, AskUserQuestion, mcp__mcp-atlassian__jira_search, mcp__mcp-atlassian__jira_get_issue, mcp__mcp-atlassian__jira_create_issue, mcp__mcp-atlassian__jira_create_issue_link
+allowed-tools: Bash, Read, Glob, Grep, Agent, AskUserQuestion, mcp__mcp-atlassian__jira_search, mcp__mcp-atlassian__jira_get_issue, mcp__mcp-atlassian__jira_create_issue, mcp__mcp-atlassian__jira_create_issue_link, mcp__mcp-atlassian__jira_search_fields
 ---
 
 # two-node:create-rhel-stories
@@ -38,6 +38,7 @@ If the `mcp__mcp-atlassian__jira_search` tool is not available when the command 
 ## Scripts Directory
 
 All scripts are run relative to the plugin directory:
+
 ```bash
 SCRIPTS_DIR=${PLUGIN_DIR}/scripts
 ```
@@ -78,6 +79,7 @@ If `$ARGUMENTS` contains `--dry-run`, the command runs Steps 0–5 (read-only op
 ### Step 0: Parse Arguments
 
 Run the helper to parse the input:
+
 ```bash
 python3 "${SCRIPTS_DIR}/ocpedge_rhel_helper.py" parse-args $ARGUMENTS
 ```
@@ -330,30 +332,35 @@ After all operations complete, present a summary:
 ## Examples
 
 ### Example 1: Auto-Discover Untested Tickets (Default)
+
 ```bash
 /two-node:create-rhel-stories
 ```
 Searches for untested TNF resource-agents RHEL tickets using the default JQL and creates OCPEDGE stories.
 
 ### Example 2: Dry Run
+
 ```bash
 /two-node:create-rhel-stories --dry-run
 ```
 Previews the plan without creating or modifying anything in Jira.
 
 ### Example 3: Specific Tickets
+
 ```bash
 /two-node:create-rhel-stories RHEL-12345 RHEL-12346 RHEL-12347
 ```
 Processes only the specified RHEL tickets.
 
 ### Example 4: JQL Query
+
 ```bash
 /two-node:create-rhel-stories jql:project = RHEL AND component = "resource-agents" AND status != Closed ORDER BY created DESC
 ```
 Searches for tickets matching the JQL query.
 
 ### Example 5: Dry Run with Specific Tickets
+
 ```bash
 /two-node:create-rhel-stories --dry-run RHEL-12345 RHEL-12346
 ```
