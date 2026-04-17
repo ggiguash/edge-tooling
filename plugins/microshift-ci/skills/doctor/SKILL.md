@@ -65,15 +65,19 @@ WORKDIR=/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)
 
 ### Step 1b: Generate PCP Performance Graphs
 
-**Goal**: Generate disk I/O graphs from PCP archives for all jobs that have pmlogs.
+**Goal**: Generate performance graphs from PCP archives for all jobs that have pmlogs.
 
 **Actions**:
 1. Run the graphs script (this is deterministic, no LLM needed):
    ```bash
    bash ${SCRIPTS_DIR}/doctor.sh graphs --workdir ${WORKDIR}
    ```
-2. The script finds PCP archives in downloaded artifacts, extracts metrics, and generates PNG graphs at `${WORKDIR}/graphs/<build_id>/disk_io.png`.
-3. If prerequisites are missing (`pcp2json`, `matplotlib`), the script warns and skips — this is non-fatal.
+2. The script finds PCP archives in downloaded artifacts and generates PNG graphs at `${WORKDIR}/graphs/<build_id>/`:
+   - `1_cpu_usage.png` — CPU usage (user, system, I/O wait)
+   - `2_mem_usage.png` — Memory usage (used, cached)
+   - `3_disk_io.png` — Disk I/O (read/write OPS, await)
+   - `4_disk_usage.png` — Disk usage by partition (% fill)
+3. If prerequisites are missing (`pcp2json`, `matplotlib`), the script errors and stops.
 
 ### Step 2: Analyze Each Job Using /microshift-ci:prow-job
 

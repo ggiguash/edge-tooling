@@ -23,4 +23,4 @@ trap 'rm -f "${TMPFILE}"' EXIT
 python3 "${SCRIPT_DIR}/parse_mem.py" --timezone "${TIMEZONE}" \
     "${TMPFILE}" "${OUTPUT}"
 
-echo "Wrote $(python3 -c "import json; d=json.load(open('${OUTPUT}')); print(len(d['timestamps']))" 2>/dev/null || echo 0) data points to ${OUTPUT}"
+echo "Wrote $(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(len(d['timestamps']))" "${OUTPUT}" 2>/dev/null || echo 0) data points to ${OUTPUT}"

@@ -134,20 +134,17 @@ def main():
         used_insts = get_instances(sample, "filesys", "used")
         used_map = {inst["name"]: float(inst["value"]) for inst in used_insts}
 
-        has_data = False
         for part in result["partitions"]:
             used_kb = used_map.get(part["device"])
             cap_kb = cap_lookup.get(part["device"], 0)
             if used_kb is not None and cap_kb > 0:
                 part["used_pct"].append(round(100.0 * used_kb / cap_kb, 1))
                 part["used_gb"].append(round(used_kb * KB_TO_GB, 2))
-                has_data = True
             else:
                 part["used_pct"].append(None)
                 part["used_gb"].append(None)
 
-        if has_data:
-            result["timestamps"].append(ts)
+        result["timestamps"].append(ts)
 
     if not result["timestamps"]:
         print("ERROR: No valid disk usage data points", file=sys.stderr)
