@@ -1,5 +1,10 @@
 """Generate HTML dashboard report from monitor data."""
 
+from __future__ import annotations
+
+from typing import Optional
+
+
 import html
 import json
 import logging
@@ -164,7 +169,7 @@ def _build_template_context(report: MonitorReport) -> dict:
     }
 
 
-def generate_html(report: MonitorReport, output_path: Path | None = None) -> str:
+def generate_html(report: MonitorReport, output_path: Optional[Path] = None) -> str:
     """Generate a self-contained HTML report.
 
     Returns the HTML content as a string. If output_path is provided,

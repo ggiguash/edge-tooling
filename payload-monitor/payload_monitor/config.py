@@ -1,5 +1,7 @@
 """Configuration defaults for Edge OCP Payload Monitor."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Optional
 

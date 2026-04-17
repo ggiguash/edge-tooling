@@ -1,5 +1,7 @@
 """Search JIRA for existing bugs related to edge topology failures."""
 
+from __future__ import annotations
+
 import logging
 import os
 import urllib.parse
