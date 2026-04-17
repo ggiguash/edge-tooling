@@ -67,26 +67,36 @@ generate_job_graphs() {
     local output_dir="${WORKDIR}/graphs/${build_id}"
     mkdir -p "${output_dir}"
 
-    # Disk I/O graph
-    if "${SCRIPT_DIR}/extract_io.sh" "${pcp_dir}" "${output_dir}/disk_io.json" "${TIMEZONE}" 2>/dev/null; then
-        if python3 "${SCRIPT_DIR}/plot_io.py" "${output_dir}/disk_io.json" \
-                -o "${output_dir}/disk_io.png" --timezone "${TIMEZONE}" >/dev/null 2>&1; then
-            echo "  ${build_id}: disk_io.png" >&2
+    # CPU usage graph (tab order: 1)
+    if "${SCRIPT_DIR}/extract_cpu.sh" "${pcp_dir}" "${output_dir}/1_cpu_usage.json" "${TIMEZONE}" 2>/dev/null; then
+        if python3 "${SCRIPT_DIR}/plot_cpu.py" "${output_dir}/1_cpu_usage.json" \
+                -o "${output_dir}/1_cpu_usage.png" --timezone "${TIMEZONE}" >/dev/null 2>&1; then
+            echo "  ${build_id}: cpu_usage" >&2
         else
-            echo "  ${build_id}: disk_io plot failed" >&2
+            echo "  ${build_id}: cpu_usage plot failed" >&2
         fi
     else
         echo "  ${build_id}: no PCP data or extraction failed" >&2
         return 0
     fi
 
-    # CPU usage graph
-    if "${SCRIPT_DIR}/extract_cpu.sh" "${pcp_dir}" "${output_dir}/cpu_usage.json" "${TIMEZONE}" 2>/dev/null; then
-        if python3 "${SCRIPT_DIR}/plot_cpu.py" "${output_dir}/cpu_usage.json" \
-                -o "${output_dir}/cpu_usage.png" --timezone "${TIMEZONE}" >/dev/null 2>&1; then
-            echo "  ${build_id}: cpu_usage.png" >&2
+    # Memory usage graph (tab order: 2)
+    if "${SCRIPT_DIR}/extract_mem.sh" "${pcp_dir}" "${output_dir}/2_mem_usage.json" "${TIMEZONE}" 2>/dev/null; then
+        if python3 "${SCRIPT_DIR}/plot_mem.py" "${output_dir}/2_mem_usage.json" \
+                -o "${output_dir}/2_mem_usage.png" --timezone "${TIMEZONE}" >/dev/null 2>&1; then
+            echo "  ${build_id}: mem_usage" >&2
         else
-            echo "  ${build_id}: cpu_usage plot failed" >&2
+            echo "  ${build_id}: mem_usage plot failed" >&2
+        fi
+    fi
+
+    # Disk I/O graph (tab order: 3)
+    if "${SCRIPT_DIR}/extract_io.sh" "${pcp_dir}" "${output_dir}/3_disk_io.json" "${TIMEZONE}" 2>/dev/null; then
+        if python3 "${SCRIPT_DIR}/plot_io.py" "${output_dir}/3_disk_io.json" \
+                -o "${output_dir}/3_disk_io.png" --timezone "${TIMEZONE}" >/dev/null 2>&1; then
+            echo "  ${build_id}: disk_io" >&2
+        else
+            echo "  ${build_id}: disk_io plot failed" >&2
         fi
     fi
 }

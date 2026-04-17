@@ -302,7 +302,7 @@ def _load_job_graphs(build_id):
         graph_dir = os.path.join(_GRAPHS_DIR, build_id)
         if os.path.isdir(graph_dir):
             for png in sorted(glob_mod.glob(os.path.join(graph_dir, "*.png"))):
-                label = os.path.splitext(os.path.basename(png))[0].replace("_", " ").title()
+                label = re.sub(r"^\d+_", "", os.path.splitext(os.path.basename(png))[0]).replace("_", " ").title()
                 with open(png, "rb") as f:
                     b64 = base64.b64encode(f.read()).decode("ascii")
                 graphs.append((label, b64))
