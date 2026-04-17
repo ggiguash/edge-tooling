@@ -1,5 +1,7 @@
 """Generate HTML for the Install & Upgrade Timing dashboard section."""
 
+from __future__ import annotations
+
 import html
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone

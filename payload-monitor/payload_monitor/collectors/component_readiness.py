@@ -1,5 +1,7 @@
 """Fetch Component Readiness data from Sippy (HA vs edge topologies)."""
 
+from __future__ import annotations
+
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
