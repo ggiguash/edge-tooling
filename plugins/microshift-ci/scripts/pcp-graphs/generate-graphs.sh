@@ -99,6 +99,16 @@ generate_job_graphs() {
             echo "  ${build_id}: disk_io plot failed" >&2
         fi
     fi
+
+    # Disk usage graph (tab order: 4)
+    if "${SCRIPT_DIR}/extract_disk_usage.sh" "${pcp_dir}" "${output_dir}/4_disk_usage.json" "${TIMEZONE}" 2>/dev/null; then
+        if python3 "${SCRIPT_DIR}/plot_disk_usage.py" "${output_dir}/4_disk_usage.json" \
+                -o "${output_dir}/4_disk_usage.png" --timezone "${TIMEZONE}" >/dev/null 2>&1; then
+            echo "  ${build_id}: disk_usage" >&2
+        else
+            echo "  ${build_id}: disk_usage plot failed" >&2
+        fi
+    fi
 }
 
 export -f generate_job_graphs
