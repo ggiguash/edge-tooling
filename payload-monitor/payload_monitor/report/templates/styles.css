@@ -106,6 +106,26 @@ a:hover { text-decoration: underline; }
   margin: 6px 0 0 20px;
   color: var(--text-muted);
 }
+.error-banner .error-details {
+  background: none;
+  border: none;
+  border-radius: 0;
+  margin: 6px 0 0;
+}
+.error-banner .error-details summary {
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline;
+}
+.error-banner .error-details summary:hover {
+  background: none;
+  color: var(--text);
+}
+.error-banner .error-details[open] summary {
+  margin-bottom: 4px;
+}
 
 /* Edge health overview: unified rows */
 .health-overview {

@@ -61,23 +61,29 @@
 
 {% if report.data_errors %}
 <div class="error-banner">
-  <strong>Data collection errors:</strong> Some data sources failed. The report may be incomplete.
-  <ul>
-    {% for err in report.data_errors %}
-    <li>{{ err }}</li>
-    {% endfor %}
-  </ul>
+  <strong>Data collection errors:</strong> {{ report.data_errors | length }} data source{{ 's' if report.data_errors | length > 1 else '' }} failed. The report may be incomplete.
+  <details class="error-details">
+    <summary>Show details</summary>
+    <ul>
+      {% for err in report.data_errors %}
+      <li>{{ err }}</li>
+      {% endfor %}
+    </ul>
+  </details>
 </div>
 {% endif %}
 
 {% if report.jira_errors %}
 <div class="error-banner">
-  <strong>JIRA search errors:</strong> Some JIRA searches failed. Bug matching may be incomplete for affected jobs.
-  <ul>
-    {% for err in report.jira_errors %}
-    <li>{{ err }}</li>
-    {% endfor %}
-  </ul>
+  <strong>JIRA search errors:</strong> {{ report.jira_errors | length }} JIRA search{{ 'es' if report.jira_errors | length > 1 else '' }} failed. Bug matching may be incomplete for affected jobs.
+  <details class="error-details">
+    <summary>Show details</summary>
+    <ul>
+      {% for err in report.jira_errors %}
+      <li>{{ err }}</li>
+      {% endfor %}
+    </ul>
+  </details>
 </div>
 {% endif %}
 
