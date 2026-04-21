@@ -25,6 +25,12 @@
       "version": "1.0.0"
     },
     {
+      "name": "github",
+      "source": "./plugins/github",
+      "description": "GitHub workflow skills — PR automation and labeling",
+      "version": "1.0.0"
+    },
+    {
       "name": "hello-world",
       "source": "./plugins/hello-world",
       "description": "A simple hello-world plugin demonstrating the marketplace plugin structure",
