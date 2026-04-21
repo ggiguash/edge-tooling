@@ -1,12 +1,12 @@
 ---
-name: squash-pr-commits
+name: apply-tide-squash-label
 description: "Label a GitHub PR for squash merging by posting a /label tide/merge-method-squash comment"
 argument-hint: <PR URL>
 user-invocable: true
 allowed-tools: Bash
 ---
 
-# squash-pr-commits
+# apply-tide-squash-label
 
 Post a comment on a GitHub pull request to label it for squash merging.
 

@@ -4,11 +4,11 @@ GitHub workflow automation skills for Claude Code.
 
 ## Skills
 
-### squash-pr-commits
+### apply-tide-squash-label
 
 Labels a GitHub PR for squash merging by posting a `/label tide/merge-method-squash` comment.
 
-**Usage:** `/github:squash-pr-commits <PR URL>`
+**Usage:** `/github:apply-tide-squash-label <PR URL>`
 
 ## Prerequisites
 
