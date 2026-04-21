@@ -25,6 +25,7 @@
 - **resource-agents** provides *resource* agents (podman-etcd manages etcd); fence-agents provides *fence* agents (power control) — different layers, both consumed by Pacemaker
 
 **Debugging a fence failure**:
+
 ```bash
 sudo pcs stonith config        # Show configured fence device and agent
 sudo fence_redfish --ip=<bmc-ip> --username=<user> --password=<pass> --action=status

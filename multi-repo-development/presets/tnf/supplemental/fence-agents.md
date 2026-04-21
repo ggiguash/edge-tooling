@@ -10,7 +10,7 @@ A collection of **83 fence agents** — scripts that Pacemaker's STONITH daemon 
 
 ## Repository Structure
 
-```
+```text
 agents/           # 83 fence agent implementations (one directory each)
   redfish/        #   fence_redfish — Redfish BMC (TNF production)
   virsh/          #   fence_virsh — libvirt VMs (TNF CI/dev)
@@ -104,7 +104,8 @@ The core library provides:
 ### Pacemaker Integration
 
 Pacemaker passes parameters via stdin (key=value format):
-```
+
+```text
 agent=fence_redfish
 ipaddr=bmc.example.com
 username=admin
