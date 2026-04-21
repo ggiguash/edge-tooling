@@ -1,0 +1,4 @@
+Daily Report:
+
+:done-circle-check: OCPEDGE-2510: Investigated TNF deployment install issue
+:done-circle-check: OCPEDGE-2444: Rebased PacemakerCluster tests (https://redhat.atlassian.net/browse/OCPEDGE-2444)

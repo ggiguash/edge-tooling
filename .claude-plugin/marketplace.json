@@ -71,6 +71,12 @@
       "source": "./plugins/two-node",
       "description": "Two-node topology (TNA/TNF) workflow automation — RHEL verification, Jira integration, and more",
       "version": "1.0.0"
+    },
+    {
+      "name": "edge-ic",
+      "source": "./plugins/edge-ic",
+      "description": "Individual contributor workflow automation for TODO management, status reporting, and Jira updates",
+      "version": "1.0.0"
     }
   ]
 }

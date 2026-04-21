@@ -1,0 +1,2 @@
+:done-circle-check: OCPEDGE-2510: Investigated TNF deployment install issue (https://redhat.atlassian.net/browse/OCPEDGE-2510)
+:in-progress: Working on other tasks

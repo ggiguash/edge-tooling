@@ -1,0 +1,7 @@
+Daily Report:
+
+:done-circle-check: OCPEDGE-2510: Investigated TNF deployment install issue affecting all TNF deployments (https://redhat.atlassian.net/browse/OCPEDGE-2510)
+:done-circle-check: OCPEDGE-2444: Rebased PacemakerCluster health check verification on latest code (https://redhat.atlassian.net/browse/OCPEDGE-2444)
+:done-circle-check: Filed OCPBUGS-83623: NoExecuteTaintManager test failures on 2-node clusters (https://redhat.atlassian.net/browse/OCPBUGS-83623)
+:in-progress: OCPEDGE-2457: Waiting for doc writer input on TNF docs consulting (https://redhat.atlassian.net/browse/OCPEDGE-2457)
+:jira-blocker: OCPEDGE-2463: Blocked by IPv6 mirroring issue in dev-scripts (https://redhat.atlassian.net/browse/OCPEDGE-2463)
