@@ -6,6 +6,16 @@ Fork the repo, push changes to your fork, and open a PR against `main`.
 
 Reviews are managed through OWNERS/OWNERS_ALIASES. All PRs to `main` receive automated review from CodeRabbit (shellcheck, markdownlint, ruff). See `OWNERS_ALIASES` for the current reviewer list.
 
+## Getting Started
+
+After cloning the repo, enable the shared git hooks:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+This installs a pre-commit hook that runs markdownlint on staged `.md` files. Commits with markdown lint errors will be blocked.
+
 ## What You Can Contribute
 
 | Type | Location | Guide |
