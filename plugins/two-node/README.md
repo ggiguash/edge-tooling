@@ -53,6 +53,33 @@ Create OCPEDGE stories for TNF RHEL verification tickets, link them to the RHEL 
 - Closed story handling (creates new stories for untested tickets)
 - Subtask creation (verification + automation)
 
+### `/two-node:rhel-bugfix-verify`
+
+Verify a RHEL resource-agents bug fix on a TNF cluster. Given a JIRA ID, the skill fetches the full bug context from Jira (title, z-stream, upstream PR, linked OCPEDGE tracking ticket, test instructions), then walks through the verification workflow.
+
+```text
+/two-node:rhel-bugfix-verify RHEL-157145
+/two-node:rhel-bugfix-verify https://issues.redhat.com/browse/RHEL-157145
+```
+
+**Workflow:**
+
+1. **Gather info from Jira** — Fetches the RHEL ticket, follows links to upstream OCPBUGS bug (extracts PR, commit, author), finds OCPEDGE tracking ticket and sprint. Only asks the user for the RPM location and verification type.
+2. **Check cluster** — Runs `verify-cluster.sh` to check OCP version, RHCOS, pacemaker status, etcd health, and current RPM version
+3. **Patch nodes** — Runs `patch-nodes.sh` to distribute the RPM, apply `rpm-ostree override replace -C`, reboot, and verify
+4. **Run test** — Code-only verification (grep for fix code) or functional test (shutdown/fence/standby scenarios)
+5. **Generate report** — Produces a Markdown JIRA comment with environment, fix details, test results, and conclusion. Optionally posts it to the RHEL ticket via MCP.
+
+**Scripts** (in `scripts/`):
+- `verify-cluster.sh` — Cluster health check (OCP, nodes, pcs, etcd, RPM versions)
+- `patch-nodes.sh` — RPM patching with persistent override + reboot + verification
+- `collect-logs.sh` — Collect pacemaker/etcd logs from both nodes
+
+**Prerequisites:**
+- SSH access to a hypervisor running a TNF cluster
+- RPM with the fix downloaded locally (typically `~/Downloads/`)
+- `HYPERVISOR` env var or `two-node-toolbox/` submodule available for auto-detection
+
 ### `/two-node:bug-reproducer`
 
 Automated OpenShift bug reproduction for Two-Node with Arbiter (TNA) and Two-Node with Fencing (TNF) topologies.
