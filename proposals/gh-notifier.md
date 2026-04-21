@@ -6,7 +6,7 @@
 
 ## Summary
 
-**gh-notifier** is a small, dependency-free Python script that uses the **GitHub REST API** to list **open pull requests** in one or more repositories, filters them (authors, drafts, labels), flags PRs that **need attention** (stale `updated_at` / `created_at`, optional required or forbidden labels), and posts a **Slack Block Kit** summary via an **Incoming Webhook** (same class of integration as [Eddie](slack-bot-eddie.md)).
+**gh-notifier** is a small, dependency-free Python script that uses the **GitHub REST API** to list **open pull requests** in one or more repositories, filters them (authors, drafts, labels), flags PRs that **need attention** (stale `updated_at` / `created_at`, optional required or forbidden labels), writes an **HTML dashboard** (with Slack **mrkdwn** / webhook JSON copy helpers for manual posts), and **optionally** POSTs the same **Slack Block Kit** payload via an **Incoming Webhook** ([Eddie](slack-bot-eddie.md)).
 
 **Repository layout:** Source of truth for the script is this repo under [`gh-notifier/`](../gh-notifier/). **openshift/release** is expected to invoke it **once per day, Monday through Friday**, with a checkout of **edge-tooling** so the notifier can read **[`OWNERS`](../OWNERS)** and **[`OWNERS_ALIASES`](../OWNERS_ALIASES)** from **this repository** to determine which GitHub logins count as “our” PR authors. **openshift/release does not host those files**—only the job wiring, credentials, and schedule live there.
 
@@ -14,7 +14,7 @@ The script loads **[`OWNERS`](../OWNERS)** and **[`OWNERS_ALIASES`](../OWNERS_AL
 
 ## Goals and non-goals
 
-- **Goals:** Give maintainers a **single Slack digest** of open PRs that may be stuck or violate label rules; keep logic in **edge-tooling** for review and reuse; avoid extra Python dependencies (`urllib` only).
+- **Goals:** Give maintainers a **browser dashboard** and optional **Slack** visibility for PRs that may be stuck or violate label rules; keep logic in **edge-tooling** for review and reuse; avoid extra Python dependencies (`urllib` only).
 - **Non-goals:** Replace GitHub notifications, CODEOWNERS, or merge automation; maintain duplicate approver/alias lists under openshift/release (single source of truth stays in edge-tooling); page on every open PR (only “needs attention” rows are highlighted, with a cap in Slack).
 
 ## Architecture
@@ -23,7 +23,8 @@ A scheduled job in **openshift/release** (weekdays only) checks out **edge-tooli
 
 - **`GITHUB_TOKEN`** — API access (minimum scopes to read pulls on the target repos).
 - **Author allowlist** — built inside the script from **[`OWNERS`](../OWNERS)** and **[`OWNERS_ALIASES`](../OWNERS_ALIASES)** in the **edge-tooling** clone (override file locations with **`OWNERS_FILE`** / **`OWNERS_ALIASES_FILE`** if needed), **not** from files in openshift/release.
-- **`SLACK_WEBHOOK_URL`** — channel webhook (often from [Eddie](slack-bot-eddie.md)).
+- **`GH_NOTIFIER_HTML_OUTPUT`** — path to the generated **HTML report** (default under `gh-notifier/`); publish as a CI artifact in release.
+- **`SLACK_WEBHOOK_URL`** — optional channel webhook for automatic post (often from [Eddie](slack-bot-eddie.md)); omit to rely on manual paste from the HTML page.
 - Optional: **`GITHUB_REPOS`**, **`STALE_DAYS`**, **`EXCLUDE_LABELS`**, **`REQUIRED_LABELS`**, **`FORBIDDEN_LABELS`** (see [`gh-notifier.py`](../gh-notifier/gh-notifier.py)).
 
 ```mermaid
@@ -49,10 +50,10 @@ flowchart LR
 
 ## Impact if unavailable
 
-- **Process:** Maintainers lose the **automated daily Slack digest**; open PRs still exist in GitHub and other notifications (email, GitHub UI) are unchanged.
+- **Process:** Maintainers lose the **daily HTML dashboard artifact** (and optional Slack post); open PRs still exist in GitHub and other notifications (email, GitHub UI) are unchanged.
 - **Risk:** Stale or mislabeled PRs may be noticed **later**, increasing queue time or duplicate work—not a production outage for shipped clusters.
 - **If GitHub token fails:** Script exits with error; no Slack post (when webhook posting is enabled).
-- **If Slack fails:** GitHub data may still be printed to CI logs when `SLACK_WEBHOOK_URL` is unset and there are attention items; with webhook set, Slack errors surface as job failure depending on how release wraps the script.
+- **If Slack fails:** The HTML file is still written first; with webhook set, Slack HTTP errors may fail the job depending on how release wraps the script.
 
 ## Recovery when it goes down
 
@@ -79,6 +80,7 @@ flowchart LR
 - **GitHub-only reminders / saved searches:** No Slack aggregation; higher manual load.
 - **Dedicated SaaS (Pull Panda, etc.):** Extra vendor and data policy review.
 - **Prow / tide-only workflows:** Strong for merge gates; weaker for “human nudge” digests across arbitrary label rules.
+- **Claude Code slash command:** Extra manual step and not critical for initial implementation.
 
 ## Decision
 

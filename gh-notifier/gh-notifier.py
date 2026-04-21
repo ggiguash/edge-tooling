@@ -5,12 +5,17 @@ GitHub logins to match on PR authors come from expanding Kubernetes-style **OWNE
 reviewers) using **OWNERS_ALIASES** in the same repository checkout (defaults: repo root adjacent to
 ``gh-notifier/``). Override paths with OWNERS_FILE and OWNERS_ALIASES_FILE.
 
+Writes a self-contained **HTML dashboard** (path via ``GH_NOTIFIER_HTML_OUTPUT``) with PR details and
+Slack **mrkdwn** / webhook **JSON** copy buttons. Optional ``SLACK_WEBHOOK_URL`` still posts automatically.
+
 Designed to be initiated from openshift/release on a schedule with env vars driving repos, labels,
 and notification.
 """
 
 from __future__ import annotations
 
+import base64
+import html
 import json
 import os
 import re
@@ -44,6 +49,7 @@ STALE_DAYS = _int_env("STALE_DAYS", 7)
 GITHUB_TOKEN = _env("GITHUB_TOKEN")
 SLACK_WEBHOOK_URL = _env("SLACK_WEBHOOK_URL", "")
 
+
 # Comma-separated org/repo pairs
 _REPOS_RAW = _env("GITHUB_REPOS", "openshift-eng/edge-tooling")
 
@@ -59,10 +65,10 @@ def _label_set(raw: str) -> set[str]:
 
 
 EXCLUDE_LABELS = _label_set(_env("EXCLUDE_LABELS", _EXCLUDE_DEFAULT))
-REQUIRED_LABELS = {x.lower() for x in re.split(r"[;,]", _env("REQUIRED_LABELS", "")) if x.strip()}
+REQUIRED_LABELS = _label_set(_env("REQUIRED_LABELS", ""))
 FORBIDDEN_LABELS = _label_set(_env("FORBIDDEN_LABELS", ""))
 
-MAX_PRS_IN_MESSAGE = 20
+MAX_PRS_IN_MESSAGE = 5
 CHUNK_MAX_LEN = 2800
 
 
@@ -383,8 +389,13 @@ def build_slack_payload(
     open_pr_count: int,
     attention: list[AttentionPR],
     fetch_errors: list[str],
+    slack_pr_cap: int | None = MAX_PRS_IN_MESSAGE,
 ) -> dict[str, Any]:
-    """Build the same JSON shape as hubhelper's slack.webhookPayload."""
+    """Build the same JSON shape as hubhelper's slack.webhookPayload.
+
+    ``slack_pr_cap`` limits how many PR rows appear in the Block Kit list (Slack size limits).
+    Pass ``None`` to include every PR (used for the HTML mrkdwn copy block).
+    """
     att_n = len(attention)
     blocks: list[dict[str, Any]] = [
         _plain_header("Pull request dashboard"),
@@ -407,25 +418,20 @@ def build_slack_payload(
     if not attention:
         blocks.append(_section_mrkdwn("✅ *All clear* — no PRs need attention right now."))
     else:
-        shown_n = min(len(attention), MAX_PRS_IN_MESSAGE)
-        blocks.append(
-            _section_mrkdwn(
-                f"*PRs needing attention* — showing _{shown_n}_ of _{len(attention)}_"
-            )
-        )
+        if slack_pr_cap is None or len(attention) <= slack_pr_cap:
+            to_show = attention
+            header = f"*PRs needing attention* — _{len(attention)}_ PR(s)"
+        else:
+            to_show = attention[:slack_pr_cap]
+            header = f"*PRs needing attention* — showing _{slack_pr_cap}_ of _{len(attention)}_"
+        blocks.append(_section_mrkdwn(header))
         pr_lines: list[str] = []
-        shown = 0
-        for p in attention:
-            if shown >= MAX_PRS_IN_MESSAGE:
-                rest = len(attention) - shown
-                pr_lines.append(f"\n_…and {rest} more not listed._\n")
-                break
-            shown += 1
+        for n, p in enumerate(to_show, start=1):
             title = slack_escape(p.title)
             if len(title) > 120:
                 title = title[:117] + "…"
             link_text = f"{p.repo_full}#{p.number} — {title.replace('|', '·')}"
-            pr_lines.append(f"*{shown}.* <{p.html_url}|{slack_escape(link_text)}>")
+            pr_lines.append(f"*{n}.* <{p.html_url}|{slack_escape(link_text)}>")
             base = p.base_branch or "—"
             line2 = (
                 f"   `{slack_escape(p.author)}` · base `{slack_escape(base)}` · "
@@ -437,6 +443,9 @@ def build_slack_payload(
                 line2 += f"  · *Should not have:* {format_label_list(p.forbidden_labels)}"
             pr_lines.append(line2)
             pr_lines.append("")
+        if slack_pr_cap is not None and len(attention) > len(to_show):
+            rest = len(attention) - len(to_show)
+            pr_lines.append(f"\n_…and {rest} more not listed in this Slack message._\n")
         body = "\n".join(pr_lines).rstrip()
         _chunk_section_blocks(blocks, body)
     return {
@@ -445,12 +454,327 @@ def build_slack_payload(
     }
 
 
+def slack_serialize_payload(payload: dict[str, Any]) -> bytes:
+    """Same JSON serialization as the Slack Incoming Webhook POST body."""
+    return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+
+# Slack mrkdwn ``<https://host/path|label>`` (http(s) only; label must not contain ``>``).
+_SLACK_HTTP_LINK_RE = re.compile(r"<(https?://[^|\s<>]+)\|([^>]+)>")
+
+
+def slack_mrkdwn_http_links_to_markdown(text: str) -> str:
+    """Convert Slack-style ``<url|title>`` links to CommonMark ``[title](url)`` for generic paste targets."""
+
+    def repl(m: re.Match[str]) -> str:
+        url, title = m.group(1), m.group(2)
+        title_esc = title.replace("\\", "\\\\").replace("]", "\\]")
+        return f"[{title_esc}]({url})"
+
+    return _SLACK_HTTP_LINK_RE.sub(repl, text)
+
+
+def slack_blocks_to_mrkdwn_for_paste(payload: dict[str, Any]) -> str:
+    """Flatten Block Kit payload to mrkdwn-ish text Slack's composer understands (links, bold, etc.)."""
+    lines: list[str] = []
+    for block in payload.get("blocks") or []:
+        bt = block.get("type")
+        if bt == "header":
+            pt = block.get("text") or {}
+            if isinstance(pt, dict) and pt.get("type") == "plain_text":
+                lines.append(f"*{pt.get('text', '')}*")
+        elif bt == "context":
+            for el in block.get("elements") or []:
+                if isinstance(el, dict) and el.get("type") == "mrkdwn":
+                    lines.append(str(el.get("text", "")))
+        elif bt == "section":
+            st = block.get("text")
+            if isinstance(st, dict) and st.get("type") == "mrkdwn":
+                lines.append(str(st.get("text", "")))
+            for fld in block.get("fields") or []:
+                if isinstance(fld, dict) and fld.get("type") == "mrkdwn":
+                    lines.append(str(fld.get("text", "")))
+        elif bt == "divider":
+            lines.append("────────")
+        lines.append("")
+    return "\n".join(lines).strip() + "\n"
+
+
+def _b64_utf8(s: str) -> str:
+    return base64.standard_b64encode(s.encode("utf-8")).decode("ascii")
+
+
+def write_pr_dashboard_html(
+    path: Path,
+    *,
+    fetched_at: datetime,
+    repos: list[tuple[str, str]],
+    open_count: int,
+    attention: list[AttentionPR],
+    fetch_errors: list[str],
+    slack_mrkdwn: str,
+    slack_json: str,
+    stale_days: int,
+) -> None:
+    """Write a self-contained HTML report with PR cards and Slack copy helpers."""
+    repos_label = html.escape(", ".join(f"{o}/{r}" for o, r in repos))
+    gen_ts = html.escape(fetched_at.strftime("%Y-%m-%d %H:%M UTC"))
+    label_line = html.escape(_label_mode_line())
+    mrkdwn_b64 = _b64_utf8(slack_mrkdwn)
+    json_b64 = _b64_utf8(slack_json)
+    att_n = len(attention)
+
+    rows: list[str] = []
+    for p in attention:
+        reasons_html = "".join(f'<li class="reason">{html.escape(r)}</li>' for r in p.reasons)
+        miss = ", ".join(html.escape(x) for x in p.missing_labels) or "—"
+        forbid = ", ".join(html.escape(x) for x in p.forbidden_labels) or "—"
+        title_e = html.escape(p.title)
+        rows.append(
+            "<tr>"
+            f'<td class="mono"><a href="{html.escape(p.html_url, quote=True)}">{html.escape(p.repo_full)}#{p.number}</a></td>'
+            f'<td class="title"><a href="{html.escape(p.html_url, quote=True)}">{title_e}</a></td>'
+            f'<td class="mono">{html.escape(p.author)}</td>'
+            f'<td class="mono">{html.escape(p.base_branch or "—")}</td>'
+            f'<td class="num">{p.age_days}d</td>'
+            f'<td class="num">{p.inactive_days}d</td>'
+            f"<td><ul class=\"reasons\">{reasons_html}</ul></td>"
+            f"<td class=\"labels\">{miss}</td>"
+            f"<td class=\"labels\">{forbid}</td>"
+            "</tr>"
+        )
+    table_body = "\n".join(rows) if rows else ""
+
+    errors_block = ""
+    if fetch_errors:
+        errs = "".join(f"<li>{html.escape(e)}</li>" for e in fetch_errors)
+        errors_block = f'<div class="banner error"><strong>Errors</strong><ul>{errs}</ul></div>'
+
+    all_clear = ""
+    table_section = ""
+    if not attention:
+        all_clear = '<div class="all-clear"><p>All clear</p><p class="sub">No PRs need attention right now.</p></div>'
+    else:
+        table_section = f"""<section class="prs">
+<h2>Pull requests needing attention <span class="badge">{att_n}</span></h2>
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>PR</th><th>Title</th><th>Author</th><th>Base</th><th>Open</th><th>Idle</th><th>Why</th><th>Missing labels</th><th>Forbidden labels</th>
+</tr></thead>
+<tbody>
+{table_body}
+</tbody>
+</table>
+</div>
+<p class="hint">Sorted by <strong>longest open</strong> first (then idle time). Stale / age threshold: <strong>{stale_days}</strong> days · Repos watched: {repos_label}</p>
+</section>"""
+
+    doc = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR attention — {gen_ts}</title>
+<style>
+:root {{
+  --bg: #0f1419;
+  --panel: #1a2332;
+  --text: #e7ecf3;
+  --muted: #8b9cb3;
+  --accent: #3d8bfd;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --border: #30363d;
+  --link: #58a6ff;
+}}
+* {{ box-sizing: border-box; }}
+body {{
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  line-height: 1.5;
+  padding: 1.5rem clamp(1rem, 4vw, 2.5rem);
+}}
+header {{
+  margin-bottom: 1.75rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1rem;
+}}
+h1 {{ font-size: 1.5rem; font-weight: 600; margin: 0 0 0.35rem 0; }}
+.subtitle {{ color: var(--muted); font-size: 0.9rem; margin: 0; }}
+.metrics {{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+}}
+.metric {{
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}}
+.metric .val {{ font-size: 1.75rem; font-weight: 700; color: var(--accent); }}
+.metric .lbl {{ font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }}
+.all-clear {{
+  background: linear-gradient(135deg, #1a2f22, var(--panel));
+  border: 1px solid #23863644;
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  margin-bottom: 2rem;
+}}
+.all-clear p {{ margin: 0; font-size: 1.25rem; color: var(--ok); }}
+.all-clear .sub {{ margin-top: 0.5rem; font-size: 0.95rem; color: var(--muted); }}
+.banner.error {{ background: #3d1f1f; border: 1px solid #f8514966; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; color: #ffb1b1; }}
+.banner.error ul {{ margin: 0.5rem 0 0 1.1rem; }}
+section {{ margin-bottom: 2.25rem; }}
+h2 {{ font-size: 1.1rem; margin: 0 0 1rem 0; display: flex; align-items: center; gap: 0.5rem; }}
+.badge {{
+  background: var(--warn);
+  color: #0d1117;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+}}
+.table-wrap {{ overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }}
+table {{ width: 100%; border-collapse: collapse; font-size: 0.875rem; }}
+th, td {{ padding: 0.65rem 0.85rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }}
+th {{ background: var(--panel); color: var(--muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }}
+tr:last-child td {{ border-bottom: none; }}
+td.mono {{ font-family: ui-monospace, monospace; font-size: 0.8rem; }}
+td.title {{ max-width: 22rem; }}
+td.title a {{ color: var(--link); text-decoration: none; }}
+td.title a:hover {{ text-decoration: underline; }}
+td.num {{ text-align: right; white-space: nowrap; }}
+ul.reasons {{ margin: 0; padding-left: 1.1rem; color: var(--muted); font-size: 0.82rem; }}
+li.reason {{ margin: 0.2rem 0; }}
+td.labels {{ font-size: 0.8rem; color: var(--muted); max-width: 10rem; }}
+.hint {{ font-size: 0.8rem; color: var(--muted); margin-top: 0.75rem; }}
+.slack-panel {{
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+}}
+.slack-panel h2 {{ margin-top: 0; }}
+.slack-panel p {{ color: var(--muted); font-size: 0.9rem; margin: 0 0 1rem 0; }}
+textarea.slack-field {{
+  width: 100%;
+  min-height: 12rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  background: #0d1117;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  resize: vertical;
+}}
+textarea.json-field {{ min-height: 8rem; }}
+.actions {{ display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0 1rem 0; }}
+button {{
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}}
+button:hover {{ filter: brightness(1.08); }}
+button.secondary {{ background: #30363d; color: var(--text); }}
+button:disabled {{ opacity: 0.5; cursor: not-allowed; }}
+.toast {{
+  display: none;
+  margin-left: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--ok);
+}}
+.toast.show {{ display: inline; }}
+details {{ margin-top: 1rem; color: var(--muted); font-size: 0.85rem; }}
+details summary {{ cursor: pointer; color: var(--text); }}
+</style>
+</head>
+<body>
+<header>
+  <h1>Pull request attention</h1>
+  <p class="subtitle">Generated {gen_ts} · {label_line}</p>
+  <p class="subtitle">Repos: {repos_label}</p>
+</header>
+{errors_block}
+<div class="metrics">
+  <div class="metric"><div class="val">{open_count}</div><div class="lbl">Open after filters</div></div>
+  <div class="metric"><div class="val">{att_n}</div><div class="lbl">Need attention</div></div>
+</div>
+{all_clear}
+{table_section}
+<section class="slack-panel">
+  <h2>Post to Slack manually</h2>
+  <p><strong>Copy text</strong> below uses Slack-style bold/context and CommonMark links <code>[title](url)</code> (converted from Slack <code>&lt;url|title&gt;</code>). Every attention PR is listed. The automatic Slack webhook only includes the first <strong>{MAX_PRS_IN_MESSAGE}</strong> rows. <strong>Webhook JSON</strong> matches that capped payload (replay / debugging).</p>
+  <h3 style="font-size:0.95rem;margin:1rem 0 0.5rem 0;">Copy / Markdown</h3>
+  <div class="actions">
+    <button type="button" id="btn-copy-mrkdwn">Copy text</button>
+    <span class="toast" id="toast-mrkdwn">Copied</span>
+  </div>
+  <textarea id="slack-mrkdwn" class="slack-field" readonly spellcheck="false"></textarea>
+  <details>
+    <summary>Webhook JSON (exact POST body)</summary>
+    <div class="actions" style="margin-top:0.75rem">
+      <button type="button" class="secondary" id="btn-copy-json">Copy JSON</button>
+      <span class="toast" id="toast-json">Copied</span>
+    </div>
+    <textarea id="slack-json" class="slack-field json-field" readonly spellcheck="false"></textarea>
+  </details>
+</section>
+<div id="b64-m" style="display:none">{mrkdwn_b64}</div>
+<div id="b64-j" style="display:none">{json_b64}</div>
+<script>
+(function() {{
+  function b64ToUtf8(b64) {{
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder("utf-8").decode(bytes);
+  }}
+  const mEl = document.getElementById("slack-mrkdwn");
+  const jEl = document.getElementById("slack-json");
+  mEl.value = b64ToUtf8(document.getElementById("b64-m").textContent.trim());
+  jEl.value = b64ToUtf8(document.getElementById("b64-j").textContent.trim());
+  function flash(id) {{
+    const t = document.getElementById(id);
+    t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 2000);
+  }}
+  function copyTa(el, toastId) {{
+    el.focus();
+    el.select();
+    const ok = document.execCommand("copy");
+    if (!ok && navigator.clipboard) {{
+      navigator.clipboard.writeText(el.value).then(() => flash(toastId)).catch(() => {{}});
+    }} else {{
+      flash(toastId);
+    }}
+  }}
+  document.getElementById("btn-copy-mrkdwn").addEventListener("click", () => copyTa(mEl, "toast-mrkdwn"));
+  document.getElementById("btn-copy-json").addEventListener("click", () => copyTa(jEl, "toast-json"));
+}})();
+</script>
+</body>
+</html>"""
+    path.write_text(doc, encoding="utf-8")
+
+
 def slack_post_payload(payload: dict[str, Any]) -> None:
     webhook = SLACK_WEBHOOK_URL
     if not webhook:
         sys.stderr.write("SLACK_WEBHOOK_URL is not set\n")
         sys.exit(1)
-    body = json.dumps(payload).encode()
+    body = slack_serialize_payload(payload)
     req = urllib.request.Request(
         webhook,
         data=body,
@@ -494,36 +818,58 @@ def main() -> int:
             if row:
                 items.append(row)
 
+    # Longest-open first (age since creation), then most idle, then stable tie-breakers.
+    items.sort(key=lambda p: (-p.age_days, -p.inactive_days, p.repo_full.lower(), p.number))
+
     fetch_errors: list[str] = []
 
+    payload_slack = build_slack_payload(
+        fetched_at=fetched_at,
+        open_pr_count=open_count,
+        attention=items,
+        fetch_errors=fetch_errors,
+        slack_pr_cap=MAX_PRS_IN_MESSAGE,
+    )
+    payload_full_mrkdwn = build_slack_payload(
+        fetched_at=fetched_at,
+        open_pr_count=open_count,
+        attention=items,
+        fetch_errors=fetch_errors,
+        slack_pr_cap=None,
+    )
+    mrkdwn = slack_mrkdwn_http_links_to_markdown(slack_blocks_to_mrkdwn_for_paste(payload_full_mrkdwn))
+    json_raw = slack_serialize_payload(payload_slack).decode("utf-8")
+
+    html_out = Path(_env("GH_NOTIFIER_HTML_OUTPUT", str(repo_root / "gh-notifier" / "pr-dashboard.html")))
+    html_out.parent.mkdir(parents=True, exist_ok=True)
+    write_pr_dashboard_html(
+        html_out,
+        fetched_at=fetched_at,
+        repos=REPOS,
+        open_count=open_count,
+        attention=items,
+        fetch_errors=fetch_errors,
+        slack_mrkdwn=mrkdwn,
+        slack_json=json_raw,
+        stale_days=STALE_DAYS,
+    )
+
     if not items:
-        print(f"No PRs need attention across {len(REPOS)} repo(s) ({open_count} open after filters).")
+        print(
+            f"No PRs need attention across {len(REPOS)} repo(s) ({open_count} open after filters). "
+            f"Dashboard: {html_out.resolve()}",
+            flush=True,
+        )
     else:
-        print(f"{len(items)} open PR(s) need attention (of {open_count} after filters).")
+        print(
+            f"{len(items)} open PR(s) need attention (of {open_count} after filters). "
+            f"Dashboard: {html_out.resolve()}",
+            flush=True,
+        )
 
     if SLACK_WEBHOOK_URL:
-        payload = build_slack_payload(
-            fetched_at=fetched_at,
-            open_pr_count=open_count,
-            attention=items,
-            fetch_errors=fetch_errors,
-        )
-        slack_post_payload(payload)
-        print("Slack notification sent.")
-    elif items:
-        lines = [
-            f"{len(items)} open PR(s) need attention (stale activity, age, or label rules).",
-            f"Lookback: {STALE_DAYS} day(s); repos: {', '.join(f'{o}/{r}' for o, r in REPOS)}",
-            "",
-        ]
-        for it in items:
-            lines.append(f"- {it.repo_full}#{it.number} by {it.author}")
-            lines.append(f"  {it.html_url}")
-            for r in it.reasons:
-                lines.append(f"  - {r}")
-            lines.append(f"  title: {it.title}")
-            lines.append("")
-        print("\n".join(lines))
+        slack_post_payload(payload_slack)
+        print("Slack notification sent.", flush=True)
     return 0
 
 

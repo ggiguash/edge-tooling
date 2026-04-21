@@ -5,3 +5,4 @@
 .worktrees
 *.pyc
 __pycache__/
+gh-notifier/pr-dashboard.html
