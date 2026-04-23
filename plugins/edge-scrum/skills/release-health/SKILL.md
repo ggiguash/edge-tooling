@@ -244,7 +244,7 @@ This agent reads all four data files, detects misplaced spikes, fetches child is
 
 ### Step 9: Generate Report (main context)
 
-1. Read the report template from `plugins/edge-scrum/skills/release-health/report-template.md`
+1. Read the report template from `plugins/edge-scrum/references/release-health-report-template.md`
 2. Read `{WORKDIR}/analysis.md`
 3. Parse the `===ANALYSIS_META===` block for header values
 4. Substitute all `{placeholder}` values in the template:
