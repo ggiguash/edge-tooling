@@ -41,6 +41,7 @@ Stdout prints a one-line summary and the **absolute path** to the HTML file. Run
 |----------|----------|---------|-------------|
 | `GITHUB_TOKEN` | yes | — | Bearer token for `api.github.com`, we will be using the same token as the microshift ci-doctor |
 | `SLACK_WEBHOOK_URL` | no | empty | If set, POSTs the Block Kit payload to Slack after writing HTML |
+| `PROW_JOB_URL` | no | empty | If set (e.g. `PROW_JOB_URL` from Prow), only the **Slack** message includes a link under the header so users can open the job for the full PR list and logs; HTML / copy-paste mrkdwn are unchanged |
 | `GH_NOTIFIER_HTML_OUTPUT` | no | `<repo>/gh-notifier/pr-dashboard.html` | Path to the generated dashboard (parent dirs are created if needed) |
 | `OWNERS_FILE` | no | `<repo>/OWNERS` | Path to `OWNERS` (Kubernetes-style `approvers` / `reviewers`) |
 | `OWNERS_ALIASES_FILE` | no | `<repo>/OWNERS_ALIASES` | Path to `OWNERS_ALIASES` (`aliases:` block) |
@@ -54,7 +55,7 @@ Stdout prints a one-line summary and the **absolute path** to the HTML file. Run
 
 ## Slack payload
 
-The webhook message uses Slack **Block Kit** (header, context, sections). The number of PRs listed in one message is capped (`MAX_PRS_IN_MESSAGE` in the script). The HTML page exposes the same content as **mrkdwn** (for pasting into the Slack composer) and raw **JSON** (for replay or debugging).
+The webhook message uses Slack **Block Kit** (header, context, sections). The number of PRs listed in one message is capped (`MAX_PRS_IN_MESSAGE` in the script). With **`PROW_JOB_URL`**, a Prow link section is added at the top of the webhook payload only. The HTML page exposes full-list **mrkdwn** (for pasting) and capped **JSON** matching the webhook (for replay or debugging).
 
 ## CI (openshift/release)
 

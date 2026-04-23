@@ -7,6 +7,7 @@ reviewers) using **OWNERS_ALIASES** in the same repository checkout (defaults: r
 
 Writes a self-contained **HTML dashboard** (path via ``GH_NOTIFIER_HTML_OUTPUT``) with PR details and
 Slack **mrkdwn** / webhook **JSON** copy buttons. Optional ``SLACK_WEBHOOK_URL`` still posts automatically.
+If ``PROW_JOB_URL`` is set, only the **Slack webhook** message gets a Prow job link under the header (not the HTML copy).
 
 Designed to be initiated from openshift/release on a schedule with env vars driving repos, labels,
 and notification.
@@ -48,6 +49,8 @@ def _int_env(name: str, default: int) -> int:
 STALE_DAYS = _int_env("STALE_DAYS", 7)
 GITHUB_TOKEN = _env("GITHUB_TOKEN")
 SLACK_WEBHOOK_URL = _env("SLACK_WEBHOOK_URL", "")
+# When set, only the Slack webhook payload (not HTML / full mrkdwn) gets a Prow job link at the top.
+PROW_JOB_URL = _env("PROW_JOB_URL", "")
 
 
 # Comma-separated org/repo pairs
@@ -390,23 +393,35 @@ def build_slack_payload(
     attention: list[AttentionPR],
     fetch_errors: list[str],
     slack_pr_cap: int | None = MAX_PRS_IN_MESSAGE,
+    include_prow_job_link: bool = False,
 ) -> dict[str, Any]:
     """Build the same JSON shape as hubhelper's slack.webhookPayload.
 
     ``slack_pr_cap`` limits how many PR rows appear in the Block Kit list (Slack size limits).
     Pass ``None`` to include every PR (used for the HTML mrkdwn copy block).
+
+    When ``include_prow_job_link`` is true and ``PROW_JOB_URL`` is set, a Prow job link is inserted
+    under the header (Slack webhook only; not used for the HTML dashboard copy).
     """
     att_n = len(attention)
-    blocks: list[dict[str, Any]] = [
-        _plain_header("Pull request dashboard"),
-        _context_line(
-            f":clock3: Data from *{fetched_at.strftime('%Y-%m-%d %H:%M')} UTC* · {_label_mode_line()}"
-        ),
-        _section_fields(
-            f"*Open PRs*\n_{open_pr_count}_ after filters",
-            f"*Need attention*\n_{att_n}_",
-        ),
-    ]
+    blocks: list[dict[str, Any]] = [_plain_header("Pull request dashboard")]
+    if include_prow_job_link and PROW_JOB_URL:
+        blocks.append(
+            _section_mrkdwn(
+                f"*Prow job:* <{PROW_JOB_URL}|Open in Prow> — full job logs and complete PR list."
+            )
+        )
+    blocks.extend(
+        [
+            _context_line(
+                f":clock3: Data from *{fetched_at.strftime('%Y-%m-%d %H:%M')} UTC* · {_label_mode_line()}"
+            ),
+            _section_fields(
+                f"*Open PRs*\n_{open_pr_count}_ after filters",
+                f"*Need attention*\n_{att_n}_",
+            ),
+        ]
+    )
     if fetch_errors:
         blocks.append(_divider())
         err_lines = ["*:warning: Errors*"]
@@ -829,6 +844,7 @@ def main() -> int:
         attention=items,
         fetch_errors=fetch_errors,
         slack_pr_cap=MAX_PRS_IN_MESSAGE,
+        include_prow_job_link=True,
     )
     payload_full_mrkdwn = build_slack_payload(
         fetched_at=fetched_at,
@@ -836,6 +852,7 @@ def main() -> int:
         attention=items,
         fetch_errors=fetch_errors,
         slack_pr_cap=None,
+        include_prow_job_link=True,
     )
     mrkdwn = slack_mrkdwn_http_links_to_markdown(slack_blocks_to_mrkdwn_for_paste(payload_full_mrkdwn))
     json_raw = slack_serialize_payload(payload_slack).decode("utf-8")
