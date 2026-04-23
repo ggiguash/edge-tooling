@@ -11,7 +11,7 @@ Reviews are managed through OWNERS/OWNERS_ALIASES. All PRs to `main` receive aut
 After cloning the repo, enable the shared git hooks:
 
 ```bash
-git config core.hooksPath .githooks
+make setup-githooks
 ```
 
 This installs a pre-commit hook that runs markdownlint on staged `.md` files. Commits with markdown lint errors will be blocked.
