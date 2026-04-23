@@ -85,7 +85,32 @@ for use in the reply step.
 skepticism as inline findings.** Only surface items that would
 survive the vet filter in Step 4.
 
-**2b. Inline review comments** (primary line-level actionable items):
+**2b. Review body** (nitpicks and other non-inline findings):
+
+```bash
+gh api "repos/{OWNER}/{REPO}/pulls/{PR_NUMBER}/reviews" \
+  --paginate --jq '[.[] | select(.user.login == "coderabbitai[bot]")] | .[].body'
+```
+
+CodeRabbit nests nitpick findings inside the review body rather than
+posting them as standalone inline comments. These appear in
+`<details>` blocks under headings like `🧹 Nitpick comments (N)`.
+Each nitpick typically includes a file path, line number, description,
+and sometimes a proposed diff.
+
+Parse the review body for discrete findings:
+
+- Look for `<summary>🧹 Nitpick comments` sections
+- Extract each finding with its file path and line reference
+- Ignore meta-sections: "Prompt for AI Agents", "Autofix",
+  "Review info" — these are not findings
+- Skip any finding that duplicates an inline comment (Step 2c)
+
+Tag each extracted finding with `SOURCE: review-body`. These
+findings have file/line context (unlike summary findings) but no
+individual `COMMENT_ID` — record the `REVIEW_ID` for reference.
+
+**2c. Inline review comments** (primary line-level actionable items):
 
 ```bash
 gh api "repos/{OWNER}/{REPO}/pulls/{PR_NUMBER}/comments" \
@@ -95,23 +120,23 @@ gh api "repos/{OWNER}/{REPO}/pulls/{PR_NUMBER}/comments" \
 Each comment contains: `id`, `path`, `line`, `original_line`, `body`,
 `diff_hunk`, `in_reply_to_id`, `commit_id`.
 
-**2c. Duplicate prevention**: For each CodeRabbit comment, check
+**2d. Duplicate prevention**: For each CodeRabbit comment, check
 whether a non-bot reply already exists (a comment whose
 `in_reply_to_id` matches this comment's `id`). Skip comments that
 have already been addressed.
 
 **Edge cases:**
 
-- No inline comments AND no summary findings → report
-  `"No CodeRabbit comments found on PR #{PR_NUMBER}."` and stop.
-- No inline comments BUT summary findings exist → continue with
-  summary findings only. Report:
-  `"No CodeRabbit inline comments found. Triaging N finding(s) from the summary comment."`
-- All inline comments already have replies AND no summary findings →
+- No findings from any source (inline, review-body, summary) →
+  report `"No CodeRabbit comments found on PR #{PR_NUMBER}."` and stop.
+- No inline comments BUT review-body or summary findings exist →
+  continue with those findings. Report:
+  `"No CodeRabbit inline comments found. Triaging N finding(s) from review body/summary."`
+- All inline comments already have replies AND no other findings →
   report `"All CodeRabbit comments on PR #{PR_NUMBER} have already been addressed."`
   and stop.
-- All inline comments already have replies BUT summary findings exist →
-  continue with summary findings only.
+- All inline comments already have replies BUT review-body or summary
+  findings exist → continue with those findings.
 
 ### 3. Fetch PR diff
 
@@ -125,6 +150,12 @@ For each unaddressed inline CodeRabbit comment:
 
 1. **Read the full file** at `path` using the Read tool. You need the
    surrounding code, not just the diff hunk.
+
+For each review-body-sourced finding (`SOURCE: review-body`):
+
+1. **Read the full file** at the referenced path. These findings
+   include file/line context, so treat them like inline findings
+   for vetting purposes.
 
 For each summary-sourced finding (`SOURCE: summary`):
 
@@ -191,7 +222,7 @@ Format:
 ## CodeRabbit Triage — PR #{PR_NUMBER}
 
 **PR**: {title}
-**CodeRabbit comments**: N inline (M unaddressed), K summary finding(s)
+**CodeRabbit comments**: N inline (M unaddressed), J review-body, K summary
 
 ### Overview
 
@@ -199,8 +230,9 @@ Format:
 |---|----------|--------|------|------|---------|
 | 1 | AUTO-APPLY | inline | `path/file.go` | 42 | Missing nil check on `foo` |
 | 2 | REVIEW | inline | `pkg/api.go` | 15 | Error not propagated from `bar()` |
-| 3 | REVIEW | summary | — | — | No migration docs for schema change |
-| 4 | DROPPED | inline | `utils/helper.go` | 33 | "Consider extracting to helper" |
+| 3 | REVIEW | review-body | `cmd/main.go` | 88 | Parenthetical contradicts new behavior |
+| 4 | REVIEW | summary | — | — | No migration docs for schema change |
+| 5 | DROPPED | inline | `utils/helper.go` | 33 | "Consider extracting to helper" |
 
 ---
 
@@ -223,7 +255,15 @@ Assessment: <why this is valid but needs human judgment>
 + fixed code
 ```
 
-**3. (summary) No migration docs for schema change**
+**3. `cmd/main.go:88` — Parenthetical contradicts new behavior** (review-body)
+CodeRabbit: <brief quote from nitpick>
+Assessment: <why this is a genuine inconsistency>
+```diff
+- old wording
++ fixed wording
+```
+
+**4. (summary) No migration docs for schema change**
 CodeRabbit: <brief quote from summary>
 Assessment: <why this is valid — e.g., schema change confirmed in diff but no migration guide found>
 Affected files: `db/migrations/0042_add_column.sql`
@@ -232,7 +272,7 @@ Affected files: `db/migrations/0042_add_column.sql`
 
 | # | Finding | Reason |
 |---|---------|--------|
-| 3 | "Consider extracting to helper" | Refactoring advice — not a bug |
+| 5 | "Consider extracting to helper" | Refactoring advice — not a bug |
 
 ---
 
@@ -303,8 +343,8 @@ gh api "repos/{OWNER}/{REPO}/pulls/{PR_NUMBER}/comments/{COMMENT_ID}/replies" \
   -f body="Won't fix — {one-line reason}."
 ```
 
-**For summary-sourced findings**, post a top-level issue comment
-(since there is no inline comment to reply to):
+**For review-body and summary-sourced findings**, post a top-level
+issue comment (since there is no inline comment to reply to):
 
 ```bash
 gh api "repos/{OWNER}/{REPO}/issues/{PR_NUMBER}/comments" \
@@ -313,8 +353,8 @@ gh api "repos/{OWNER}/{REPO}/issues/{PR_NUMBER}/comments" \
 {Applied — fixed in {SHA_SHORT}. | Won't fix — {one-line reason}.}"
 ```
 
-If multiple summary findings were actioned, batch them into a single
-issue comment to avoid noise:
+If multiple review-body/summary findings were actioned, batch them
+into a single issue comment to avoid noise:
 
 ```bash
 gh api "repos/{OWNER}/{REPO}/issues/{PR_NUMBER}/comments" \
@@ -361,12 +401,12 @@ Changes are local. Push when ready.
 
 | Scenario | Action |
 |----------|--------|
-| No inline comments and no summary findings | Report and stop |
-| No inline comments but summary findings exist | Triage summary findings only |
-| All inline comments replied to, no summary findings | Report and stop |
-| All inline comments replied to, summary findings exist | Triage summary findings only |
+| No findings from any source | Report and stop |
+| No inline comments but review-body/summary findings exist | Triage non-inline findings only |
+| All inline comments replied to, no other findings | Report and stop |
+| All inline comments replied to, review-body/summary findings exist | Triage non-inline findings only |
 | Suggestion block conflicts with current code | Recategorize to REVIEW |
 | Comment on a deleted file | Skip with note |
-| Summary finding duplicates an inline comment | Use inline version, skip summary duplicate |
+| Review-body/summary finding duplicates an inline comment | Use inline version, skip duplicate |
 | All items dropped | Report: "None survive scrutiny as real issues" |
 | User wants to re-process replied comments | Allow if explicitly requested |
