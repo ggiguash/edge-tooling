@@ -146,7 +146,9 @@ function showGraphTab(btn, paneId) {
     container.querySelectorAll('.graph-pane').forEach(function(p) { p.classList.remove('active'); });
     btn.classList.add('active');
     document.getElementById(paneId).classList.add('active');
-}"""
+}
+document.getElementById('loading').style.display='none';
+document.querySelector('.container').style.display='';"""
 
 
 # ---------------------------------------------------------------------------
@@ -689,7 +691,8 @@ def generate_html(releases_data, bug_data, pr_data, all_pr_bugs, pr_status, time
     </style>
 </head>
 <body>
-<div class="container">
+<div id="loading" style="display:flex;align-items:center;justify-content:center;height:80vh;font-family:sans-serif;color:#6c757d;font-size:1.2em;">Loading report&hellip;</div>
+<div class="container" style="display:none">
     <h1>MicroShift CI Doctor Report</h1>
     <p class="timestamp">Generated: {time_str} UTC</p>
 
