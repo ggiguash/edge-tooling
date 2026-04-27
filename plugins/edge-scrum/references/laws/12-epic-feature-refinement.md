@@ -27,7 +27,7 @@ The **SME** role is responsible for feature refinement. Assigned during release 
 
 ## Implicit Refinement via Epics
 
-A Feature MAY be considered refined without a direct refinement spike when any of the following hold:
+A Feature with no child epics is considered **not refined** — there is no epic-level signal to assess. A Feature MAY be considered refined without a direct refinement spike when any of the following hold:
 
 1. **Spike on epic**: A refinement spike in the refinement sprint blocks one of the Feature's child epics (rather than the Feature itself).
 2. **Epics past Planning**: All child epics have moved past the **Planning** state, indicating that refinement happened at the epic level without a formal spike.

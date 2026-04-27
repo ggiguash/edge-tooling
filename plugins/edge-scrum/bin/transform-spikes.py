@@ -21,7 +21,7 @@ def epics_look_refined(epic_records):
     """
     if not epic_records:
         return False
-    return all(e.get("status") != EPIC_PLANNING_STATE for e in epic_records)
+    return all(e.get("status") and e.get("status") != EPIC_PLANNING_STATE for e in epic_records)
 
 
 def main():
@@ -154,6 +154,7 @@ def main():
             "spike_missing": primary is None,
             "spike_on_epic": bool(on_epic_keys),
             "spike_on_epic_keys": sorted(set(on_epic_keys)),
+            "feature_pre_refined": feat_status in FEATURE_PRE_REFINED_STATES,
             "epics_appear_refined": appear_refined,
         }
 
@@ -165,7 +166,9 @@ def main():
     on_epic = sum(1 for v in spike_map.values() if v["spike_on_epic"])
     refined_via_epics = sum(
         1 for v in spike_map.values()
-        if v["spike_missing"] and (v["spike_on_epic"] or v["epics_appear_refined"])
+        if v["spike_missing"]
+        and not v["feature_pre_refined"]
+        and (v["spike_on_epic"] or v["epics_appear_refined"])
     )
 
     output = {

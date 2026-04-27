@@ -83,6 +83,8 @@ def extract_parent_key(issue):
             return raw or "No Feature"
         if isinstance(raw, dict):
             val = raw.get("key") or raw.get("value")
+            while isinstance(val, dict):
+                val = val.get("key") or val.get("value") or None
             if val:
                 return val
     return "No Feature"

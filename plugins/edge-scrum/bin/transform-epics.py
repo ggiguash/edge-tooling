@@ -26,11 +26,12 @@ def transform_epic(raw):
     else:
         size = "Unsized"
 
-    desc = raw.get("description") or ""
+    desc = raw.get("description")
+    safe_desc = desc[:1000] if isinstance(desc, str) else ""
     return {
         "key": raw.get("key", ""),
         "summary": raw.get("summary", ""),
-        "description": desc[:1000] if desc else "",
+        "description": safe_desc,
         "status": get_nested(raw, "status", "name") or "",
         "feature_key": extract_parent_key(raw),
         "assignee": extract_display_name(raw.get("assignee"), "Unassigned"),

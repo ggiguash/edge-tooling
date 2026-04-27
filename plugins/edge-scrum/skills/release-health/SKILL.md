@@ -142,8 +142,8 @@ Call `jira_search` with:
 
 Paginate using `page_token`. If zero results, use fallback JQL (set `fallback_used`):
 
-```
-project = OCPSTRAT AND issuetype in (Feature, Initiative) AND labels in ("ocpedge-plan", "microshift") AND status not in (Done, Closed) ORDER BY priority ASC
+```jql
+project = OCPSTRAT AND issuetype in (Feature, Initiative) AND labels in ("ocpedge-plan", "microshift") AND "Target Version" = "openshift-{VERSION}" AND status not in (Done, Closed) ORDER BY Rank ASC
 ```
 
 After all pages fetched, run:
@@ -219,9 +219,11 @@ This Jira instance uses `page_token` pagination, NOT `start_at`. Follow this pro
 1. Make the first call without `page_token`
 2. The response may be persisted to a file. Note the file path.
 3. Run `check-page.py` to get pagination info:
+
    ```bash
    python3 plugins/edge-scrum/bin/check-page.py <persisted_file_path>
    ```
+
    Output: `{"issues_count": N, "has_more": bool, "next_page_token": "..."}`
 4. If `has_more` is `true`: make the next call with `page_token` set to the `next_page_token` value. Repeat from step 2.
 5. If `has_more` is `false`: pagination is complete.

@@ -128,7 +128,7 @@ Orphan groups: `(No Feature)`, `(No Epic)`, `(Unlinked Bugs)`.
 
 ### 4. Refinement Reassessment
 
-After building the hierarchy, reassess `epics_appear_refined` for features that the transform did not already mark as refined. For each feature where `spike_missing = true` AND `spike_on_epic = false` AND `epics_appear_refined = false`:
+After building the hierarchy, reassess `epics_appear_refined` for features that the transform did not already mark as refined. For each feature where `spike_missing = true` AND `spike_on_epic = false` AND `epics_appear_refined = false` AND feature status is not "New" or "Refinement":
 
 1. Get the feature's child epics from the hierarchy
 2. Skip features with 0 epics — they cannot be refined via epics
@@ -204,8 +204,8 @@ Evaluate in this order — first match wins:
 - XL-sized epic AND `remaining_sprint_count ≤ 2` → 🔴 "XL-sized epic unlikely to complete"
 - L-sized epic AND `remaining_sprint_count ≤ 1` → 🔴 "L-sized epic at risk"
 - `total_remaining_sp > max_sp_capacity` → 🔴 "Capacity risk"
-- (if `refinement_sprint_closed`) `(features_missing_spike - features_refined_via_epics) / total_features > 0.5` → 🔴 "Systematic refinement gap"
-- (if `refinement_sprint_closed`) `(features_with_closed_spike + features_refined_via_epics) / total_features < 0.75` → 🟡 "Refinement coverage below 75%"
+- (if `refinement_sprint_closed` AND `total_features > 0`) `(features_missing_spike - features_refined_via_epics) / total_features > 0.5` → 🔴 "Systematic refinement gap"
+- (if `refinement_sprint_closed` AND `total_features > 0`) `(features_with_closed_spike + features_refined_via_epics) / total_features < 0.75` → 🟡 "Refinement coverage below 75%"
 
 ---
 
