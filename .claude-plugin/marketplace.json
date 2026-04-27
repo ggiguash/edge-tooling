@@ -55,6 +55,12 @@
       "version": "1.0.0"
     },
     {
+      "name": "microshift-dev",
+      "source": "./plugins/microshift-dev",
+      "description": "Microshift dev tools collection",
+      "version": "1.0.0"
+    },
+    {
       "name": "microshift-release",
       "source": "./plugins/microshift-release",
       "description": "Set of tools to perform MicroShift Release Testing activities",
@@ -65,6 +71,12 @@
       "source": "./plugins/pr-review",
       "description": "Post-review utilities for PR workflows — vet findings, triage CodeRabbit reviews, filter noise",
       "version": "1.1.0"
+    },
+    {
+      "name": "threat-model",
+      "source": "./plugins/threat-model",
+      "description": "Analyze PRs for security threats with STRIDE/DFD analysis, MITRE ATT&CK and OWASP mapping for OpenShift edge topologies (TNA, TNF, SNO, LVMS)",
+      "version": "1.0.0"
     },
     {
       "name": "two-node",
