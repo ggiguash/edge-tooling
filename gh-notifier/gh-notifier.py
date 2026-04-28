@@ -67,7 +67,8 @@ def _label_set(raw: str) -> set[str]:
     return {t.strip().lower() for t in toks if t.strip()}
 
 
-EXCLUDE_LABELS = _label_set(_env("EXCLUDE_LABELS", _EXCLUDE_DEFAULT))
+_exclude_raw = os.environ.get("EXCLUDE_LABELS", "").strip()
+EXCLUDE_LABELS = _label_set(_EXCLUDE_DEFAULT if not _exclude_raw else _exclude_raw)
 REQUIRED_LABELS = _label_set(_env("REQUIRED_LABELS", ""))
 FORBIDDEN_LABELS = _label_set(_env("FORBIDDEN_LABELS", ""))
 
