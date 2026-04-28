@@ -113,7 +113,7 @@ def parse_reference_files(text: str) -> list[dict[str, str]]:
             continue
 
         if found_header and not skipped_separator:
-            if re.match(r"^\|[-\s|]+\|$", line):
+            if re.match(r"^\|[-\s|]+\|\s*$", line):
                 skipped_separator = True
             continue
 
@@ -162,9 +162,9 @@ def extract_checklist(text: str) -> dict:
             current_section = heading_match.group(1).strip()
             continue
 
-        item_match = re.match(r"^\s*- \[([ x])\] (.+)$", line)
+        item_match = re.match(r"^\s*- \[([ xX])\] (.+)$", line)
         if item_match:
-            done = item_match.group(1) == "x"
+            done = item_match.group(1).lower() == "x"
             entry = {"text": item_match.group(2).strip(), "section": current_section}
             if done:
                 checked_items.append(entry)
@@ -217,7 +217,7 @@ def get_recent_names(root: Path) -> list[str]:
         )
         if result.returncode != 0:
             return _fallback_project_names(root)
-        return [l.strip() for l in result.stdout.splitlines() if l.strip()]
+        return [line.strip() for line in result.stdout.splitlines() if line.strip()]
     except OSError:
         return _fallback_project_names(root)
 
