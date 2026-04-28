@@ -83,12 +83,14 @@ def _collect_jobs_by_type(report: MonitorReport, job_type: JobType) -> list[dict
               help="Skip Sippy regression and Component Readiness checks")
 @click.option("--with-timing", is_flag=True, default=False,
               help="Include install/upgrade timing insights (disabled by default)")
+@click.option("--payloads", type=click.IntRange(min=1, max=10), default=None,
+              help="Number of payloads to analyze per stream (1-10, default 5)")
 @click.option("--merge-analysis", "merge_analysis_path", type=click.Path(exists=True), default=None,
               help="Merge analysis JSON into an existing HTML report (or into --from-json data)")
 def main(
     versions, output_path, from_json, export_json,
     open_browser, verbose, skip_prow, skip_sippy, with_timing,
-    merge_analysis_path,
+    payloads, merge_analysis_path,
 ):
     """Edge OCP Payload Monitor — monitor OpenShift nightly payloads for edge topology failures."""
     _setup_logging(verbose)
@@ -96,6 +98,8 @@ def main(
 
     # Build config
     config = Config()
+    if payloads is not None:
+        config.payloads_per_stream = payloads
 
     # Determine output path
     if not output_path:
@@ -232,6 +236,7 @@ def main(
         data_errors=data_errors,
         recurring_threshold=config.recurring_threshold,
         persistent_threshold=config.persistent_threshold,
+        payloads_per_stream=config.payloads_per_stream,
     )
 
     # Step 4: Analyze and find JIRA matches

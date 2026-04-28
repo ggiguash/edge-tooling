@@ -432,10 +432,10 @@ def render_trend_svg(report: TimingReport) -> str:
         for date_str, val in points:
             x = tx(date_to_x[date_str])
             y = ty(val / 60)
+            tip = html.escape(f"{topo} {rtype}: {_fmt_duration(val)} ({date_str})")
             parts.append(
-                f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{color}">'
-                f'<title>{topo} {rtype}: {_fmt_duration(val)} ({date_str})</title>'
-                f'</circle>'
+                f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="{color}" '
+                f'class="svg-tip" data-tip="{tip}"/>'
             )
 
     # Legend

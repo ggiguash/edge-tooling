@@ -213,6 +213,7 @@ class MonitorReport:
     jira_matches: dict[str, list[JiraBug]] = field(default_factory=dict)
     recurring_threshold: int = 2
     persistent_threshold: int = 3
+    payloads_per_stream: int = 5
 
 
 @dataclass

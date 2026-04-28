@@ -16,15 +16,19 @@
   <div style="text-align:right">
     <div class="meta"><a href="https://github.com/openshift-eng/edge-tooling" target="_blank" style="color:var(--text-muted)">View source on GitHub ↗</a></div>
     <div class="meta">Generated: {{ report.generated_at }}</div>
-    {% set has_ai = [] %}{% for item in all_failing %}{% if item.job.deep_analysis %}{% if has_ai.append(1) %}{% endif %}{% endif %}{% endfor %}
+    {% set has_ai = [] %}{% set has_blocking = [] %}{% for item in all_failing %}{% if item.job.deep_analysis %}{% if has_ai.append(1) %}{% endif %}{% endif %}{% if item.job.job_type.value == "blocking" %}{% if has_blocking.append(1) %}{% endif %}{% endif %}{% endfor %}
     {% if has_ai %}
     <div class="meta" style="margin-top:4px">
       <span style="color:var(--green)">● AI-enriched via Claude</span>
     </div>
-    {% else %}
+    {% elif has_blocking %}
     <div class="meta" style="margin-top:4px">
       <span style="color:var(--text-muted)">○ Data only</span>
       <span style="margin-left:4px">— run <code style="font-size:12px;color:var(--accent)">/edge-ocp-ci:generate-dashboard</code> for AI analysis</span>
+    </div>
+    {% else %}
+    <div class="meta" style="margin-top:4px">
+      <span style="color:var(--green)">● No blocking failures found</span>
     </div>
     {% endif %}
   </div>
@@ -74,7 +78,7 @@
 {% endif %}
 
 {% if report.jira_errors %}
-<div class="error-banner">
+<div class="warning-banner">
   <strong>JIRA search errors:</strong> {{ report.jira_errors | length }} JIRA search{{ 'es' if report.jira_errors | length != 1 else '' }} failed. Bug matching may be incomplete for affected jobs.
   <details class="error-details">
     <summary>Show details</summary>
@@ -84,6 +88,13 @@
       {% endfor %}
     </ul>
   </details>
+</div>
+{% endif %}
+
+{% if report.payloads_per_stream < report.persistent_threshold %}
+<div class="warning-banner">
+  <strong>Note:</strong> Analyzing only {{ report.payloads_per_stream }} payload{{ 's' if report.payloads_per_stream != 1 else '' }} per stream —
+  {% if report.payloads_per_stream < report.recurring_threshold %}Recurring, {% endif %}Persistent{% if report.payloads_per_stream < 3 %} and Unstable{% endif %} failure labels require more payloads to appear.
 </div>
 {% endif %}
 

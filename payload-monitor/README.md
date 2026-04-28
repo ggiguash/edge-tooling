@@ -17,6 +17,9 @@ python -m payload_monitor --open
 # Override versions
 python -m payload_monitor --versions 4.18,4.19,4.20,4.21,4.22,4.23
 
+# Analyze last 2 payloads per stream (faster)
+python -m payload_monitor --payloads 2
+
 # Patch AI analysis into an existing HTML report (the HTML file must already exist)
 python -m payload_monitor --merge-analysis reports/analysis-2026-03-25.json --output reports/report-2026-03-25.html
 ```
@@ -86,7 +89,7 @@ Configuration is hardcoded in `payload_monitor/config.py`. The defaults are:
 | Setting | Default | Override |
 |---------|---------|----------|
 | Versions | 4.18, 4.19, 4.20, 4.21, 4.22, 4.23, 5.0 | `--versions` CLI flag |
-| Payloads per stream | 6 | — |
+| Payloads per stream | 5 | `--payloads` CLI flag (1-10) |
 | JIRA project | OCPBUGS | — |
 | Report directory | `./reports` | `--output` CLI flag |
 | Recurring threshold | 2 payloads | — |
@@ -116,6 +119,7 @@ Usage: python -m payload_monitor [OPTIONS]
 
 Options:
   --versions TEXT      Override versions, comma-separated (e.g., "4.18,4.19")
+  --payloads N         Number of payloads per stream (1-10, default 5)
   --output PATH        Output HTML file path (default: reports/report-YYYY-MM-DD.html)
   --from-json PATH     Regenerate HTML from a JSON file (skips data collection)
   --json               Also export full report data as JSON
