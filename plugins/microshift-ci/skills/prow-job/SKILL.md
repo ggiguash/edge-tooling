@@ -9,24 +9,29 @@ allowed-tools: Skill, Bash, Read, Write, Glob, Grep, Agent
 # microshift-ci:prow-job
 
 ## Synopsis
+
 ```bash
 /microshift-ci:prow-job <prow-job-url>
 /microshift-ci:prow-job <artifacts-dir>
 ```
 
 ## Description
+
 Analyzes a single Prow CI test job by scanning artifacts for errors and producing a structured failure report. Accepts either a Prow job URL (downloads artifacts) or a local directory path (uses pre-downloaded artifacts).
 
 ## Arguments
-- `$ARGUMENTS` (required): Either a job URL or a local artifacts directory path:
+
+- `<ARGUMENTS>` (required): Either a job URL or a local artifacts directory path:
   - **Prow URL**: `https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-microshift-release-4.21-periodics-e2e-aws-ovn-ocp-conformance-serial/1984108354347208704`
   - **GCS web URL**: `https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/periodic-ci-openshift-microshift-release-4.21-periodics-e2e-aws-ovn-ocp-conformance-serial/1984108354347208704`
   - **Local artifacts directory**: `/tmp/microshift-ci-claude-workdir.260404/artifacts/1984108354347208704` (must contain `build-log.txt` and `finished.json`)
 
 ## Goal
+
 Reduce noise for developers by processing large logs from a CI test pipeline and correctly classifying fatal errors with a false-positive rate of 0.01% and false-negative rate of 0.5%.
 
 ## Audience
+
 Software Engineer
 
 ## Glossary
@@ -44,69 +49,75 @@ Software Engineer
 The Job Name and Job ID are encoded in the URL. There are two URL formats depending on the job type:
 
 **Periodic/postsubmit jobs:**
-```
+
+```text
 https://prow.ci.openshift.org/view/gs/test-platform-results/logs/{JOB_NAME}/{JOB_ID}
 https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/{JOB_NAME}/{JOB_ID}
 ```
+
 GCS path: `gs://test-platform-results/logs/{JOB_NAME}/{JOB_ID}/`
 
 **Presubmit (PR) jobs:**
-```
+
+```text
 https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_microshift/{PR_NUMBER}/{JOB_NAME}/{JOB_ID}
 https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/pr-logs/pull/openshift_microshift/{PR_NUMBER}/{JOB_NAME}/{JOB_ID}
 ```
+
 GCS path: `gs://test-platform-results/pr-logs/pull/openshift_microshift/{PR_NUMBER}/{JOB_NAME}/{JOB_ID}/`
 
 To determine the GCS path from any job URL, strip the web prefix and replace with `gs://`:
+
 - Prow URL: strip `https://prow.ci.openshift.org/view/gs/`
 - GCS web URL: strip `https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/`
 
 ## Important Files
+
 > These files are available after artifacts are downloaded (via the download script or workflow step 0).
-- `${TMP}/build-log.txt`: Log containing prow job output and most likely place to identify AWS infra related or hypervisor related errors.
-- `${STEP}/build-log.txt`: Each step in the CI job is individually logged in a build-log.txt file.
-- `${TMP}/artifacts/${TEST_NAME}/openshift-microshift-infra-sos-aws/artifacts/sosreport-*.tar.xz`: Compressed archive containing select portions of the test host's filesystem, relevant logs, and system configurations. `${TEST_NAME}` varies by job (e.g., `e2e-aws-tests`, `e2e-aws-ovn-ocp-conformance-arm64`).
-- `${TMP}/artifacts/${TEST_NAME}/openshift-microshift-e2e-origin-conformance/build-log.txt`: Step-specific build log for origin conformance tests.
+
+- `<TMP>/build-log.txt`: Log containing prow job output and most likely place to identify AWS infra related or hypervisor related errors.
+- `<STEP>/build-log.txt`: Each step in the CI job is individually logged in a build-log.txt file.
+- `<TMP>/artifacts/<TEST_NAME>/openshift-microshift-infra-sos-aws/artifacts/sosreport-*.tar.xz`: Compressed archive containing select portions of the test host's filesystem, relevant logs, and system configurations. `<TEST_NAME>` varies by job (e.g., `e2e-aws-tests`, `e2e-aws-ovn-ocp-conformance-arm64`).
+- `<TMP>/artifacts/<TEST_NAME>/openshift-microshift-e2e-origin-conformance/build-log.txt`: Step-specific build log for origin conformance tests.
 
 ## Important Links
 
 **Step Diagram URL** (found at the end of the main build-log):
-```
+
+```text
 https://steps.ci.openshift.org/job?org=openshift&repo=microshift&branch=release-4.19&test=e2e-aws-tests-bootc-nightly&variant=periodics
 ```
+
 This link provides a diagram of the steps that make up the test. Think about reading this diagram when identifying step failures because not all fatal errors cause the current step to fail but may cause the next step to fail.
 
 **SOS Report** (contains a cross-section of the test host's filesystem, including the microshift journal and container logs)
 
 After downloading artifacts locally, find the SOS report at:
-```
-${TMP}/artifacts/${TEST_NAME}/openshift-microshift-infra-sos-aws/artifacts/sosreport-*.tar.xz
-```
-Where `${TEST_NAME}` is the test name directory (e.g., `e2e-aws-tests`, `e2e-aws-ovn-ocp-conformance-serial`). Use `find ${TMP}/artifacts -name 'sosreport-*.tar.xz'` to locate it.
 
-## Scripts Directory
-
-All scripts are run relative to the repository root:
-```bash
-SCRIPTS_DIR=plugins/microshift-ci/scripts
+```text
+<TMP>/artifacts/<TEST_NAME>/openshift-microshift-infra-sos-aws/artifacts/sosreport-*.tar.xz
 ```
+
+Where `<TEST_NAME>` is the test name directory (e.g., `e2e-aws-tests`, `e2e-aws-ovn-ocp-conformance-serial`). Use `find <TMP>/artifacts -name 'sosreport-*.tar.xz'` to locate it.
 
 ## Work Directory
 
-Set once at the start and reference throughout:
-```bash
-WORKDIR=/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)
-mkdir -p ${WORKDIR}
+Compute once at the start by running `date +%y%m%d` and substituting into the path below. In all commands, replace `<WORKDIR>` with the computed path — do not store the work directory in a shell variable.
+
+```text
+/tmp/microshift-ci-claude-workdir.<YYMMDD>
 ```
 
 ## Common Commands
 
 Scan the build log for arbitrary text:
+
 ```bash
 grep '${SOME_TEXT}' ${GREP_OPTS} ${TMP}/build-log.txt
 ```
 
 Download all prow job artifacts (only needed when given a URL, not a local path):
+
 ```bash
 GCS_PATH=$(echo "${PROW_URL}" | sed -e 's|https://prow.ci.openshift.org/view/gs/|gs://|' -e 's|https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/|gs://|')
 gsutil -q -m cp -r "${GCS_PATH}/" ${TMP}/
@@ -114,18 +125,20 @@ gsutil -q -m cp -r "${GCS_PATH}/" ${TMP}/
 
 ## Workflow
 
-The user argument is: $ARGUMENTS
+The user argument is: `<ARGUMENTS>`
 
 0. **Determine input type and set up artifacts directory**:
-   - If `$ARGUMENTS` is a **local directory path** (starts with `/` and contains `build-log.txt`): set `TMP` to that directory. Skip step 1.
-   - If `$ARGUMENTS` is a **URL** (starts with `http`): create a temporary working directory with `mktemp -d ${WORKDIR}/openshift-ci-analysis-XXXX`, set `TMP` to that directory, and proceed to step 1.
+   - If `<ARGUMENTS>` is a **local directory path** (starts with `/` and contains `build-log.txt`): set `TMP` to that directory. Skip step 1.
+   - If `<ARGUMENTS>` is a **URL** (starts with `http`): create a temporary working directory with `mktemp -d <WORKDIR>/openshift-ci-analysis-XXXX`, set `TMP` to that directory, and proceed to step 1.
 
 1. **Download all artifacts** (skip if using pre-downloaded artifacts from step 0):
    Download all prow job artifacts using `gsutil -q -m cp -r` into the temporary working directory. Derive the GCS path by stripping the web prefix from the job URL (handles both Prow and GCS web URL formats):
+
    ```bash
    GCS_PATH=$(echo "${PROW_URL}" | sed -e 's|https://prow.ci.openshift.org/view/gs/|gs://|' -e 's|https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/|gs://|')
    gsutil -q -m cp -r "${GCS_PATH}/" ${TMP}/
    ```
+
    This works for both periodic (`logs/...`) and presubmit PR (`pr-logs/pull/...`) job URLs, and for both Prow and GCS web URL formats.
    This makes all build logs, step logs, and SOS reports available locally for analysis.
 
@@ -158,7 +171,7 @@ The user argument is: $ARGUMENTS
 
 Use this template for your error analysis reports:
 
-```
+```text
 Error Severity: {1-5}
 Stack Layer: {AWS Infra, External Infrastructure, build phase, deploy phase, test setup phase, Test Configuration, test, teardown}
 Step Name: {The specific step where the error occurred}
@@ -194,6 +207,7 @@ The `RAW_ERROR` field is used by downstream scripts for deterministic grouping. 
 5. **Truncate to ~150 characters** if the raw message is very long — keep the distinctive part
 
 Examples of good RAW_ERROR values (copied verbatim from logs):
+
 - `An error occurred (InvalidClientTokenId) when calling the CreateStack operation: The security token included in the request is invalid.`
 - `panic: runtime error: index out of range [6] with length 6`
 - `Process did not finish before 4h0m0s timeout`

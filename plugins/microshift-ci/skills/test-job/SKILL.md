@@ -9,14 +9,17 @@ allowed-tools: Skill, WebFetch, Bash, Read, Write, Glob, Grep
 # microshift-ci:test-job
 
 ## Synopsis
+
 ```bash
 /microshift-ci:test-job <job-url>
 ```
 
 ## Description
+
 The `microshift-ci:test-job` command fetches comprehensive information from a Prow CI job execution and displays it in both JSON and Markdown formats.
 
 This command provides:
+
 - Job metadata (status, timing, architecture, image type)
 - MicroShift version being tested
 - Test scenarios executed and their results
@@ -40,6 +43,7 @@ This command works by:
 The command integrates with the `microshift-ci:test-scenario` command to provide detailed per-scenario analysis and aggregates all information into a human-readable report with proper formatting (status icons, duration calculations, failure summaries).
 
 ## Arguments
+
 - `$1` (job-url): URL to the Prow CI job - **Required**
   - Formats accepted:
     - Full Prow dashboard URL: `https://prow.ci.openshift.org/view/gs/test-platform-results/logs/<job-name>/<job-id>`
@@ -47,6 +51,7 @@ The command integrates with the `microshift-ci:test-scenario` command to provide
     - Job ID only (e.g., "1979744605507162112") - will attempt to infer job type from context
 
 ## Return Value
+
 - **Format**: Markdown
 - **Location**: Output directly to the conversation
 - **Content**:
@@ -56,13 +61,6 @@ The command integrates with the `microshift-ci:test-scenario` command to provide
   - Build information
   - Links to logs and artifacts
 
-## Scripts Directory
-
-All scripts are run relative to the repository root:
-```bash
-SCRIPTS_DIR=plugins/microshift-ci/scripts
-```
-
 ## Implementation Steps
 
 ### Step 1: Parse Arguments and Validate Job URL
@@ -70,6 +68,7 @@ SCRIPTS_DIR=plugins/microshift-ci/scripts
 **Goal**: Extract the job name, job ID, and job configuration.
 
 **Actions**:
+
 1. Parse the job URL to extract:
    - Job name (e.g., "periodic-ci-openshift-microshift-release-4.20-periodics-e2e-aws-tests-bootc-release-periodic")
    - Job ID (e.g., "1979744605507162112")
@@ -81,7 +80,8 @@ SCRIPTS_DIR=plugins/microshift-ci/scripts
 4. If only job ID provided, ask user for job type or attempt to determine from recent jobs
 
 **Example Parsing**:
-```
+
+```text
 URL: https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-microshift-release-4.20-periodics-e2e-aws-tests-bootc-release-periodic/1979744605507162112
 
 Extracted:
@@ -97,10 +97,13 @@ Extracted:
 **Goal**: Get job information (status, timing, result).
 
 **Actions**:
+
 1. Construct the GCS URL for the `finished.json` file:
-   ```
+
+   ```text
    https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/<job-name>/<job-id>/finished.json
    ```
+
 2. Fetch the `finished.json` file using curl or WebFetch
 3. Parse the JSON to extract:
    - Job result (SUCCESS/FAILURE/ABORTED)
@@ -109,6 +112,7 @@ Extracted:
    - Passed status
    - Metadata (repo, revision, etc.)
 4. Fetch `started.json` for additional metadata:
+
    ```bash
    curl -s "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/<job-name>/<job-id>/started.json"
    ```
@@ -119,24 +123,28 @@ Extracted:
 
 This command includes a Python script that automates version extraction from test logs.
 
-**Script Location**: `${SCRIPTS_DIR}/extract-version.py`
+**Script Location**: `plugins/microshift-ci/scripts/extract-version.py`
 
 **Usage**:
-```bash
-python3 ${SCRIPTS_DIR}/extract-version.py <prow_url> <scenario>
+
+```text
+python3 plugins/microshift-ci/scripts/extract-version.py <prow_url> <scenario>
 ```
 
 **Arguments**:
+
 - `prow_url`: The full Prow CI job URL (e.g., "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-microshift-release-4.20-periodics-e2e-aws-tests-bootc-release-periodic/1979744605507162112")
 - `scenario`: The test scenario name (e.g., "el96-lrel@ipv6")
 
 **Example**:
-```bash
+
+```text
 # Extract version for a specific job and scenario
-python3 ${SCRIPTS_DIR}/extract-version.py "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-microshift-release-4.20-periodics-e2e-aws-tests-bootc-release-periodic/1979744605507162112" "el96-lrel@ipv6"
+python3 plugins/microshift-ci/scripts/extract-version.py "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-microshift-release-4.20-periodics-e2e-aws-tests-bootc-release-periodic/1979744605507162112" "el96-lrel@ipv6"
 ```
 
 **Output** (JSON):
+
 ```json
 {
   "success": true,
@@ -148,6 +156,7 @@ python3 ${SCRIPTS_DIR}/extract-version.py "https://prow.ci.openshift.org/view/gs
 ```
 
 **Build Types Detected**:
+
 - `"nightly"`: Nightly development builds
 - `"ec"`: Engineering Candidate
 - `"rc"`: Release Candidate
@@ -158,6 +167,7 @@ python3 ${SCRIPTS_DIR}/extract-version.py "https://prow.ci.openshift.org/view/gs
 **Goal**: Find all test scenarios executed in this job and list them.
 
 **Output** (JSON):
+
 ```json
 {
   "job_id": "1979744605507162112",
@@ -182,6 +192,7 @@ python3 ${SCRIPTS_DIR}/extract-version.py "https://prow.ci.openshift.org/view/gs
 For each scenario found in Step 4:
 
 1. **Get scenario details** using the microshift-ci:test-scenario command:
+
    ```bash
    /microshift-ci:test-scenario <job-url> <scenario-name>
    ```
@@ -195,6 +206,7 @@ For each scenario found in Step 4:
    - Links to all artifacts
 
 **Example JSON Response**:
+
 ```json
 {
   "scenario": {
@@ -232,7 +244,7 @@ For each scenario found in Step 4:
 }
 ```
 
-3. **Extract key information** from each scenario:
+1. **Extract key information** from each scenario:
    - Overall status (passed/failed)
    - Test counts
    - Failure details (for failed scenarios)
@@ -240,6 +252,7 @@ For each scenario found in Step 4:
    - Test category and configuration
 
 **Alternative Manual Method** (if microshift-ci:test-scenario command unavailable):
+
 1. Fetch junit.xml directly from artifact URL
 2. Parse XML to extract test counts
 3. Check boot_and_run.log for execution details
@@ -250,6 +263,7 @@ For each scenario found in Step 4:
 **Goal**: Provide links to useful artifacts and logs.
 
 **Actions**:
+
 1. Compile key artifact URLs:
    - Build log: `artifacts/<job-type>/openshift-microshift-infra-iso-build/build-log.txt`
    - Test logs for each scenario
@@ -267,6 +281,7 @@ For each scenario found in Step 4:
 **Goal**: Create a comprehensive, well-structured report.
 
 **Report Structure**:
+
 ```markdown
 # MicroShift CI Job Details
 
@@ -323,6 +338,7 @@ For each scenario found in Step 4:
 **Goal**: Handle errors gracefully.
 
 **Common Issues**:
+
 1. **Job not found (404)**:
    - Verify job ID is correct
    - Check if job is still running (no finished.json yet)
@@ -348,11 +364,13 @@ For each scenario found in Step 4:
 ## Examples
 
 ### Example 1: Successful Job Analysis
-```
+
+```text
 /microshift-ci:test-job https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-microshift-release-4.20-periodics-e2e-aws-tests-bootc-release-periodic/1979744605507162112
 ```
 
 Output:
+
 ```markdown
 # MicroShift CI Job Details
 
@@ -384,16 +402,19 @@ Output:
 ```
 
 ### Example 2: Using GCS Web URL
-```
+
+```text
 /microshift-ci:test-job https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/periodic-ci-openshift-microshift-release-4.20-periodics-e2e-aws-tests-release-arm-periodic/1979744608019550208
 ```
 
 ### Example 3: Failed Job Analysis
+
 ```bash
 /microshift-ci:test-job https://prow.ci.openshift.org/view/gs/test-platform-results/logs/some-failing-job/9876543210
 ```
 
 Output would include failure details:
+
 ```markdown
 ## Job Overview
 - **Status**: ✗ FAILURE
@@ -408,12 +429,15 @@ Output would include failure details:
 ```
 
 ### Example 4: Job ID Only
-```
+
+```text
 /microshift-ci:test-job 1979744605507162112
 ```
+
 (May prompt for additional context or attempt to determine job type from recent jobs)
 
 ## Notes
+
 - This command provides comprehensive analysis including job status, MicroShift version, test scenarios, and detailed results
 - Works with MicroShift-specific Prow CI jobs
 - Requires internet access to fetch job data from Prow CI

@@ -9,12 +9,15 @@ allowed-tools: WebFetch, Bash, Read, Write, Glob, Grep
 # microshift-ci:test-scenario
 
 ## Synopsis
+
 ```bash
 /microshift-ci:test-scenario <job-url> <scenario-name>
 ```
 
 ## Description
+
 The `microshift-ci:test-scenario` command retrieves comprehensive information about a specific test scenario executed within a MicroShift CI job. It returns detailed information containing:
+
 - Scenario configuration (OS version, test type, architecture)
 - Test execution results (pass/fail counts, test names)
 - MicroShift version tested
@@ -40,14 +43,8 @@ If no scenario name is provided it will prompt to the user what scenario to use.
 
 The command uses the `plugins/microshift-ci/scripts/extract-version.py` helper script (relative to repo root) to determine the exact MicroShift version tested in the scenario.
 
-## Scripts Directory
-
-All scripts are run relative to the repository root:
-```bash
-SCRIPTS_DIR=plugins/microshift-ci/scripts
-```
-
 ## Arguments
+
 - `$1` (job-url): URL to the Prow CI job - **Required**
   - Formats accepted:
     - Full Prow dashboard URL: `https://prow.ci.openshift.org/view/gs/test-platform-results/logs/<job-name>/<job-id>`
@@ -57,6 +54,7 @@ SCRIPTS_DIR=plugins/microshift-ci/scripts
   - If not provided, the command will list all available scenarios
 
 ## Return Value
+
 - **Format**: Markdown
 - **Location**: Output directly to the conversation
 - **Content**: Comprehensive scenario information including test results, configuration, and artifacts
@@ -68,6 +66,7 @@ SCRIPTS_DIR=plugins/microshift-ci/scripts
 **Goal**: Extract job information and scenario name from the arguments.
 
 **Actions**:
+
 1. Parse the job URL to extract:
    - Job name
    - Job ID
@@ -77,6 +76,7 @@ SCRIPTS_DIR=plugins/microshift-ci/scripts
 3. If no scenario name provided, set `list_scenarios = true` flag
 
 **Example**:
+
 ```javascript
 // Input
 job_url = "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-microshift-release-4.20-periodics-e2e-aws-tests-bootc-release-periodic/1979744605507162112"
@@ -96,10 +96,13 @@ image_type = "bootc"
 **Goal**: Build URLs to the scenario's artifacts.
 
 **Actions**:
+
 1. Construct base artifact URL:
-   ```
+
+   ```text
    https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/<job-name>/<job-id>/artifacts/<job-type>/openshift-microshift-e2e-metal-tests/artifacts/scenario-info/<scenario-name>/
    ```
+
 2. Construct specific artifact URLs:
    - JUnit XML: `<base-url>/junit.xml`
    - Boot log: `<base-url>/boot_and_run.log`
@@ -111,16 +114,20 @@ image_type = "bootc"
 **Goal**: If no scenario name was provided, list all available scenarios in the job.
 
 **Actions**:
+
 1. Fetch the scenario-info directory listing:
-   ```
+
+   ```text
    https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/<job-name>/<job-id>/artifacts/<job-type>/openshift-microshift-e2e-metal-tests/artifacts/scenario-info/
    ```
+
 2. Use WebFetch to parse the HTML directory listing
 3. Extract all scenario directory names
 4. Return formatted list of scenarios
 
 **Output Format** (if listing scenarios):
-```
+
+```text
 # Available Test Scenarios
 
 Job: periodic-ci-openshift-microshift-release-4.20-periodics-e2e-aws-tests-bootc-release-periodic
@@ -145,6 +152,7 @@ Job ID: 1979744605507162112
 **Goal**: Get test execution results from JUnit XML.
 
 **Actions**:
+
 1. Fetch the junit.xml file using curl or WebFetch
 2. Parse XML to extract:
    - Total test count
@@ -157,6 +165,7 @@ Job ID: 1979744605507162112
    - Failure messages and stack traces (if any)
 
 **Example Parsing**:
+
 ```python
 import xml.etree.ElementTree as ET
 
@@ -201,6 +210,7 @@ test_results['passed'] = test_results['total'] - test_results['failures'] - test
 **Goal**: Parse scenario name to extract configuration details.
 
 **Actions**:
+
 1. Parse scenario name to extract components:
    - RHEL version (e.g., "el96" → "RHEL 9.6")
    - Release type (e.g., "lrel" → "Latest Release")
@@ -218,6 +228,7 @@ test_results['passed'] = test_results['total'] - test_results['failures'] - test
    - `ai-model-serving-online` → "AI Model Serving Tests"
 
 **Example**:
+
 ```javascript
 // Scenario: el96-lrel@standard1
 {
@@ -244,6 +255,7 @@ test_results['passed'] = test_results['total'] - test_results['failures'] - test
 **Goal**: Extract when the scenario was executed and how long it took.
 
 **Actions**:
+
 1. Check boot_and_run.log for timestamps
 2. Look for start and end markers in the log
 3. Calculate duration if both timestamps available
@@ -254,6 +266,7 @@ test_results['passed'] = test_results['total'] - test_results['failures'] - test
 **Goal**: Provide direct links to all relevant artifacts for the scenario.
 
 **Actions**:
+
 1. Build URLs for common artifacts:
    - JUnit XML report
    - Boot and run log
@@ -267,13 +280,13 @@ test_results['passed'] = test_results['total'] - test_results['failures'] - test
    - Phase logs: All logs under phase_* directories
    - Diagnostics: sosreports, system logs
 
-
 ### Error Handling
 
 **Common Issues and Responses**:
 
 1. **Scenario not found**:
-```
+
+```text
 # Error: Scenario Not Found
 
 Scenario 'el96-lrel@invalid' does not exist in job 1979744605507162112
@@ -284,8 +297,9 @@ Scenario 'el96-lrel@invalid' does not exist in job 1979744605507162112
 - ...
 ```
 
-2. **Job not found**:
-```
+1. **Job not found**:
+
+```text
 # Error: Job Not Found
 
 Could not fetch artifacts for job ID 1234567890
@@ -293,8 +307,9 @@ Could not fetch artifacts for job ID 1234567890
 Please verify the job URL and ensure the job has completed.
 ```
 
-3. **Missing artifacts**:
-```
+1. **Missing artifacts**:
+
+```text
 # Warning: Partial Data Available
 
 Some artifacts were not available for this scenario.
@@ -308,12 +323,14 @@ Displaying available information below...
 ## Examples
 
 ### Example 1: Get scenario information
-```
+
+```text
 /microshift-ci:test-scenario https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-microshift-release-4.20-periodics-e2e-aws-tests-bootc-release-periodic/1979744605507162112 el96-lrel@standard1
 ```
 
 Output:
-```
+
+```text
 # Test Scenario Analysis: el96-lrel@standard1
 
 ## Job Information
@@ -347,12 +364,14 @@ Output:
 ```
 
 ### Example 2: List all scenarios (no scenario name provided)
-```
+
+```text
 /microshift-ci:test-scenario https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-microshift-release-4.20-periodics-e2e-aws-tests-bootc-release-periodic/1979744605507162112
 ```
 
 Output:
-```
+
+```text
 # Available Test Scenarios
 
 Job: periodic-ci-openshift-microshift-release-4.20-periodics-e2e-aws-tests-bootc-release-periodic
@@ -367,12 +386,14 @@ Job ID: 1979744605507162112
 ```
 
 ### Example 3: Get information about a failed scenario
-```
+
+```text
 /microshift-ci:test-scenario https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-microshift-release-4.20-periodics-e2e-aws-tests-release-periodic/1234567890 el96-lrel@lvm
 ```
 
 Output would include failure details:
-```
+
+```text
 # Test Scenario Analysis: el96-lrel@lvm
 
 ## Job Information
@@ -407,6 +428,7 @@ Output would include failure details:
 ```
 
 ## Notes
+
 - This command outputs detailed information in Markdown format for easy reading
 - The command is read-only and does not modify any CI job data
 - If a scenario doesn't have junit.xml, the command will attempt to infer results from logs

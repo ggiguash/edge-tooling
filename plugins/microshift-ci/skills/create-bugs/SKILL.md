@@ -9,17 +9,20 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Agent, mcp__jira__jira_search, mcp
 # microshift-ci:create-bugs
 
 ## Synopsis
+
 ```bash
 /microshift-ci:create-bugs <source> [--create]
 ```
 
 ## Description
+
 Reads individual job analysis reports produced by `microshift-ci:doctor` and creates JIRA bugs in USHIFT for CI test failures. Operates in **dry-run mode by default** - it shows what bugs would be created without actually creating them. Use `--create` to perform actual issue creation.
 
-This command does NOT re-analyze CI jobs. It consumes existing job analysis files from `${WORKDIR}/`.
+This command does NOT re-analyze CI jobs. It consumes existing job analysis files from `<WORKDIR>`.
 
 ## Arguments
-- `$ARGUMENTS` (required): Source identifier, optionally followed by `--create`
+
+- `<ARGUMENTS>` (required): Source identifier, optionally followed by `--create`
   - `<source>` (required): One of the following:
     - **Release version** (e.g., `4.22`, `main`): Looks for files matching `analyze-ci-release-<release>-job-*.txt`
     - **PR number** (e.g., `pr-6396` or `pr6396`): Looks for files matching `analyze-ci-prs-job-*-pr<number>-*.txt`
@@ -28,7 +31,7 @@ This command does NOT re-analyze CI jobs. It consumes existing job analysis file
 
 ## Prerequisites
 
-- Job analysis files must already exist in `${WORKDIR}/`:
+- Job analysis files must already exist in `<WORKDIR>`:
   - For releases: `analyze-ci-release-<release>-job-*.txt` (produced by `/microshift-ci:doctor`)
   - For PRs: `analyze-ci-prs-job-*-pr<number>-*.txt` (produced by `/microshift-ci:doctor`)
 - Each job file must contain a `--- STRUCTURED SUMMARY ---` block (see below)
@@ -56,18 +59,12 @@ FINISHED: <job finish date in YYYY-MM-DD format>
 
 If a job file lacks this block, it is skipped with a warning.
 
-## Scripts Directory
-
-All scripts are run relative to the repository root:
-```bash
-SCRIPTS_DIR=plugins/microshift-ci/scripts
-```
-
 ## Work Directory
 
-Set once at the start and reference throughout:
-```bash
-WORKDIR=/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)
+Compute once at the start by running `date +%y%m%d` and substituting into the path below. In all commands, replace `<WORKDIR>` with the computed path — do not use shell variables.
+
+```text
+/tmp/microshift-ci-claude-workdir.<YYMMDD>
 ```
 
 ## Implementation Steps
@@ -75,14 +72,17 @@ WORKDIR=/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)
 ### Step 1: Prepare Bug Candidates (Deterministic Script)
 
 **Actions**:
-1. Parse `$ARGUMENTS` to extract `<source>` and detect `--create` flag
+
+1. Parse `<ARGUMENTS>` to extract `<source>` and detect `--create` flag
 2. Determine mode: if `--create` is present, set `MODE=create`; otherwise `MODE=dry-run`
 3. Determine today's WORKDIR path by running `date +%y%m%d` and substituting into `/tmp/microshift-ci-claude-workdir.YYMMDD`. Run `mkdir -p` on it.
 4. Run the preparation script to parse job files, group by signature, and extract search keywords:
-   ```bash
-   python3 ${SCRIPTS_DIR}/search-bugs.py <source> --workdir ${WORKDIR}
+
+   ```text
+   python3 plugins/microshift-ci/scripts/search-bugs.py <source> --workdir <WORKDIR>
    ```
-5. The script writes `${WORKDIR}/analyze-ci-bug-candidates-<source>.json` containing:
+
+5. The script writes `<WORKDIR>/analyze-ci-bug-candidates-<source>.json` containing:
    - Parsed and deduplicated bug candidates (grouped by ERROR_SIGNATURE similarity)
    - Pre-computed `keywords` (2-4 distinctive search terms per candidate)
    - Pre-computed `test_ids` (numeric IDs like `55394` for test case searches)
@@ -91,6 +91,7 @@ WORKDIR=/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)
 6. Read the candidates JSON file for use in Step 2
 
 **Error Handling**:
+
 - No arguments: show usage and stop
 - Script exits with error if no job files found — relay its error message to the user
 
@@ -99,8 +100,10 @@ WORKDIR=/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)
 For each bug candidate in the candidates JSON, run ALL of the following searches. The `keywords` and `test_ids` fields are pre-computed by the script — use them directly.
 
 **Search A — Keyword search (multiple focused queries)**:
+
 1. Use the pre-computed `keywords` array from the candidate (already filtered for stop words and ranked by specificity)
 2. Run **2-3 separate searches in parallel**, each using 1-2 keywords from the array. Do NOT put all keywords into a single `text ~` query — Jira requires all terms to match, so queries with 3+ keywords are fragile and miss issues that use slightly different wording.
+
    ```python
    # Example: candidate.keywords = ["invalidclienttokenid", "cloudformation", "createstack", "aws-2"]
    # Search A1: most distinctive keyword
@@ -108,10 +111,12 @@ For each bug candidate in the candidates JSON, run ALL of the following searches
    # Search A2: second keyword
    mcp__jira__jira_search(jql='... AND issuetype = Bug AND text ~ "cloudformation" ...', limit=5)
    ```
+
 3. Merge and deduplicate results from all A-series queries before proceeding
 
 **Search B — Test case ID search (MANDATORY when `test_ids` is non-empty)**:
 Use the pre-computed `test_ids` array from the candidate. For EACH ID, run TWO separate searches:
+
 ```text
 # Search B1: bare number
 jql: ... AND issuetype = Bug AND text ~ "68256" AND status not in (Closed, Verified) ...
@@ -119,20 +124,24 @@ jql: ... AND issuetype = Bug AND text ~ "68256" AND status not in (Closed, Verif
 # Search B2: OCP-prefixed form (OpenShift Polarion convention)
 jql: ... AND issuetype = Bug AND text ~ "OCP-68256" AND status not in (Closed, Verified) ...
 ```
+
 **Why both forms are required**: Jira's text indexer treats `OCP-68256` as a single token, so `text ~ "68256"` will NOT match issues containing `OCP-68256`, and vice versa. Skipping either form WILL cause missed duplicates.
 
 **After all searches**:
+
 1. Merge and deduplicate results from all search queries (A, B1, B2)
 2. If potential duplicates are found, fetch their details with `mcp__jira__jira_get_issue` to show summary and status
 
 **Search C — Regression check (closed/verified issues)**:
 After completing searches A and B, run an additional keyword search against closed/verified issues to detect potential regressions:
+
 ```python
 mcp__jira__jira_search(
   jql='((project = OCPBUGS AND component = MicroShift) OR project = USHIFT) AND issuetype = Bug AND text ~ "<keywords>" AND status in (Closed, Verified) ORDER BY updated DESC',
   limit=5
 )
 ```
+
 If results are found, fetch their details with `mcp__jira__jira_get_issue` and flag them as **"Potential regression of closed bug"** — distinct from open duplicates. These should be shown to the user but do NOT block creation; they serve as a warning that a previously fixed issue may have resurfaced.
 
 **Note**: Run searches in parallel where possible.
@@ -140,6 +149,7 @@ If results are found, fetch their details with `mcp__jira__jira_get_issue` and f
 ### Step 3: Present Bug Candidates to User
 
 **Actions**:
+
 1. Display a numbered list of all bug candidates with:
    - Summary (derived from error signature)
    - Severity and affected job count
@@ -151,6 +161,7 @@ If results are found, fetch their details with `mcp__jira__jira_get_issue` and f
 2. **In dry-run mode** (`--create` NOT specified):
    - Display all candidates with `[DRY-RUN]` prefix
    - After listing all candidates, show a summary:
+
      ```text
      DRY-RUN SUMMARY
        Source: <SOURCE_LABEL>
@@ -162,10 +173,12 @@ If results are found, fetch their details with `mcp__jira__jira_get_issue` and f
      To create these bugs, run:
        /microshift-ci:create-bugs <source> --create
      ```
+
    - Do NOT prompt for any actions. Do NOT create any issues. Do NOT proceed to Steps 4/4a (create/reopen). Continue to Step 5 and Step 6.
 
 3. **In create mode** (`--create` specified):
    - For each candidate, prompt the user:
+
      ```text
      Bug Candidate N/M:
        Summary: "<derived summary>"
@@ -187,6 +200,7 @@ If results are found, fetch their details with `mcp__jira__jira_get_issue` and f
      # ACTION_PROMPT_NO_REOPEN (use when no closed regressions exist):
      Action? [c]reate / [s]kip / [l]ink-to-existing <JIRA-KEY>:
      ```
+
    - Select the prompt template based on whether closed regressions were found for the candidate: use `ACTION_PROMPT_WITH_REOPEN` when the candidate has closed regressions from Search C, and `ACTION_PROMPT_NO_REOPEN` otherwise.
    - **create**: Proceed to Step 4
    - **skip**: Skip this candidate, move to next
@@ -202,7 +216,8 @@ For each candidate where user chose "create":
    - Format: `"MicroShift CI: <error_signature>"` (truncate to 100 chars if needed)
 
 2. **Construct the bug description** using **Markdown** format (the MCP Jira tool accepts Markdown and automatically converts it to Jira wiki markup — do NOT write Jira wiki markup directly):
-   ```text
+
+   `````text
    ## Description of problem
 
    CI job failures detected for MicroShift <SOURCE_LABEL>.
@@ -225,7 +240,9 @@ For each candidate where user chose "create":
    ## Actual results
 
    ````
+
    <error details extracted from the analysis text — the specific error message and relevant log context>
+
    ````
 
    ## Expected results
@@ -246,9 +263,10 @@ For each candidate where user chose "create":
    </for each>
 
    **Source:** Auto-generated by /microshift-ci:create-bugs from CI analysis output.
-   ```
+   `````
 
 3. **Create the issue**:
+
    ```python
    mcp__jira__jira_create_issue(
        project_key="USHIFT",
@@ -266,6 +284,7 @@ For each candidate where user chose "create":
 4. **Record the result**: Store the created issue key for the final report.
 
 **Error Handling**:
+
 - If MCP call fails, report error, ask user if they want to retry or skip
 - Do NOT retry automatically
 
@@ -277,6 +296,7 @@ For each candidate where user chose "create":
 For each candidate where user chose "reopen":
 
 1. **Get available transitions** for the closed issue:
+
    ```python
    mcp__jira__jira_get_transitions(issue_key="<JIRA-KEY>")
    ```
@@ -284,6 +304,7 @@ For each candidate where user chose "reopen":
 2. **Find the reopen transition**: Look for a transition whose name is exactly "To Do", "New", or "Backlog" (case-insensitive). If no suitable transition is found, report the error and ask the user whether to create a new bug instead or skip.
 
 3. **Construct a regression comment** describing the new occurrences:
+
    ```text
    ## Regression: issue has resurfaced
 
@@ -302,6 +323,7 @@ For each candidate where user chose "reopen":
    ```
 
 4. **Transition the issue** to reopen it:
+
    ```python
    mcp__jira__jira_transition_issue(
        issue_key="<JIRA-KEY>",
@@ -311,6 +333,7 @@ For each candidate where user chose "reopen":
    ```
 
 5. If the transition call does not support inline comments, add the comment separately:
+
    ```python
    mcp__jira__jira_add_comment(
        issue_key="<JIRA-KEY>",
@@ -321,6 +344,7 @@ For each candidate where user chose "reopen":
 6. **Record the result**: Store the reopened issue key for the final report.
 
 **Error Handling**:
+
 - If no reopen-like transition is available, report available transitions to user and ask whether to create a new bug or skip
 - If the transition fails, report error and ask user if they want to retry, create a new bug instead, or skip
 - Do NOT retry automatically
@@ -330,7 +354,7 @@ For each candidate where user chose "reopen":
 **Actions**:
 After processing all bug candidates (Steps 2-4a) and regardless of mode (dry-run or create), write a machine-readable bug mapping file that `create-report.py` can consume to display JIRA bug links in the HTML report. The file content is based on the Jira search results from Step 2 — it is not affected by whether bugs were created or reopened in Steps 4/4a.
 
-1. Save to `${WORKDIR}/analyze-ci-bugs-<source>.json` (overwrite if exists)
+1. Save to `<WORKDIR>/analyze-ci-bugs-<source>.json` (overwrite if exists)
 2. Use this JSON format:
 
 ```json
@@ -354,17 +378,19 @@ After processing all bug candidates (Steps 2-4a) and regardless of mode (dry-run
 }
 ```
 
-3. **IMPORTANT**: This file must be written in BOTH dry-run and create modes. The file enables `create-report.py` to show linked bugs per issue in the HTML report.
-4. Use empty arrays `[]` for `duplicates` and `regressions` when none are found.
-5. Save using a Bash heredoc with `jq` or `python3 -c` to ensure valid JSON, or use the Write tool.
+1. **IMPORTANT**: This file must be written in BOTH dry-run and create modes. The file enables `create-report.py` to show linked bugs per issue in the HTML report.
+2. Use empty arrays `[]` for `duplicates` and `regressions` when none are found.
+3. Save using a Bash heredoc with `jq` or `python3 -c` to ensure valid JSON, or use the Write tool.
 
 ### Step 6: Generate Results Report
 
 **Actions**:
-1. Save report to `${WORKDIR}/analyze-ci-create-bugs-<source>.<timestamp>.txt`
+
+1. Save report to `<WORKDIR>/analyze-ci-create-bugs-<source>.<timestamp>.txt`
 2. Display summary to user:
 
 **Dry-run report format**:
+
 ```text
 ═══════════════════════════════════════════════════════════════
 ANALYZE-CI CREATE BUGS - DRY-RUN REPORT
@@ -396,11 +422,12 @@ CANDIDATES
 To create these bugs, run:
   /microshift-ci:create-bugs <source> --create
 
-Report saved: ${WORKDIR}/analyze-ci-create-bugs-<source>.<timestamp>.txt
+Report saved: <WORKDIR>/analyze-ci-create-bugs-<source>.<timestamp>.txt
 ═══════════════════════════════════════════════════════════════
 ```
 
 **Create mode report format**:
+
 ```text
 ═══════════════════════════════════════════════════════════════
 ANALYZE-CI CREATE BUGS - CREATION REPORT
@@ -434,53 +461,65 @@ SUMMARY
   Reopened: N
   Failed: N
 
-Report saved: ${WORKDIR}/analyze-ci-create-bugs-<source>.<timestamp>.txt
+Report saved: <WORKDIR>/analyze-ci-create-bugs-<source>.<timestamp>.txt
 ═══════════════════════════════════════════════════════════════
 ```
 
 ## Examples
 
 ### Example 1: Dry-Run for a Release (Default)
+
 ```bash
 /microshift-ci:create-bugs 4.22
 ```
+
 Shows what bugs would be created from release 4.22 analysis without creating anything.
 
 ### Example 2: Create Bugs for a Release
+
 ```bash
 /microshift-ci:create-bugs 4.22 --create
 ```
+
 Interactively creates bugs from release 4.22 analysis.
 
 ### Example 3: Dry-Run for a PR
+
 ```bash
 /microshift-ci:create-bugs pr-6396
 ```
+
 Shows what bugs would be created from PR #6396 analysis.
 
 ### Example 4: Create Bugs for a Rebase PR
+
 ```bash
 /microshift-ci:create-bugs rebase-release-4.22 --create
 ```
+
 Resolves the rebase PR for release 4.22, then interactively creates bugs.
 
 ### Example 5: No Job Files Found
+
 ```bash
 /microshift-ci:create-bugs 4.19
 ```
+
 ```text
-Error: No job analysis files found at ${WORKDIR}/analyze-ci-release-4.19-job-*.txt
+Error: No job analysis files found at <WORKDIR>/analyze-ci-release-4.19-job-*.txt
 
 Run the analysis first:
   /microshift-ci:doctor 4.19
 ```
 
 ### Example 6: No PR Job Files Found
+
 ```bash
 /microshift-ci:create-bugs pr-9999
 ```
+
 ```text
-Error: No job analysis files found at ${WORKDIR}/analyze-ci-prs-job-*-pr9999-*.txt
+Error: No job analysis files found at <WORKDIR>/analyze-ci-prs-job-*-pr9999-*.txt
 
 Run the analysis first:
   /microshift-ci:doctor <release>
@@ -488,7 +527,7 @@ Run the analysis first:
 
 ## Notes
 
-- This command does NOT run CI analysis — it only consumes existing analysis files from `${WORKDIR}`
+- This command does NOT run CI analysis — it only consumes existing analysis files from `<WORKDIR>`
 - Supports two file naming patterns:
   - Release jobs: `analyze-ci-release-<release>-job-*.txt` (from `/microshift-ci:doctor`)
   - PR jobs: `analyze-ci-prs-job-*-pr<number>-*.txt` (from `/microshift-ci:doctor`)
