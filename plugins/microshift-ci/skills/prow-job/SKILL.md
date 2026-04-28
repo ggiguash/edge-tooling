@@ -75,10 +75,10 @@ To determine the GCS path from any job URL, strip the web prefix and replace wit
 
 > These files are available after artifacts are downloaded (via the download script or workflow step 0).
 
-- `${TMP}/build-log.txt`: Log containing prow job output and most likely place to identify AWS infra related or hypervisor related errors.
-- `${STEP}/build-log.txt`: Each step in the CI job is individually logged in a build-log.txt file.
-- `${TMP}/artifacts/${TEST_NAME}/openshift-microshift-infra-sos-aws/artifacts/sosreport-*.tar.xz`: Compressed archive containing select portions of the test host's filesystem, relevant logs, and system configurations. `${TEST_NAME}` varies by job (e.g., `e2e-aws-tests`, `e2e-aws-ovn-ocp-conformance-arm64`).
-- `${TMP}/artifacts/${TEST_NAME}/openshift-microshift-e2e-origin-conformance/build-log.txt`: Step-specific build log for origin conformance tests.
+- `<TMP>/build-log.txt`: Log containing prow job output and most likely place to identify AWS infra related or hypervisor related errors.
+- `<STEP>/build-log.txt`: Each step in the CI job is individually logged in a build-log.txt file.
+- `<TMP>/artifacts/<TEST_NAME>/openshift-microshift-infra-sos-aws/artifacts/sosreport-*.tar.xz`: Compressed archive containing select portions of the test host's filesystem, relevant logs, and system configurations. `<TEST_NAME>` varies by job (e.g., `e2e-aws-tests`, `e2e-aws-ovn-ocp-conformance-arm64`).
+- `<TMP>/artifacts/<TEST_NAME>/openshift-microshift-e2e-origin-conformance/build-log.txt`: Step-specific build log for origin conformance tests.
 
 ## Important Links
 
@@ -95,14 +95,14 @@ This link provides a diagram of the steps that make up the test. Think about rea
 After downloading artifacts locally, find the SOS report at:
 
 ```text
-${TMP}/artifacts/${TEST_NAME}/openshift-microshift-infra-sos-aws/artifacts/sosreport-*.tar.xz
+<TMP>/artifacts/<TEST_NAME>/openshift-microshift-infra-sos-aws/artifacts/sosreport-*.tar.xz
 ```
 
-Where `${TEST_NAME}` is the test name directory (e.g., `e2e-aws-tests`, `e2e-aws-ovn-ocp-conformance-serial`). Use `find ${TMP}/artifacts -name 'sosreport-*.tar.xz'` to locate it.
+Where `<TEST_NAME>` is the test name directory (e.g., `e2e-aws-tests`, `e2e-aws-ovn-ocp-conformance-serial`). Use `find <TMP>/artifacts -name 'sosreport-*.tar.xz'` to locate it.
 
 ## Work Directory
 
-Compute once at the start by running `date +%y%m%d` and substituting into the path below. In all commands, replace `<WORKDIR>` with the computed path — do not use shell variables.
+Compute once at the start by running `date +%y%m%d` and substituting into the path below. In all commands, replace `<WORKDIR>` with the computed path — do not store the work directory in a shell variable.
 
 ```text
 /tmp/microshift-ci-claude-workdir.<YYMMDD>
