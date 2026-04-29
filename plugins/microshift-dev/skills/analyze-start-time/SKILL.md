@@ -11,7 +11,7 @@ allowed-tools: Bash, Read, Glob, Grep
 ## Synopsis
 
 ```bash
-/microshift-dev:analyze-start-time <journal logs>
+/microshift-dev:analyze-start-time <journal-logs>
 ```
 
 ## Description
