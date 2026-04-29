@@ -89,6 +89,7 @@ def parse_structured_summary(filepath):
         "step_name": data.get("STEP_NAME", ""),
         "error_signature": data.get("ERROR_SIGNATURE", ""),
         "raw_error": data.get("RAW_ERROR", ""),
+        "root_cause": data.get("ROOT_CAUSE", ""),
         "infrastructure_failure": data.get("INFRASTRUCTURE_FAILURE", "false").lower() == "true",
         "job_url": data.get("JOB_URL", ""),
         "job_name": data.get("JOB_NAME", ""),
@@ -131,8 +132,14 @@ def _grouping_text(job):
 
     Prefers RAW_ERROR (verbatim log text, deterministic) over
     ERROR_SIGNATURE (LLM-paraphrased, variable across runs).
+    Appends ROOT_CAUSE when present to improve cross-release matching
+    for failures that share the same underlying mechanism.
     """
-    return job.get("raw_error") or job.get("error_signature", "")
+    base = job.get("raw_error") or job.get("error_signature", "")
+    root_cause = job.get("root_cause", "")
+    if root_cause:
+        return base + " " + root_cause
+    return base
 
 
 def _cluster_by_similarity(items, key_fn):
@@ -311,8 +318,14 @@ def find_job_files(workdir, source):
 # ---------------------------------------------------------------------------
 
 def _merge_by_similarity(candidates):
-    """Group candidates by error_signature similarity for cross-release dedup."""
-    return _cluster_by_similarity(candidates, lambda c: c["error_signature"])
+    """Group candidates by error_signature + root_cause similarity for cross-release dedup."""
+    def _merge_key(c):
+        base = c.get("error_signature", "")
+        root_cause = c.get("root_cause", "")
+        if root_cause:
+            return base + " " + root_cause
+        return base
+    return _cluster_by_similarity(candidates, _merge_key)
 
 
 def merge_candidate_files(filepaths):

@@ -187,6 +187,7 @@ SEVERITY: {1-5, same as Error Severity above}
 STACK_LAYER: {AWS Infra, External Infrastructure, build phase, deploy phase, test setup phase, Test Configuration, test, teardown - same as Stack Layer above}
 STEP_NAME: {same as Step Name above}
 ERROR_SIGNATURE: {a concise, unique one-line description of the root cause - not the full error, just enough to identify and deduplicate this failure}
+ROOT_CAUSE: {one-line description of WHY the failure happened — the underlying mechanism, not the surface symptom. ~80 chars max. See rules below}
 RAW_ERROR: {the primary error message copied VERBATIM from the log file - see rules below}
 INFRASTRUCTURE_FAILURE: {true if Stack Layer is AWS Infra or the failure is due to CI infrastructure rather than product code, false otherwise}
 JOB_URL: {the full prow job URL — when given a URL as input, use it directly; when given a local artifacts dir, reconstruct from the build-log.txt "Link to job on registry info site" line or from the directory path structure}
@@ -215,3 +216,29 @@ Examples of good RAW_ERROR values (copied verbatim from logs):
 - `package github.com/opencontainers/runc/libcontainer/cgroups: module github.com/opencontainers/runc@latest found, but does not contain package`
 
 The ERROR_SIGNATURE field remains as a human-readable description for reports and Jira bug titles.
+
+### ROOT_CAUSE rules
+
+The `ROOT_CAUSE` field captures the underlying mechanism behind the failure — used by downstream scripts alongside `RAW_ERROR` for cross-release deduplication. Two jobs that fail with different surface errors but the same root cause should produce the same `ROOT_CAUSE`.
+
+**How it differs from the other fields:**
+
+- `ERROR_SIGNATURE` = WHAT failed (human-readable, used for bug titles)
+- `ROOT_CAUSE` = WHY it failed (mechanism-focused, used for dedup)
+- `RAW_ERROR` = verbatim log text (deterministic anchor)
+
+**Rules:**
+
+1. **One line, ~80 characters max** — short enough for token-based matching
+2. **Focus on the mechanism**, not the symptom — ask "why did this happen?" not "what error appeared?"
+3. **Be consistent across releases** — the same underlying problem in 4.20 and 4.22 MUST produce the same ROOT_CAUSE even if the error messages differ
+4. **Use stable terms** — avoid version numbers, timestamps, job names, or other run-specific details
+
+**Examples:**
+
+| ERROR_SIGNATURE | ROOT_CAUSE |
+|---|---|
+| MonitorTest failures (SCC annotations, disruption pollers) on ARM64 | OCP MonitorTest framework incompatible with MicroShift single-node topology |
+| Pod-network-disruption monitor poller CrashLoopBackOff on ARM64 | OCP MonitorTest framework incompatible with MicroShift single-node topology |
+| cert-manager not ready within greenboot 10m timeout on ARM | greenboot health check timeout during slow ARM service deployment |
+| InvalidClientTokenId when calling CreateStack | expired or invalid AWS credentials in CI environment |
