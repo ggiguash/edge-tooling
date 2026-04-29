@@ -8,14 +8,20 @@ the create-bugs skill to search Jira against.
 
 Usage:
     search-bugs.py <source> [--workdir DIR]
+    search-bugs.py --merge <bugs-file1.json> <bugs-file2.json> ... [--workdir DIR]
 
     <source> is one of:
       - Release version: 4.22, main
       - PR number: pr-6396, pr6396
       - Rebase shorthand: rebase-release-4.22
 
+    --merge mode reads multiple analyze-ci-bug-candidates-<source>.json
+    files and merges candidates across sources using fuzzy signature
+    matching for cross-release dedup.
+
 Output:
-    ${WORKDIR}/analyze-ci-bug-candidates-<source>.json
+    ${WORKDIR}/analyze-ci-bug-candidates-<source>.json       (default mode)
+    ${WORKDIR}/analyze-ci-bug-candidates-merged.json          (--merge mode)
 """
 
 import json
@@ -129,31 +135,36 @@ def _grouping_text(job):
     return job.get("raw_error") or job.get("error_signature", "")
 
 
+def _cluster_by_similarity(items, key_fn):
+    """Cluster items whose key texts exceed the similarity threshold.
+
+    A new item is compared against ALL existing members of each cluster.
+    If any member exceeds the threshold the item joins that cluster.
+    """
+    groups = []
+    for item in items:
+        sig = key_fn(item)
+        placed = False
+        for group in groups:
+            if any(
+                _signature_similarity(sig, key_fn(member)) >= SIMILARITY_THRESHOLD
+                for member in group
+            ):
+                group.append(item)
+                placed = True
+                break
+        if not placed:
+            groups.append([item])
+    return groups
+
+
 def _group_by_similarity(jobs):
     """Group jobs by similarity of their grouping text.
 
     Uses RAW_ERROR when available (deterministic log text),
     falling back to ERROR_SIGNATURE for older reports.
-
-    A new job is compared against ALL existing members of each group,
-    not just the first.  If any member exceeds the similarity threshold
-    the job joins that group.
     """
-    groups = []
-    for job in jobs:
-        sig = _grouping_text(job)
-        placed = False
-        for group in groups:
-            if any(
-                _signature_similarity(sig, _grouping_text(member)) >= SIMILARITY_THRESHOLD
-                for member in group
-            ):
-                group.append(job)
-                placed = True
-                break
-        if not placed:
-            groups.append([job])
-    return groups
+    return _cluster_by_similarity(jobs, _grouping_text)
 
 
 def group_by_signature(jobs):
@@ -296,17 +307,111 @@ def find_job_files(workdir, source):
 
 
 # ---------------------------------------------------------------------------
+# Cross-release merge
+# ---------------------------------------------------------------------------
+
+def _merge_by_similarity(candidates):
+    """Group candidates by error_signature similarity for cross-release dedup."""
+    return _cluster_by_similarity(candidates, lambda c: c["error_signature"])
+
+
+def merge_candidate_files(filepaths):
+    """Merge multiple analyze-ci-bug-candidates-<source>.json files with fuzzy dedup.
+
+    Operates on pre-Jira candidate files (with keywords, test_ids, jobs,
+    analysis_text) — NOT on post-Jira bug mapping files.
+
+    Returns a dict with sources, total_candidates, and candidates[] where
+    each candidate has a releases[] list showing all sources it appears in.
+    """
+    all_candidates = []
+    sources = []
+
+    for filepath in filepaths:
+        with open(filepath, "r") as f:
+            data = json.load(f)
+        source = data["source"]
+        sources.append(source)
+        for cand in data.get("candidates", []):
+            all_candidates.append({**cand, "_source": source})
+
+    total_candidates = len(all_candidates)
+
+    # Bucket by normalized step_name, then fuzzy-match within each bucket
+    by_step = {}
+    for cand in all_candidates:
+        step = _normalize_step_name(cand.get("step_name", ""))
+        by_step.setdefault(step, []).append(cand)
+
+    merged_groups = []
+    for step_cands in by_step.values():
+        merged_groups.extend(_merge_by_similarity(step_cands))
+
+    # Build merged candidates from groups
+    merged_candidates = []
+    for group in merged_groups:
+        rep = max(group, key=lambda c: (c["severity"], c["affected_jobs"], c["error_signature"]))
+
+        # Build releases list (aggregate affected_jobs per source)
+        releases_map = {}
+        jobs_by_source = {}
+        for cand in group:
+            src = cand["_source"]
+            releases_map[src] = releases_map.get(src, 0) + cand["affected_jobs"]
+            jobs_by_source.setdefault(src, []).extend(cand.get("jobs", []))
+        releases = [{"source": s, "affected_jobs": releases_map[s]} for s in sources if s in releases_map]
+
+        # Union keywords and test_ids across the group
+        all_keywords = set()
+        all_test_ids = set()
+        for cand in group:
+            all_keywords.update(cand.get("keywords", []))
+            all_test_ids.update(cand.get("test_ids", []))
+
+        # Concatenate all jobs across sources
+        all_jobs = []
+        for s in sources:
+            all_jobs.extend(jobs_by_source.get(s, []))
+
+        merged_candidates.append({
+            "error_signature": rep["error_signature"],
+            "severity": max(c["severity"] for c in group),
+            "step_name": rep["step_name"],
+            "affected_jobs": sum(c["affected_jobs"] for c in group),
+            "keywords": sorted(all_keywords),
+            "test_ids": sorted(all_test_ids),
+            "jobs": all_jobs,
+            "analysis_text": rep["analysis_text"],
+            "releases": releases,
+        })
+
+    merged_candidates.sort(key=lambda c: (-c["severity"], -c["affected_jobs"], c["error_signature"]))
+
+    return {
+        "sources": sources,
+        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "total_candidates": total_candidates,
+        "candidates": merged_candidates,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main():
     workdir = None
     source = None
+    merge_mode = False
+    merge_files = []
 
     args = sys.argv[1:]
     i = 0
     while i < len(args):
-        if args[i] == "--workdir":
+        if args[i] == "--merge":
+            merge_mode = True
+            i += 1
+        elif args[i] == "--workdir":
             if i + 1 >= len(args):
                 print("Error: --workdir requires an argument", file=sys.stderr)
                 sys.exit(1)
@@ -316,12 +421,19 @@ def main():
             print(f"Unknown option: {args[i]}", file=sys.stderr)
             sys.exit(1)
         else:
-            source = args[i]
+            if merge_mode:
+                merge_files.append(args[i])
+            else:
+                source = args[i]
             i += 1
+
+    if merge_mode:
+        return main_merge(merge_files, workdir)
 
     if not source:
         print(
             "Usage: search-bugs.py <source> [--workdir DIR]\n"
+            "       search-bugs.py --merge <bugs-file1.json> ... [--workdir DIR]\n"
             "  <source>: release version (4.22), PR (pr-6396), or rebase (rebase-release-4.22)",
             file=sys.stderr,
         )
@@ -376,6 +488,42 @@ def main():
     }
 
     output_path = os.path.join(workdir, f"analyze-ci-bug-candidates-{source}.json")
+    with open(output_path, "w") as f:
+        json.dump(result, f, indent=2)
+
+    print(f"Written: {output_path}", file=sys.stderr)
+    print(json.dumps(result, indent=2))
+
+
+def main_merge(merge_files, workdir):
+    """Entry point for --merge mode."""
+    if not merge_files:
+        print(
+            "Usage: search-bugs.py --merge <candidates1.json> <candidates2.json> ... [--workdir DIR]",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    for filepath in merge_files:
+        if not os.path.isfile(filepath):
+            print(f"Error: file not found: {filepath}", file=sys.stderr)
+            sys.exit(1)
+
+    if workdir is None:
+        workdir = f"/tmp/microshift-ci-claude-workdir.{datetime.now().strftime('%y%m%d')}"
+
+    os.makedirs(workdir, exist_ok=True)
+
+    print(f"Merging {len(merge_files)} candidate files", file=sys.stderr)
+    result = merge_candidate_files(merge_files)
+
+    n_merged = len(result["candidates"])
+    n_total = result["total_candidates"]
+    n_cross = n_total - n_merged
+    print(f"Merged {n_total} candidates into {n_merged} unique failures "
+          f"({n_cross} cross-release duplicates)", file=sys.stderr)
+
+    output_path = os.path.join(workdir, "analyze-ci-bug-candidates-merged.json")
     with open(output_path, "w") as f:
         json.dump(result, f, indent=2)
 
