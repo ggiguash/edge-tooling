@@ -113,7 +113,7 @@ def parse_reference_files(text: str) -> list[dict[str, str]]:
             continue
 
         if found_header and not skipped_separator:
-            if re.match(r"^\|[-\s|]+\|\s*$", line):
+            if re.match(r"^\|[-:\s|]+\|\s*$", line):
                 skipped_separator = True
             continue
 
