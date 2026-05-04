@@ -197,10 +197,12 @@ If results are found, fetch their details with `mcp__jira__jira_get_issue` and f
 
 ### Step 2a: Merge Candidates
 
-Run the merge script (even for a single source — it produces a unified output with Jira data injected from the bug mapping files written in Step 2):
+Run the merge script (even for a single source — it produces a unified output with Jira data injected from the bug mapping files written in Step 2).
+
+Before invoking, also check for any `analyze-ci-bug-candidates-rebase-*.json` files in `<WORKDIR>`. If found, include them in the merge so rebase PR failures are deduplicated against release failures.
 
 ```text
-python3 plugins/microshift-ci/scripts/search-bugs.py --merge <WORKDIR>/analyze-ci-bug-candidates-<source1>.json [<source2>.json ...] --workdir <WORKDIR>
+python3 plugins/microshift-ci/scripts/search-bugs.py --merge <WORKDIR>/analyze-ci-bug-candidates-<source1>.json [<source2>.json ...] [<WORKDIR>/analyze-ci-bug-candidates-rebase-*.json] --workdir <WORKDIR>
 ```
 
 This writes `<WORKDIR>/analyze-ci-bug-candidates-merged.json`. Read and use this file for all subsequent steps.
@@ -216,22 +218,24 @@ This writes `<WORKDIR>/analyze-ci-bug-candidates-merged.json`. Read and use this
    - Releases: list of releases with job counts per release
    - List of affected job URLs
    - Potential duplicate JIRAs found (if any), with key, summary, and status
-   - Mode indicator: `[DRY-RUN]` or `[WILL CREATE]`
+   - Mode indicator: `[WOULD CREATE]` / `[WOULD SKIP]` or `[WILL CREATE]`
 
 2. **In dry-run mode** (`--create` NOT specified, `--auto` NOT specified):
-   - Display all candidates with `[DRY-RUN]` prefix
+   - Apply the Auto-Decision Policy (see below) to label each candidate `[WOULD CREATE]` or `[WOULD SKIP]` — do NOT prompt the user
+   - Include `Decision:` line per candidate (same format as Step 5 report)
    - After listing all candidates, show a summary:
 
      ```text
-     DRY-RUN SUMMARY
-       Sources: <source1>, <source2>, ...
-       Total candidates before merge: N
-       Unique bug candidates (after dedup): N
-       Candidates with potential duplicates: N
-       Candidates ready to file: N
+     SUMMARY
+       Sources processed: N
+       Unique failures: N (from M total candidates)
+       Would create: N
+       Would skip (Jira duplicate): N
+       Would skip (infrastructure): N
 
      To create these bugs, run:
        /microshift-ci:create-bugs <sources> --create
+       /microshift-ci:create-bugs <sources> --auto --create
      ```
 
    - Do NOT prompt for any actions. Do NOT create any issues. Do NOT proceed to Steps 4/4a (create/reopen). Continue to Step 5 (report).
@@ -275,10 +279,7 @@ This writes `<WORKDIR>/analyze-ci-bug-candidates-merged.json`. Read and use this
    - **reopen**: Validate the provided JIRA key before proceeding. Call `mcp__jira__jira_get_issue(issue_key=<JIRA-KEY>)` to confirm the issue exists, then verify that the key matches one of the candidate's closed regressions found in Search C, that the issue status is Closed or Verified, and that the issue type is Bug. If validation fails (key not found, not in the candidate's closed regression list, not in Closed/Verified state, or not a Bug), show an error (e.g., `"JIRA key <JIRA-KEY> not eligible for reopen — must be a Bug closed regression"`) and re-prompt with the same `Action?` choices. If validation passes, proceed to Step 4a.
 
 4. **In auto dry-run mode** (`--auto` without `--create`):
-   - Apply the auto-decision policy (see below) to label each candidate — do NOT prompt the user
-   - Display each candidate with decision label: `[WOULD CREATE]`, `[WOULD SKIP]`
-   - Do NOT create any issues. Do NOT proceed to Steps 4/4a
-   - After listing all candidates, show a summary including auto-decision reasons
+   - Same as dry-run mode (Step 3.2) — auto-decision policy is always applied
    - Continue to Step 5
 
 5. **In auto create mode** (`--auto --create`):
@@ -446,9 +447,11 @@ For each candidate where user chose "reopen":
 
 ### Step 5: Generate Results Report
 
+The report file must use the exact format below. Both the on-screen display (Step 3) and the saved report file follow the same template.
+
 **Actions**:
 
-1. Save report to `<WORKDIR>/analyze-ci-create-bugs-batch.<timestamp>.txt`
+1. Save report to `<WORKDIR>/analyze-ci-create-bugs-<source>.txt` for a single source, or `<WORKDIR>/analyze-ci-create-bugs-merged.txt` for multiple sources (overwrite if exists)
 2. Display summary to user:
 
 **Dry-run report format**:
@@ -501,7 +504,7 @@ To create these bugs, run:
   /microshift-ci:create-bugs <source1>,<source2>,... --create
   /microshift-ci:create-bugs <source1>,<source2>,... --auto --create
 
-Report saved: <WORKDIR>/analyze-ci-create-bugs-batch.<timestamp>.txt
+Report saved: <WORKDIR>/analyze-ci-create-bugs-<source|merged>.txt
 ═══════════════════════════════════════════════════════════════
 ```
 
@@ -545,7 +548,7 @@ SUMMARY
   Reopened: N
   Failed: N
 
-Report saved: <WORKDIR>/analyze-ci-create-bugs-batch.<timestamp>.txt
+Report saved: <WORKDIR>/analyze-ci-create-bugs-<source|merged>.txt
 ═══════════════════════════════════════════════════════════════
 ```
 
