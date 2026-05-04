@@ -22,6 +22,8 @@ import re
 import glob as glob_mod
 from datetime import datetime, timezone
 
+from classify import classify_breakdown
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -34,8 +36,6 @@ STOP_WORDS = frozenset({
     "does", "did", "will", "would", "could", "should", "may", "might",
 })
 
-INFRA_LAYERS = {"aws infra", "external infrastructure"}
-BUILD_LAYERS = {"build phase"}
 SIMILARITY_THRESHOLD = 0.50
 
 
@@ -72,6 +72,7 @@ def parse_structured_summary(filepath):
         "step_name": data.get("STEP_NAME", ""),
         "error_signature": data.get("ERROR_SIGNATURE", ""),
         "raw_error": data.get("RAW_ERROR", ""),
+        "root_cause": data.get("ROOT_CAUSE", ""),
         "infrastructure_failure": data.get("INFRASTRUCTURE_FAILURE", "false").lower() == "true",
         "job_url": data.get("JOB_URL", ""),
         "job_name": data.get("JOB_NAME", ""),
@@ -149,10 +150,14 @@ def _grouping_text(job):
 
     Prefers RAW_ERROR (verbatim log text, deterministic) over
     ERROR_SIGNATURE (LLM-paraphrased, variable across runs).
-    Falls back to ERROR_SIGNATURE when RAW_ERROR is absent
-    (backward compatibility with older report files).
+    Appends ROOT_CAUSE when present to improve cross-release matching
+    for failures that share the same underlying mechanism.
     """
-    return job.get("raw_error") or job.get("error_signature", "")
+    base = job.get("raw_error") or job.get("error_signature", "")
+    root_cause = job.get("root_cause", "")
+    if root_cause:
+        return base + " " + root_cause
+    return base
 
 
 def _group_by_similarity(jobs):
@@ -217,38 +222,6 @@ def classify_severity(group):
     return "LOW"
 
 
-# Patterns for deterministic breakdown classification.
-# These override the LLM's STACK_LAYER, because step names and error
-# signatures are deterministic while STACK_LAYER varies across runs.
-INFRA_STEP_PATTERNS = ("infra-aws", "infra-gcp", "infra-setup")
-BUILD_STEP_PATTERNS = ("update-origin", "build-image", "iso-build")
-BUILD_SIGNATURE_PATTERNS = ("update-origin", "build-image")
-
-
-def classify_breakdown(stack_layer, step_name="", error_signature=""):
-    lower_step = step_name.lower()
-    lower_sig = error_signature.lower()
-
-    # Step-name overrides — more reliable than LLM's STACK_LAYER
-    if any(k in lower_step for k in INFRA_STEP_PATTERNS):
-        return "infrastructure"
-    if any(k in lower_step for k in BUILD_STEP_PATTERNS):
-        return "build"
-
-    # Error-signature overrides — catches build operations that run
-    # inside a test step (e.g. "make update-origin" in e2e-metal-tests)
-    if any(k in lower_sig for k in BUILD_SIGNATURE_PATTERNS):
-        return "build"
-
-    # Fall back to LLM's classification
-    lower = stack_layer.lower()
-    if lower in INFRA_LAYERS:
-        return "infrastructure"
-    if lower in BUILD_LAYERS:
-        return "build"
-    return "test"
-
-
 # ---------------------------------------------------------------------------
 # JSON generation
 # ---------------------------------------------------------------------------
@@ -296,7 +269,7 @@ def _build_issues_from_jobs(jobs):
             "job_count": len(group),
             "severity": classify_severity(group),
             "failure_type": failure_type,
-            "root_cause": rep.get("error_text", ""),
+            "root_cause": rep.get("root_cause") or rep.get("error_text", ""),
             "next_steps": rep.get("remediation_text", ""),
             "affected_jobs": [
                 {"name": j["job_name"], "date": j["finished"], "url": j["job_url"]}
