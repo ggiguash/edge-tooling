@@ -580,7 +580,7 @@ def write_pr_dashboard_html(
         title_e = html.escape(p.title)
         rows.append(
             "<tr>"
-            f'<td class="mono"><a href="{html.escape(p.html_url, quote=True)}">{html.escape(p.repo_full)}#{p.number}</a></td>'
+            f'<td class="mono"><a class="inherit-color" href="{html.escape(p.html_url, quote=True)}">{html.escape(p.repo_full)}#{p.number}</a></td>'
             f'<td class="title"><a href="{html.escape(p.html_url, quote=True)}">{title_e}</a></td>'
             f'<td class="mono">{html.escape(p.author)}</td>'
             f'<td class="mono">{html.escape(p.base_branch or "—")}</td>'
@@ -698,6 +698,7 @@ td.title {{ max-width: 22rem; }}
 td.title a {{ color: var(--link); text-decoration: none; }}
 td.title a:hover {{ text-decoration: underline; }}
 td.num {{ text-align: right; white-space: nowrap; }}
+a.inherit-color {{ color: inherit; }}
 ul.reasons {{ margin: 0; padding-left: 1.1rem; color: var(--muted); font-size: 0.82rem; }}
 li.reason {{ margin: 0.2rem 0; }}
 td.labels {{ font-size: 0.8rem; color: var(--muted); max-width: 10rem; }}
