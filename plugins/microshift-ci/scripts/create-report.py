@@ -164,11 +164,18 @@ document.querySelector('.container').style.display='';
     function copyAnchor(e) {
         e.preventDefault();
         e.stopPropagation();
-        var url = location.href.split('#')[0] + e.currentTarget.getAttribute('href');
+        var href = e.currentTarget.getAttribute('href');
+        var url = location.href.split('#')[0] + href;
+        if (!navigator.clipboard || !navigator.clipboard.writeText) {
+            location.hash = href.slice(1);
+            return;
+        }
         navigator.clipboard.writeText(url).then(function() {
             toast.classList.add('show');
             clearTimeout(timer);
             timer = setTimeout(function() { toast.classList.remove('show'); }, 1500);
+        }).catch(function() {
+            location.hash = href.slice(1);
         });
     }
     document.querySelectorAll('.anchor-link, .section-anchor').forEach(function(el) {
@@ -179,14 +186,16 @@ document.querySelector('.container').style.display='';
     function openAnchor() {
         var hash = location.hash;
         if (!hash) return;
-        var target = document.querySelector(hash);
-        if (!target || !target.classList.contains('issue-row')) return;
-        var title = target.querySelector('.col-title');
-        if (title && !title.classList.contains('active')) {
-            title.classList.add('active');
-            var detail = target.nextElementSibling;
-            if (detail && detail.classList.contains('detail-row')) {
-                detail.classList.add('show');
+        var target = document.getElementById(hash.substring(1));
+        if (!target) return;
+        if (target.classList.contains('issue-row')) {
+            var title = target.querySelector('.col-title');
+            if (title && !title.classList.contains('active')) {
+                title.classList.add('active');
+                var detail = target.nextElementSibling;
+                if (detail && detail.classList.contains('detail-row')) {
+                    detail.classList.add('show');
+                }
             }
         }
         var section = target.closest('.tab-content');
@@ -200,7 +209,9 @@ document.querySelector('.container').style.display='';
                 }
             });
         }
-        target.scrollIntoView({ behavior: 'smooth' });
+        requestAnimationFrame(function() {
+            target.scrollIntoView({ behavior: 'smooth' });
+        });
     }
     openAnchor();
     window.addEventListener('hashchange', openAnchor);
