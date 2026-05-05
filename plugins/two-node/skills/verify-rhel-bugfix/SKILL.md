@@ -1,18 +1,18 @@
 ---
-name: two-node:rhel-bugfix-verify
+name: two-node:verify-rhel-bugfix
 description: Verify a RHEL resource-agents bug fix on a TNF cluster — fetch Jira context, check cluster, patch nodes, run test, generate JIRA report
 argument-hint: "<RHEL-XXXXX or URL>"
 allowed-tools: Agent, AskUserQuestion, Write, Read, Glob, Grep, Bash, mcp__mcp-atlassian__jira_get_issue, mcp__mcp-atlassian__jira_search, mcp__mcp-atlassian__jira_add_comment
 user-invocable: true
 ---
 
-# two-node:rhel-bugfix-verify
+# two-node:verify-rhel-bugfix
 
 ## Synopsis
 
 ```text
-/two-node:rhel-bugfix-verify RHEL-157145
-/two-node:rhel-bugfix-verify https://issues.redhat.com/browse/RHEL-157145
+/two-node:verify-rhel-bugfix RHEL-157145
+/two-node:verify-rhel-bugfix https://issues.redhat.com/browse/RHEL-157145
 ```
 
 ## Description
@@ -342,7 +342,7 @@ Default is 30 minutes. Logs are saved to `/tmp/bugfix-verify-logs/<timestamp>/`.
    <One paragraph verdict>
    ```
 
-2. Save the report to `/tmp/rhel-bugfix-verify-RHEL-XXXXX/report.txt`
+2. Save the report to `/tmp/verify-rhel-bugfix-RHEL-XXXXX/report.txt`
 
 3. Present the report to the user for review.
 
@@ -384,7 +384,7 @@ Default is 30 minutes. Logs are saved to `/tmp/bugfix-verify-logs/<timestamp>/`.
 ### Example 1: Standard RHEL Bug Fix Verification
 
 ```text
-/two-node:rhel-bugfix-verify RHEL-157145
+/two-node:verify-rhel-bugfix RHEL-157145
 ```
 
 Fetches RHEL-157145 from Jira, discovers linked OCPBUGS upstream bug and
@@ -394,7 +394,7 @@ and generates report.
 ### Example 2: URL Input
 
 ```text
-/two-node:rhel-bugfix-verify https://issues.redhat.com/browse/RHEL-150700
+/two-node:verify-rhel-bugfix https://issues.redhat.com/browse/RHEL-150700
 ```
 
 Extracts `RHEL-150700` from the URL and runs the same workflow.

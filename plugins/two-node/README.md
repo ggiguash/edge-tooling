@@ -54,13 +54,13 @@ Create OCPEDGE stories for TNF RHEL verification tickets, link them to the RHEL 
 - Closed story handling (creates new stories for untested tickets)
 - Subtask creation (verification + automation)
 
-### `/two-node:rhel-bugfix-verify`
+### `/two-node:verify-rhel-bugfix`
 
 Verify a RHEL resource-agents bug fix on a TNF cluster. Given a JIRA ID, the skill fetches the full bug context from Jira (title, z-stream, upstream PR, linked OCPEDGE tracking ticket, test instructions), then walks through the verification workflow.
 
 ```text
-/two-node:rhel-bugfix-verify RHEL-157145
-/two-node:rhel-bugfix-verify https://issues.redhat.com/browse/RHEL-157145
+/two-node:verify-rhel-bugfix RHEL-157145
+/two-node:verify-rhel-bugfix https://issues.redhat.com/browse/RHEL-157145
 ```
 
 **Workflow:**
