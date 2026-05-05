@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 # patch-nodes.sh — Patch resource-agents RPM on both cluster nodes
 #
 # Usage:
@@ -81,6 +81,7 @@ for i in $(seq 1 60); do
     m1=$(ssh "ec2-user@${HYPERVISOR}" "ssh ${SSH_OPTS} -o ConnectTimeout=3 core@${MASTER_1} 'echo up'" 2>/dev/null || true)
     if [ "$m0" = "up" ] && [ "$m1" = "up" ]; then
         echo "  Both nodes are back up after $((i*10)) seconds"
+        nodes_up=true
         break
     fi
     if [ $((i % 3)) -eq 0 ]; then
@@ -88,6 +89,11 @@ for i in $(seq 1 60); do
     fi
     sleep 10
 done
+
+if [ "${nodes_up:-}" != "true" ]; then
+    echo "ERROR: Nodes did not come back up within 10 minutes"
+    exit 1
+fi
 echo ""
 
 # Step 6: Verify RPM version

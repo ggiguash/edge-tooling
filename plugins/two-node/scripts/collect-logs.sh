@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 # collect-logs.sh — Collect podman-etcd and pacemaker logs from cluster nodes
 #
 # Usage:

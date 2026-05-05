@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 # verify-cluster.sh — Check cluster health (OCP, pacemaker, etcd)
 #
 # Usage:
