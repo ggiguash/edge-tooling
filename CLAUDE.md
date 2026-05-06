@@ -26,6 +26,10 @@ Edge Tooling is a multi-tool deployment and development toolkit for OpenShift an
 
 For commands, flags, prerequisites, and workflows: read the component's README.md or Makefile.
 
+## Contributing
+
+PRs use the fork model: push to `fork` remote, open PR against `origin` (`openshift-eng/edge-tooling`).
+
 ## Detailed Guides
 
 - [Common Workflows](docs/claude/workflows.md) — EC2, SNO, and LVM deployment steps
