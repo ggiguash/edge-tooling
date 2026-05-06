@@ -372,6 +372,7 @@ must equal the number of unaddressed findings from the overview table
 match, identify the missing findings and post the remaining replies.
 
 Checklist:
+
 - [ ] Every applied inline finding has a reply
 - [ ] Every declined inline finding has a reply
 - [ ] Every dropped inline finding has a reply
