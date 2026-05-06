@@ -1,6 +1,6 @@
 # Daily Standup Validation
 
-The `edge-ic` plugin provides tools for validating daily report format before posting to Slack.
+The `edge-ic` plugin provides tools for validating daily standup format before posting to Slack.
 
 ## Daily Report Format Rules
 
