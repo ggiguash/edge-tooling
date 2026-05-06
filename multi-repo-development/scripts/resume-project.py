@@ -63,9 +63,9 @@ def parse_frontmatter(path: Path) -> dict[str, str | list[str]]:
 
         if line.startswith("  - ") and current_list_key:
             val = line.strip().removeprefix("- ")
-            lst = result[current_list_key]
-            if isinstance(lst, list):
-                lst.append(val)
+            if not isinstance(result.get(current_list_key), list):
+                result[current_list_key] = []
+            result[current_list_key].append(val)
             continue
 
         current_list_key = None
@@ -82,7 +82,7 @@ def parse_frontmatter(path: Path) -> dict[str, str | list[str]]:
             continue
 
         if not value:
-            result[key] = []
+            result[key] = ""
             current_list_key = key
             continue
 
@@ -214,11 +214,12 @@ def get_recent_names(root: Path) -> list[str]:
             [sys.executable, str(script), "--names"],
             capture_output=True, text=True,
             env={**os.environ, "CLAUDE_PROJECT_DIR": str(root)},
+            timeout=5,
         )
         if result.returncode != 0:
             return _fallback_project_names(root)
         return [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return _fallback_project_names(root)
 
 
