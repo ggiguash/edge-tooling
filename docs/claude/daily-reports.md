@@ -24,4 +24,4 @@ Before posting daily reports to Slack, validate format:
 plugins/edge-ic/bin/validate-daily-report.sh my-report.txt
 ```
 
-See `plugins/edge-ic/references/validation-README.md` for complete validation documentation.
+See [validation documentation](../../plugins/edge-ic/references/validation-README.md) for complete details.
