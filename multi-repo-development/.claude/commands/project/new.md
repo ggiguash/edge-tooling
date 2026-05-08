@@ -18,14 +18,14 @@ Ask the user questions to understand what they're working on. Use the
 AskUserQuestion tool for structured questions and encourage free-text
 descriptions.
 
-**1a. Task Description**
+### 1a. Task Description
 
 If the user provided a description after "new" in the arguments, use that.
 Otherwise, ask:
 
 > "What task are you working on? Please describe it in a sentence or two."
 
-**1b. Task Type**
+### 1b. Task Type
 
 Based on the description, suggest a task type and confirm with the user.
 Use AskUserQuestion with these options:
@@ -38,13 +38,13 @@ Use AskUserQuestion with these options:
 | Documentation | Description mentions docs, writing, documenting, guide |
 | Analysis/review | Description mentions reviewing, analyzing, investigating (without a specific bug), understanding |
 
-**1c. JIRA Ticket (optional)**
+### 1c. JIRA Ticket (optional)
 
 Ask: "Do you have a JIRA ticket for this task? If so, paste the URL
 (e.g., https://issues.redhat.com/browse/OCPBUGS-12345). Otherwise, just
 say 'no'."
 
-**1d. Related Repositories**
+### 1d. Related Repositories
 
 Ask which repos from this workspace are relevant. **Dynamically load
 the repo list** from `dev-env.yaml` at the workspace root:
@@ -57,7 +57,7 @@ the repo list** from `dev-env.yaml` at the workspace root:
    and note that no repos are configured (the user can add them
    later by editing the project's CLAUDE.md frontmatter).
 
-**1e. Additional Context (optional)**
+### 1e. Additional Context (optional)
 
 Ask: "Any additional context? (PR URLs, Prow job URLs, related projects,
 etc.) Say 'no' to skip."
@@ -85,7 +85,7 @@ Based on the gathered information:
 
 Create the project directory and generate files based on the task type.
 
-**3a. Create directory structure**
+### 3a. Create directory structure
 
 Use the Bash tool to create directories. The base is always
 `projects/<folder-name>/`.
@@ -100,22 +100,43 @@ Additional subdirectories by type:
 | Documentation | `drafts/` |
 | Analysis/review | `docs/` |
 
-**3b. Generate CLAUDE.md**
+### 3b. Generate CLAUDE.md (lean index)
 
-Write the CLAUDE.md file at `projects/<folder-name>/CLAUDE.md` using the
-Write tool. The content MUST follow the template for the detected type
+Write a **lean index** CLAUDE.md (~50-80 lines) at
+`projects/<folder-name>/CLAUDE.md` using the Write tool. This file is
+an index, not a document — it orients Claude on what the project is and
+where to look. All detailed content goes into separate files (Step 3d).
+
+The content MUST follow the lean template for the detected type
 (see [CLAUDE.md Templates](#claudemd-templates) below).
 
-**3c. Generate .gitignore**
+### 3c. Generate .gitignore
 
 Write a `.gitignore` at `projects/<folder-name>/.gitignore` with:
 
-```
+```gitignore
 # Large files that shouldn't be committed
 *.log
 *.txt.gz
 *.tar.gz
 ```
+
+### 3d. Create starter detail files
+
+Create type-specific starter files alongside CLAUDE.md. Use the Write
+tool for each file. Every file created MUST have a corresponding row in
+the CLAUDE.md Reference Files table (generated in Step 3b).
+
+| Type | Starter files |
+|------|--------------|
+| Bug investigation | `investigation.md`, `ci-runs.md`, `source-code-map.md` |
+| Feature development | `design.md`, `source-code-map.md` |
+| CI/testing | `ci-runs.md`, `test-failures.md` |
+| Documentation | `drafts.md` |
+| Analysis/review | `findings.md` |
+
+Use the templates in the [Detail File Templates](#detail-file-templates)
+section below for the starter content of each file.
 
 ## Step 4: Suggest Skills and Next Steps
 
@@ -124,13 +145,13 @@ After creating the project, provide a summary:
 1. List the files and directories created
 2. Suggest relevant skills based on the task type:
 
-| Type | Skills to suggest |
-|------|-------------------|
-| bug | `/prow-job:analyze-test-failure`, `/prow-job:analyze-install-failure`, `/prow-job:extract-must-gather`, `/feature-dev:feature-dev` |
-| feature | `/feature-dev:feature-dev`, `/pr-review-toolkit:review-pr` |
-| ci-testing | `/prow-job:analyze-test-failure`, `/prow-job:analyze-install-failure`, `/prow-job:analyze-resource`, `/prow-job:extract-must-gather` |
-| docs | `/feature-dev:feature-dev` |
-| analysis | `/pr-review-toolkit:review-pr`, `/prow-job:analyze-test-failure`, `/feature-dev:feature-dev` |
+   | Type | Skills to suggest |
+   |------|-------------------|
+   | bug | `/prow-job:analyze-test-failure`, `/prow-job:analyze-install-failure`, `/prow-job:extract-must-gather`, `/feature-dev:feature-dev` |
+   | feature | `/feature-dev:feature-dev`, `/pr-review-toolkit:review-pr` |
+   | ci-testing | `/prow-job:analyze-test-failure`, `/prow-job:analyze-install-failure`, `/prow-job:analyze-resource`, `/prow-job:extract-must-gather` |
+   | docs | `/feature-dev:feature-dev` |
+   | analysis | `/pr-review-toolkit:review-pr`, `/prow-job:analyze-test-failure`, `/feature-dev:feature-dev` |
 
 3. Suggest concrete next steps for starting the work
 4. Remind the user they can resume this project later with
@@ -140,8 +161,10 @@ After creating the project, provide a summary:
 
 ## CLAUDE.md Templates
 
-All generated CLAUDE.md files start with YAML frontmatter for machine
-readability, followed by type-specific sections.
+CLAUDE.md is an **index**, not a document. It has just enough to orient
+Claude on what the project is and where to look. All detailed content
+lives in separate files (created in Step 3d) that are loaded on demand
+when resuming the project.
 
 ### Common Frontmatter
 
@@ -163,69 +186,228 @@ related_links:
 
 ### Template Structure
 
-Every project CLAUDE.md follows this structure. Generate the full
-markdown using the common frontmatter above, then these sections in
-order:
+Every project CLAUDE.md follows this structure. The total file should
+be ~50-80 lines. Generate using the common frontmatter above, then
+these sections in order:
 
 1. **`# <Title>`** — from JIRA ticket or user description
-2. **`## <Type> Summary`** — heading varies by type (see below),
-   followed by the user's description and metadata bullet list
-3. **Type-specific middle sections** — unique to each type (see below)
-4. **`## Progress`** — checklist starting with `- [x] Project created`,
-   then type-specific items (see below, all unchecked)
-5. **`## Related Source Code`** — table with columns: Repo, Key Path,
-   Purpose (populate from repo context files, or leave as TODO)
-6. **`## Suggested Skills`** — populate from the type-to-skill mapping
-   in Step 4
+
+2. **`## <Type> Summary`** — heading varies by type (see below).
+   Write a 2-3 sentence description of the task, then a short metadata
+   bullet list (Jira link, Assignee if known). NO inline investigation
+   details, timelines, or findings — those go in detail files.
+
+3. **`## Reference Files`** — table with columns `| File | Content |`.
+   One row per detail file created in Step 3d. This is the manifest —
+   it is how future sessions discover detail files. During the project
+   lifecycle, new detail files may be created organically (e.g.,
+   `adversarial-reviews.md`, `jira-comment-root-cause.md`). When
+   creating a new detail file, always add a row here.
+
+4. **`## <Plan Section>`** — type-specific heading (see below) with
+   a checklist of action items. Stays in CLAUDE.md because it is
+   compact and action-oriented.
+
+5. **`## Progress`** — high-level checklist starting with
+   `- [x] Project created`, then type-specific milestone items
+   (see below, all unchecked). Stays in CLAUDE.md because
+   `/project:resume` reads it to suggest next steps.
 
 ### Type-Specific Content
 
+For each type below, the specification defines:
+
+- The summary heading name
+- Metadata bullets to include in the summary
+- Which detail files to create (→ rows in Reference Files table)
+- The plan section heading and checklist items
+- The progress checklist items
+
 **Bug Investigation** (`type: bug`)
+
 - Summary heading: `## Bug Summary`
-- Metadata: Jira, Priority (TBD), Component, Affected Version (TBD),
-  Assignee (TBD)
-- Sections: `## Attachments` (file/description table),
-  `## Timeline` (code block for event reconstruction),
-  `## Investigation Findings`, `## Root Cause`,
-  `## Fix Plan` (checklist: identify root cause, determine approach,
-  implement fix, test on cluster, submit PR)
+- Metadata: Jira, Assignee (TBD)
+- Detail files: `investigation.md`, `ci-runs.md`, `source-code-map.md`
+- Plan heading: `## Fix Plan`
+- Plan items: Identify root cause, Determine fix approach, Implement
+  fix, Test on cluster, Submit PR
 - Progress: Bug details captured, Logs collected and analyzed,
   Root cause identified, Fix implemented, PR submitted
 
 **Feature Development** (`type: feature`)
+
 - Summary heading: `## Feature Summary`
-- Metadata: Jira, Target Version (TBD), Enhancement (link if applicable)
-- Sections: `## Design Notes` (with `### Architecture` and
-  `### API Changes` subsections),
-  `## Implementation Plan` (checklist: review enhancement doc, design
-  approach, implement changes, write tests, submit PRs),
-  `## Related PRs` (PR/repo/status/description table)
+- Metadata: Jira, Target Version (TBD)
+- Detail files: `design.md`, `source-code-map.md`
+- Plan heading: `## Implementation Plan`
+- Plan items: Review enhancement doc, Design approach, Implement
+  changes, Write tests, Submit PRs
 - Progress: Design documented, Implementation started, Tests written,
   PR(s) submitted, PR(s) merged
 
 **CI/Testing** (`type: ci-testing`)
+
 - Summary heading: `## Test Summary`
-- Metadata: Jira, CI Job(s), Test Suite
-- Sections: `## CI Job Links` (job/status/link table),
-  `## Test Failures` (with `### Failure Analysis` table:
-  test/error/root cause/fix), `## Scripts`
+- Metadata: Jira, CI Job(s) (TBD)
+- Detail files: `ci-runs.md`, `test-failures.md`
+- Plan heading: `## Test Plan`
+- Plan items: Identify failing jobs, Analyze failures, Implement fixes,
+  Validate CI passing
 - Progress: CI jobs identified, Failures analyzed, Fixes implemented,
   CI passing
 
 **Documentation** (`type: docs`)
+
 - Summary heading: `## Doc Summary`
 - Metadata: Jira, Target (which docs are created/updated)
-- Sections: `## Target Documents` (document/repo path/status table),
-  `## Review Notes`
+- Detail files: `drafts.md`
+- Plan heading: `## Outline`
+- Plan items: Research and outline, Write draft, Technical review,
+  Editorial review, Submit PR
 - Progress: Draft written, Technical review, Editorial review,
   PR submitted
 
 **Analysis/Review** (`type: analysis`)
+
 - Summary heading: `## Analysis Summary`
 - Metadata: Jira, Scope (what is being analyzed/reviewed)
-- Sections: `## Findings`, `## Recommendations`
-- Progress: Analysis started, Findings documented, Recommendations made,
-  Actions taken
+- Detail files: `findings.md`
+- Plan heading: `## Analysis Plan`
+- Plan items: Define scope, Gather data, Analyze findings,
+  Write recommendations
+- Progress: Analysis started, Findings documented, Recommendations
+  made, Actions taken
+
+---
+
+## Detail File Templates
+
+Use these templates when creating starter detail files in Step 3d.
+Each file should have a heading and minimal structure — enough to guide
+where content goes, but not so much that it feels like boilerplate.
+
+### `investigation.md` (bug)
+
+```markdown
+# Investigation
+
+## Failure Analysis
+
+_Describe the observed failure and symptoms._
+
+## Root Cause
+
+_Root cause goes here once identified._
+
+## Proposed Fix
+
+| Option | Description | Pros | Cons |
+|--------|-------------|------|------|
+```
+
+### `ci-runs.md` (bug, ci-testing)
+
+```markdown
+# CI Runs
+
+<!-- Add a section per CI run analyzed. Template: -->
+<!-- ## Run <ID> (<short description>)              -->
+<!--                                                -->
+<!-- **Job:** `<job name>`                           -->
+<!-- **Date:** <YYYY-MM-DD>                          -->
+<!--                                                -->
+<!-- | Artifact | Description |                     -->
+<!-- |----------|-------------|                      -->
+<!--                                                -->
+<!-- **Timeline:**                                   -->
+<!-- ```                                             -->
+<!-- <chronological events>                          -->
+<!-- ```                                             -->
+```
+
+### `source-code-map.md` (bug, feature)
+
+```markdown
+# Source Code Map
+
+| Repo | Key Path | Purpose |
+|------|----------|---------|
+```
+
+When populating this file:
+
+- For each selected repo, check `repos/<repo>/CLAUDE.md` or
+  `presets/*/context/<repo>.md` for "Key paths", "Key files",
+  or similar sections.
+- If found, add 1-3 most relevant paths to the table.
+- If not found, add the repo name with an empty path and a TODO
+  comment like "TODO: fill in relevant paths".
+
+### `design.md` (feature)
+
+```markdown
+# Design
+
+## Architecture
+
+_High-level design and component interactions._
+
+## API Changes
+
+_New or modified APIs._
+
+## Related PRs
+
+| PR | Repo | Status | Description |
+|----|------|--------|-------------|
+```
+
+### `test-failures.md` (ci-testing)
+
+```markdown
+# Test Failures
+
+| Test | Error | Root Cause | Fix | Status |
+|------|-------|------------|-----|--------|
+```
+
+### `drafts.md` (docs)
+
+```markdown
+# Drafts
+
+## Target Documents
+
+| Document | Path | Status |
+|----------|------|--------|
+
+## Outline
+
+_Document outline goes here._
+
+## Review Notes
+
+_Technical and editorial review feedback._
+```
+
+### `findings.md` (analysis)
+
+```markdown
+# Findings
+
+## Scope
+
+_What is being analyzed and why._
+
+## Findings
+
+_Analysis results._
+
+## Recommendations
+
+| # | Recommendation | Priority | Status |
+|---|----------------|----------|--------|
+```
 
 ---
 
@@ -239,10 +421,3 @@ order:
   arguments, minimize questions — only ask what's truly missing
 - The YAML frontmatter `status` field should always start as `active`
 - Use today's date for the `created` field
-- When populating the "Related Source Code" table:
-  - For each selected repo, check `repos/<repo>/CLAUDE.md` or
-    `presets/*/context/<repo>.md` for "Key paths", "Key files",
-    or similar sections
-  - If found, add 1-3 most relevant paths to the table
-  - If not found, add the repo name with an empty path and a TODO
-    comment like "TODO: fill in relevant paths"

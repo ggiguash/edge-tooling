@@ -5,170 +5,106 @@ argument-hint: [name-or-number]
 
 # Resume Project Workspace
 
-You are helping a developer resume work on an existing project workspace.
-Projects live under the `projects/` directory. Your job is to reload
-context and get the developer back up to speed quickly.
+Resume work on an existing project. Projects live under `projects/`.
 
-Everything after "resume" in `$ARGUMENTS` is an optional project name
-to resume directly.
+## Step 1: Resolve Project
 
-## Step 1: Select Project
+Run `scripts/resume-project.py $ARGUMENTS` via Bash. Parse the JSON output
+and handle by `status`:
 
-**1a. Determine project name**
+- **`ok`** — proceed to Step 2.
+- **`no_argument`** — present the first 3 `alternatives` as AskUserQuestion
+  options plus "See all projects" (which shows the full list). Re-run the
+  script with the chosen name.
+- **`not_found`** or **`out_of_range`** — show `error_message`, present
+  `alternatives` as a picker, re-run with the chosen name.
+- **`no_projects`** — show `error_message` and stop.
 
-Handle the argument in `$ARGUMENTS` using these cases:
+Store the `project` object from the JSON as `P` for the remaining steps.
 
-**Case A — Numeric shorthand** (e.g., `/project:resume 1`):
-If the argument is a plain integer N, look in your conversation context
-for the numbered "📂 Recent projects" table produced by the SessionStart
-hook. Pick the project name on row N from that table. This avoids an
-unnecessary shell call since the hook output is already in context.
-If the table is not in context (e.g., session was cleared), fall back to
-running `scripts/recent-projects.py --names` and pick the Nth line.
-If N is out of range, show an error like "Only M projects exist." and
-fall through to Case C (interactive picker).
+## Step 2: Load Project Index
 
-**Case B — Project name** (e.g., `/project:resume OCPBUGS-74679`):
-If the argument is a non-numeric string, use it directly as the target
-project name (current behavior).
+1. Read `P.context_file` using the Read tool (skip if null).
+2. **Do NOT read `P.repo_context_files` yet.** Store the list for on-demand
+   loading (see Step 5).
 
-**Case C — No argument** (`/project:resume`):
-Look in your conversation context for the "📂 Recent projects" table.
-If present, extract the project names from it (up to 3) and present
-them as AskUserQuestion options, plus a "See all projects" option.
-If the table is not in context, run
-`scripts/recent-projects.sh --names | head -3` to get the names instead.
-If the user picks "See all projects", run `ls projects/` and present
-the full list as a second AskUserQuestion.
+## Step 3: Present Summary
 
-**1b. Validate project exists**
+Display a structured summary:
 
-Check that `projects/<name>/` exists. If it does not:
-- Show an error: "Project `<name>` not found."
-- List all available projects from `projects/`
-- Ask the user to pick from the list or provide a corrected name
-
-## Step 2: Load Project Context
-
-Read whatever context file the project has, in priority order:
-
-**2a. Try `projects/<name>/CLAUDE.md`**
-
-If the file exists, read it in full. Then check if it starts with YAML
-frontmatter (a line that is exactly `---` followed by YAML content and
-closed by another `---`):
-- **Has frontmatter**: Parse the YAML to extract `project`, `type`,
-  `created`, `status`, `jira`, `repos`, and `related_links` fields.
-- **No frontmatter**: Treat the entire file as free-form context. Infer
-  the project type from headings or content if possible (e.g., "Bug
-  Summary" → bug, "Feature Summary" → feature).
-
-**2b. Fall back to `projects/<name>/README.md`**
-
-If no CLAUDE.md exists but README.md does, read it in full. Infer the
-project type from headings or content if possible.
-
-**2c. No context file**
-
-If neither CLAUDE.md nor README.md exists:
-- List all files in the project directory (see Step 2d)
-- Ask the user: "This project has no CLAUDE.md or README.md. Can you
-  briefly describe what this project is about so I can help you
-  continue?"
-
-**2d. List project files**
-
-In all cases, list all files in the project directory (recursively) using
-the Bash tool (`find projects/<name>/ -type f | sort`). This gives both
-you and the user a picture of what's in the project.
-
-**2e. Auto-load repo context**
-
-If the project's frontmatter contains a `repos` list (non-empty), load
-context for each repo to prime your understanding of the codebase:
-
-1. For each repo name in the `repos` list:
-   a. First, check if `repos/<repo>/CLAUDE.md` exists. If so, read it.
-   b. Otherwise, search for `presets/*/context/<repo>.md`. If found,
-      read the first match.
-   c. If neither exists, skip silently (the repo may not have context
-      files yet).
-2. After loading, briefly note to the user which repo context files
-   were loaded (e.g., "Loaded context for: cluster-etcd-operator,
-   installer").
-3. Do NOT load context for repos not listed in the project's
-   frontmatter — only load what's relevant to this project.
-
-## Step 3: Present Project Summary
-
-Display a structured summary using this format:
-
-```
-## 📂 Project: <name>
+```text
+## Project: <P.name>
 
 | Field | Value |
 |-------|-------|
-| **Type** | <type from frontmatter, or inferred, or "Unknown"> |
-| **Created** | <date from frontmatter, or "Unknown"> |
-| **Status** | <status from frontmatter, or "Unknown"> |
-| **JIRA** | <URL from frontmatter, or "None"> |
-| **Repos** | <comma-separated list, or "None specified"> |
-
-### Files
-<list all files found in Step 2d>
-
-### Progress
-<If the context file contains checklist items (`- [x]` and `- [ ]`),
-show a summary line like: "3/6 items completed" and list the checklist
-items. If no checklist items found, say "No progress checklist found.">
+| **Type** | <P.frontmatter.type or "Unknown"> |
+| **Created** | <P.frontmatter.created or "Unknown"> |
+| **Status** | <P.frontmatter.status or "Unknown"> |
+| **JIRA** | <P.frontmatter.jira or "None"> |
+| **Repos** | <comma-separated P.frontmatter.repos, or "None specified"> |
 ```
 
-After the summary table, confirm that the full CLAUDE.md or README.md
-content has been read into context (it was read in Step 2 — just note
-this to the user so they know the context is loaded).
+**If `P.has_reference_files`:**
+Show the reference files table from `P.reference_files`. If
+`P.unregistered_files` is non-empty, note them. Show checklist progress
+as `P.checklist.checked`/`P.checklist.total`. Add: "Detail files will
+be loaded based on what you choose to work on."
 
-## Step 4: Suggest Next Steps
+**If not:** Show `P.all_files` list. Add: "Full project context loaded."
 
-Based on the project state, provide actionable suggestions:
+**If `P.repo_context_files` is non-empty:**
+Show an "Available Repo Context" table:
 
-**4a. Next checklist item**
+```text
+| Repo | Source | Path |
+|------|--------|------|
+| <repo> | <source> | `<path>` |
+```
 
-If the context file has a Progress section with checklist items, find
-the first unchecked item (`- [ ]`) and suggest it as the immediate next
-action. For example:
-> "Based on your progress checklist, the next step is: **Logs collected
-> and analyzed**. Would you like to start on that?"
+Add: "Repo context files will be loaded on demand when you work on a
+specific repo."
 
-**4b. Skill suggestions**
+## Step 4: Task Selection
 
-Suggest relevant skills based on the project type:
+**4a.** Build a task menu from `P.checklist.unchecked_items`. For each
+item, match its text and `section` against `P.reference_files` descriptions
+to determine which detail files are relevant.
 
-| Type | Skills to suggest |
-|------|-------------------|
-| bug | `/prow-job:analyze-test-failure`, `/prow-job:analyze-install-failure`, `/prow-job:extract-must-gather`, `/feature-dev:feature-dev` |
-| feature | `/feature-dev:feature-dev`, `/pr-review-toolkit:review-pr` |
-| ci-testing | `/prow-job:analyze-test-failure`, `/prow-job:analyze-install-failure`, `/prow-job:analyze-resource`, `/prow-job:extract-must-gather` |
-| docs | `/feature-dev:feature-dev` |
-| analysis | `/pr-review-toolkit:review-pr`, `/prow-job:analyze-test-failure`, `/feature-dev:feature-dev` |
+**4b.** Present via AskUserQuestion with options like:
 
-If the type is unknown, suggest `/feature-dev:feature-dev` as a general
-starting point.
-
-**4c. Ask what to work on**
-
-End by asking the user what they'd like to work on. Use AskUserQuestion
-with contextually relevant options based on the project state. Always
-include a "Something else" option. For example, for a bug investigation
-with unchecked items:
-- "Work on next checklist item: <item>"
-- "Review/update project notes"
+- "Next: \<task text\> (loads: file1.md, file2.md)"
+- "Review all project notes (loads: all detail files)"
 - "Something else"
+
+Skip file annotations if `P.has_reference_files` is false (monolithic
+project — all content is already in context from Step 2).
+
+**4c.** After the user picks, read the mapped detail files using Read.
+Confirm what was loaded.
+
+**4d.** Suggest relevant skills from `P.skill_suggestions`.
+
+**4e.** Remind: "If you create new detail files during this session, add
+them to the Reference Files table in CLAUDE.md."
+
+## Step 5: Lazy Repo Context Loading
+
+**Do NOT load repo context files until needed.** You have the manifest from
+`P.repo_context_files` — use it reactively:
+
+- When the user's query involves a specific repo, **read its context file
+  then** (from `P.repo_context_files` matching that repo name).
+- When a task from Step 4 maps to specific repos, load their context at
+  that point.
+- If the user asks to "load all context", comply — but default to lazy.
+
+This keeps the context window lean for multi-repo projects where you
+typically work in one repo at a time.
 
 ---
 
-## Important Notes
+## Notes
 
-- Always use the Write tool to read/create files, never echo/cat via Bash
-- Use Bash tool for `ls`, `find`, and `mkdir -p` operations
-- If the project has no context file, don't try to fabricate one — ask
-  the user for context instead
+- Always use the Read tool for files, never cat via Bash
+- Use Bash for `ls`, `find`, and `mkdir -p` operations
+- If no context file exists, ask the user for context — don't fabricate one

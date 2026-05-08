@@ -10,57 +10,41 @@ done. This updates the project's CLAUDE.md frontmatter and optionally
 records closing notes.
 
 Everything after "close" in `$ARGUMENTS` is parsed as follows:
+
 - The **first token** is an optional project name or numeric shorthand.
 - Everything after the first token is treated as **closing notes**.
 
 ## Step 1: Select Project
 
-**1a. Determine project name**
+### 1a. Resolve project name
 
-Handle the argument using the same cases as `/project:resume`:
+Extract the first token from `$ARGUMENTS`. Run
+`scripts/resume-project.py <first-token>` via Bash (omit the token if
+none was provided). Parse the JSON and handle by `status`:
 
-**Case A — Numeric shorthand** (e.g., `/project:close 2`):
-If the first token is a plain integer N, look in your conversation
-context for the numbered "Recent projects" table produced by the
-SessionStart hook. Pick the project name on row N from that table.
-If the table is not in context, fall back to running
-`scripts/recent-projects.py --names` and pick the Nth line.
-If N is out of range, show an error and fall through to Case C.
+- **`ok`** — use `project.name` as the target. Proceed to 1b.
+- **`no_argument`** — present the first 3 `alternatives` as
+  AskUserQuestion options plus "See all projects". Re-run with the
+  chosen name.
+- **`not_found`** / **`out_of_range`** — show `error_message`, present
+  `alternatives` as a picker, re-run with chosen name.
+- **`no_projects`** — show `error_message` and stop.
 
-**Case B — Project name** (e.g., `/project:close OCPBUGS-74679`):
-If the first token is a non-numeric string, use it as the target
-project name.
+### 1b. Check current status
 
-**Case C — No argument** (`/project:close`):
-Look in your conversation context for the "Recent projects" table.
-If present, extract project names that have a non-done status and
-present them as AskUserQuestion options. Include a "See all projects"
-option. If no table is in context, run `scripts/recent-projects.py
---names` and present those instead. If the user picks "See all
-projects", list all project directories and present as a second
-AskUserQuestion.
+If `project.frontmatter.status` is `done`:
 
-**1b. Validate project exists**
-
-Check that `projects/<name>/` exists. If not:
-- Show an error: "Project `<name>` not found."
-- List all available projects and ask the user to pick one.
-
-**1c. Check current status**
-
-Read the project's `CLAUDE.md` and parse the frontmatter. If the
-status is already `done`:
 - Inform the user: "Project `<name>` is already marked as done."
 - Ask if they'd like to update the closing notes anyway. If no, stop.
 
 ## Step 2: Gather Closing Notes
 
-**2a. Extract notes from arguments**
+### 2a. Extract notes from arguments
 
 If there is text after the project identifier in `$ARGUMENTS`, use it
 as the closing notes.
 
-**2b. Ask for notes**
+### 2b. Ask for notes
 
 If no notes were provided in the arguments, ask the user:
 
@@ -69,11 +53,11 @@ If no notes were provided in the arguments, ask the user:
 
 ## Step 3: Update Project CLAUDE.md
 
-**3a. Read the current CLAUDE.md**
+### 3a. Read the current CLAUDE.md
 
 Read the full `projects/<name>/CLAUDE.md` file.
 
-**3b. Update frontmatter fields**
+### 3b. Update frontmatter fields
 
 Using the Edit tool, update the YAML frontmatter:
 
@@ -82,9 +66,11 @@ Using the Edit tool, update the YAML frontmatter:
 2. Add a `closed: <YYYY-MM-DD>` field (today's date) after the
    `status` line. If a `closed:` field already exists, update it.
 
-**3c. Add closing notes section**
+### 3c. Add closing notes section
 
 If the user provided closing notes (non-empty, not "no"):
+
+Closing Notes always go in CLAUDE.md (the index), not in detail files.
 
 1. Check if a `## Closing Notes` section already exists in the file.
 2. If it exists, replace its content with the new notes.
@@ -103,7 +89,7 @@ _Closed YYYY-MM-DD_
 
 Display a brief confirmation:
 
-```
+```text
 Project `<name>` marked as done.
 ```
 

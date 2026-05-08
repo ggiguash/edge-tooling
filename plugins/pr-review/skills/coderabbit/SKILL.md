@@ -435,6 +435,21 @@ gh api "repos/{OWNER}/{REPO}/issues/{PR_NUMBER}/comments" \
 - {finding 2}: Won't fix — {one-line reason}."
 ```
 
+**Verification gate — do not proceed to Step 9 until this passes:**
+
+Count the replies you just posted (inline + issue comments). The total
+must equal the number of unaddressed findings from the overview table
+(all categories: applied, declined, dropped). If the count doesn't
+match, identify the missing findings and post the remaining replies.
+
+Checklist:
+
+- [ ] Every applied inline finding has a reply
+- [ ] Every declined inline finding has a reply
+- [ ] Every dropped inline finding has a reply
+- [ ] All review-body/summary findings (applied, declined, OR dropped)
+      are covered by an issue comment
+
 ### 9. Final summary
 
 **(Interactive mode only — skip when `BATCH_MODE = true`.)**

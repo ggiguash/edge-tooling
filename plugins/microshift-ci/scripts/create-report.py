@@ -61,7 +61,7 @@ CSS = """\
         .job-date { font-weight: 400; color: #6c757d; font-size: 0.85em; }
         .issues-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
         .issues-table td { padding: 5px 6px; vertical-align: middle; }
-        .issues-table .col-num { width: 30px; text-align: right; font-weight: 700; color: #495057; padding-right: 10px; }
+        .issues-table .col-link { width: 24px; text-align: center; }
         .issues-table .col-sev { width: 78px; }
         .issues-table .col-ftype { width: 58px; }
         .issues-table .col-title { cursor: pointer; user-select: none; }
@@ -114,7 +114,13 @@ CSS = """\
         .graph-tab-btn { padding: 4px 14px; border: 1px solid #dee2e6; border-bottom: none; border-radius: 4px 4px 0 0; background: #e9ecef; color: #495057; font-size: 0.82em; font-weight: 600; cursor: pointer; margin-bottom: -2px; }
         .graph-tab-btn.active { background: #fff; border-bottom: 2px solid #fff; color: #212529; }
         .graph-pane { display: none; padding: 6px 0; }
-        .graph-pane.active { display: block; }"""
+        .graph-pane.active { display: block; }
+        .anchor-link, .section-anchor { color: #adb5bd; text-decoration: none; cursor: pointer; }
+        .anchor-link:hover, .section-anchor:hover { color: #0366d6; }
+        .anchor-link { font-size: 0.85em; }
+        .section-anchor { font-size: 0.75em; margin-left: 8px; vertical-align: middle; }
+        .copy-toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 8px 16px; border-radius: 6px; font-size: 0.85em; z-index: 1000; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+        .copy-toast.show { opacity: 1; }"""
 
 JS = """\
 function showTab(e, name) {
@@ -148,7 +154,68 @@ function showGraphTab(btn, paneId) {
     document.getElementById(paneId).classList.add('active');
 }
 document.getElementById('loading').style.display='none';
-document.querySelector('.container').style.display='';"""
+document.querySelector('.container').style.display='';
+(function() {
+    var toast = document.createElement('div');
+    toast.className = 'copy-toast';
+    toast.textContent = 'Link copied';
+    document.body.appendChild(toast);
+    var timer;
+    function copyAnchor(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var href = e.currentTarget.getAttribute('href');
+        var url = location.href.split('#')[0] + href;
+        if (!navigator.clipboard || !navigator.clipboard.writeText) {
+            location.hash = href.slice(1);
+            return;
+        }
+        navigator.clipboard.writeText(url).then(function() {
+            toast.classList.add('show');
+            clearTimeout(timer);
+            timer = setTimeout(function() { toast.classList.remove('show'); }, 1500);
+        }).catch(function() {
+            location.hash = href.slice(1);
+        });
+    }
+    document.querySelectorAll('.anchor-link, .section-anchor').forEach(function(el) {
+        el.addEventListener('click', copyAnchor);
+    });
+})();
+(function() {
+    function openAnchor() {
+        var hash = location.hash;
+        if (!hash) return;
+        var target = document.getElementById(hash.substring(1));
+        if (!target) return;
+        if (target.classList.contains('issue-row')) {
+            var title = target.querySelector('.col-title');
+            if (title && !title.classList.contains('active')) {
+                title.classList.add('active');
+                var detail = target.nextElementSibling;
+                if (detail && detail.classList.contains('detail-row')) {
+                    detail.classList.add('show');
+                }
+            }
+        }
+        var section = target.closest('.tab-content');
+        if (section && !section.classList.contains('active')) {
+            document.querySelectorAll('.tab-content').forEach(function(el) { el.classList.remove('active'); });
+            document.querySelectorAll('.tab-btn').forEach(function(el) { el.classList.remove('active'); });
+            section.classList.add('active');
+            document.querySelectorAll('.tab-btn').forEach(function(el) {
+                if (el.getAttribute('onclick') && el.getAttribute('onclick').indexOf(section.id.replace('tab-', '')) !== -1) {
+                    el.classList.add('active');
+                }
+            });
+        }
+        requestAnimationFrame(function() {
+            target.scrollIntoView({ behavior: 'smooth' });
+        });
+    }
+    openAnchor();
+    window.addEventListener('hashchange', openAnchor);
+})();"""
 
 
 # ---------------------------------------------------------------------------
@@ -458,7 +525,7 @@ def render_release_section(version, rdata, bug_candidates):
     lines = []
     lines.append(f'        <div class="release-section" id="release-{_e(version)}">')
     lines.append('            <div class="release-header">')
-    lines.append(f"                <h2>Release {_e(version)}</h2>")
+    lines.append(f'                <h2>Release {_e(version)}<a href="#release-{_e(version)}" class="section-anchor" title="Copy link to this section">&#128279;</a></h2>')
     label = "failure" if total == 1 else "failures"
     lines.append(f'                <span class="badge {badge}">{total} {label}</span>')
     lines.append("            </div>")
@@ -479,12 +546,13 @@ def render_release_section(version, rdata, bug_candidates):
         ftype_css = "ftype-infra" if ftype == "infrastructure" else f"ftype-{ftype}"
         jobs_label = f'{jc} {"job" if jc == 1 else "jobs"}'
 
-        lines.append('            <tr class="issue-row">')
-        lines.append(f'                <td class="col-num">{issue["number"]}.</td>')
+        anchor_id = f'release-{_e(version)}-{issue["number"]}'
+        lines.append(f'            <tr class="issue-row" id="{anchor_id}">')
         lines.append(f'                <td class="col-sev"><span class="severity-badge {sev_css}">{sev}</span></td>')
         lines.append(f'                <td class="col-ftype"><span class="ftype-badge {ftype_css}">{ftype_label}</span></td>')
         lines.append(f'                <td class="col-title">{_e(issue["title"])}</td>')
         lines.append(f'                <td class="col-jobs">{jobs_label}</td>')
+        lines.append(f'                <td class="col-link"><a href="#{anchor_id}" class="anchor-link" title="Copy link to this issue">&#128279;</a></td>')
         lines.append('            </tr>')
         lines.append('            <tr class="detail-row"><td colspan="5">')
         if issue.get("root_cause"):
@@ -603,7 +671,7 @@ def render_pr_section(pr_data, all_pr_bugs, pr_status, pr_error=None):
         pr_link = f'<a href="{_e(pr["url"])}" target="_blank" title="{_e(pr["title"])}">PR# {pr["number"]}</a>' if pr.get("url") else f'<span title="{_e(pr["title"])}">PR# {pr["number"]}</span>'
         pr_release_m = re.search(r"rebase-(release-\d+\.\d+|main)", pr.get("title", ""))
         pr_release_label = f' (rebase {pr_release_m.group(1)})' if pr_release_m else f': {_e(pr["title"])}' if pr.get("title") else ''
-        lines.append(f'                <h2>{pr_link}{pr_release_label}</h2>')
+        lines.append(f'                <h2>{pr_link}{pr_release_label}<a href="#pr-{pr["number"]}" class="section-anchor" title="Copy link to this section">&#128279;</a></h2>')
         label = "failure" if total_failed == 1 else "failures"
         lines.append(f'                <span class="badge {badge}">{total_failed} {label}</span>')
 
@@ -640,12 +708,13 @@ def render_pr_section(pr_data, all_pr_bugs, pr_status, pr_error=None):
                 ftype_css = "ftype-infra" if ftype == "infrastructure" else f"ftype-{ftype}"
                 jobs_label = f'{jc} {"job" if jc == 1 else "jobs"}'
 
-                lines.append('            <tr class="issue-row">')
-                lines.append(f'                <td class="col-num">{issue["number"]}.</td>')
+                anchor_id = f'pr-{pr["number"]}-{issue["number"]}'
+                lines.append(f'            <tr class="issue-row" id="{anchor_id}">')
                 lines.append(f'                <td class="col-sev"><span class="severity-badge {sev_css}">{sev}</span></td>')
                 lines.append(f'                <td class="col-ftype"><span class="ftype-badge {ftype_css}">{ftype_label}</span></td>')
                 lines.append(f'                <td class="col-title">{_e(issue["title"])}</td>')
                 lines.append(f'                <td class="col-jobs">{jobs_label}</td>')
+                lines.append(f'                <td class="col-link"><a href="#{anchor_id}" class="anchor-link" title="Copy link to this issue">&#128279;</a></td>')
                 lines.append('            </tr>')
                 lines.append('            <tr class="detail-row"><td colspan="5">')
                 if issue.get("root_cause"):

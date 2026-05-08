@@ -580,8 +580,8 @@ def write_pr_dashboard_html(
         title_e = html.escape(p.title)
         rows.append(
             "<tr>"
-            f'<td class="mono"><a class="inherit-color" href="{html.escape(p.html_url, quote=True)}">{html.escape(p.repo_full)}#{p.number}</a></td>'
-            f'<td class="title"><a href="{html.escape(p.html_url, quote=True)}">{title_e}</a></td>'
+            f'<td class="mono"><a class="inherit-color" target="_blank" rel="noopener noreferrer" href="{html.escape(p.html_url, quote=True)}">{html.escape(p.repo_full)}#{p.number}</a></td>'
+            f'<td class="title"><a target="_blank" rel="noopener noreferrer"href="{html.escape(p.html_url, quote=True)}">{title_e}</a></td>'
             f'<td class="mono">{html.escape(p.author)}</td>'
             f'<td class="mono">{html.escape(p.base_branch or "—")}</td>'
             f'<td class="num">{p.age_days}d</td>'
