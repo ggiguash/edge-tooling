@@ -1,0 +1,13 @@
+FROM pipeline:claude-ai-helpers
+USER 0:0
+
+ENV EDGE_TOOLING_DIR=/opt/app-root/src/edge-tooling
+
+## Injected by prow during building in CI
+COPY ghtoken/gh-token /usr/local/bin/gh-token
+RUN chmod +x /usr/local/bin/gh-token
+
+# Copy over repo contents to be used with claude-ai-helpers
+COPY . /opt/app-root/src/edge-tooling
+
+WORKDIR /opt/app-root/src/edge-tooling
