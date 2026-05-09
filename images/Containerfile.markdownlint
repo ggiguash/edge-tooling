@@ -1,10 +1,10 @@
 FROM root
 
-# Keeping node tooling seperate because I have an inherent distrust of node packages
+# Keeping node tooling separate because I have an inherent distrust of node packages
 RUN dnf -y module reset nodejs || true && \
     dnf -y module enable nodejs:22 && \
-    dnf -y install nodejs
+    dnf -y install nodejs npm
 
 COPY images/install_tools.sh /tmp/install_tools.sh
-RUN source /tmp/install_tools.sh && install_markdown_tools && cleanup_install_artifacts
+RUN . /tmp/install_tools.sh && install_markdown_tools && cleanup_install_artifacts
 RUN rm -f /tmp/install_tools.sh
