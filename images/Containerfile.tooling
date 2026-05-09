@@ -1,5 +1,0 @@
-FROM root
-
-COPY images/install_tools.sh /tmp/install_tools.sh
-RUN source /tmp/install_tools.sh && install_gh_token && install_google_cloud_cli
-RUN rm -f /tmp/install_tools.sh
