@@ -5,7 +5,9 @@ set -euo pipefail
 GH_TOKEN_VER="${GH_TOKEN_VER:-2.0.8}"
 GH_TOKEN_SHA="${GH_TOKEN_SHA:-867d9ebf7dd18e67e2599f0f890f3f41b8673e88c4394a32a05476024c41ea0f}"
 GH_TOKEN_RETRY_COUNT="${GH_TOKEN_RETRY_COUNT:-3}"
-GOOGLE_CLOUD_REPO_URL="${GOOGLE_CLOUD_REPO_URL:-https://packages.cloud.google.com/yum/repos/cloud-sdk-el9-x86_64}"
+GCLOUD_VERSION="${GCLOUD_VERSION:-567.0.0}"
+GCLOUD_SHA256="${GCLOUD_SHA256:-bd5afc0d249609cb40d45f665209190fdd38b9937954291b8f9ae54206c75d83}"
+GCLOUD_RETRY_COUNT="${GCLOUD_RETRY_COUNT:-3}"
 MARKDOWNLINT_VERSION="${MARKDOWNLINT_VERSION:-0.40.0}"
 MARKDOWNLINT_CLI2_VERSION="${MARKDOWNLINT_CLI2_VERSION:-0.22.1}"
 
@@ -36,17 +38,29 @@ install_gh_token() {
 }
 
 install_google_cloud_cli() {
-  tee /etc/yum.repos.d/google-cloud-sdk.repo >/dev/null <<EOF
-[google-cloud-cli]
-name=Google Cloud CLI
-baseurl=${GOOGLE_CLOUD_REPO_URL}
-enabled=1
-gpgcheck=1
-repo_gpgcheck=0
-gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
-EOF
+  local gcloud_tarball="google-cloud-cli-${GCLOUD_VERSION}-linux-x86_64.tar.gz"
+  local gcloud_url="https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/${gcloud_tarball}"
+  local gcloud_archive="/tmp/${gcloud_tarball}"
 
-  dnf install -y libxcrypt-compat.x86_64 google-cloud-cli
+  retry_command "${GCLOUD_RETRY_COUNT}" \
+    curl -sSL --connect-timeout 10 --max-time 300 --fail \
+      "${gcloud_url}" \
+      -o "${gcloud_archive}"
+
+  echo "${GCLOUD_SHA256}  ${gcloud_archive}" | sha256sum -c -
+  rm -rf /opt/google-cloud-sdk
+  tar -xzf "${gcloud_archive}" -C /opt
+  /opt/google-cloud-sdk/install.sh --quiet --path-update false
+  ln -sf /opt/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud
+  rm -f "${gcloud_archive}"
+}
+
+install_python_tools() {
+    echo "Installing Python package dependencies..."
+    pip install \
+        'uv==0.11.6' \
+        'matplotlib==3.9.4'
+    echo "Python package dependencies installed."
 }
 
 install_markdown_tools() {
