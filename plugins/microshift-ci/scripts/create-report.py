@@ -308,57 +308,35 @@ def match_issue_to_bugs(issue_title, bug_candidates):
     issue_tokens = _tokenize(issue_title)
     if not issue_tokens:
         return None
-    best = None
-    best_score = 0.0
+    matches = []
     for cand in bug_candidates:
         sig_tokens = _tokenize(cand["error_signature"])
         if not sig_tokens:
             continue
         score = len(issue_tokens & sig_tokens) / len(sig_tokens)
-        if score > best_score:
-            best_score = score
-            best = cand
-    return best if best_score >= MATCH_THRESHOLD else None
-
-
-def _extract_pr_numbers(candidate):
-    """Extract PR numbers from a bug candidate's job names/URLs.
-
-    Handles two patterns:
-    - File-derived job names: "-pr123-" (from analyze-ci-prs-job-*-pr<N>-*.txt)
-    - Prow URLs: ".../pull/openshift_microshift/123/..."
-    """
-    pr_nums = set()
-    for job in candidate.get("jobs", []):
-        url = job.get("job_url", "")
-        m = re.search(r"/pull/[^/]+/(\d+)/", url)
-        if m:
-            pr_nums.add(int(m.group(1)))
-        name = job.get("job_name", "")
-        m = re.search(r"-pr(\d+)-", name)
-        if m:
-            pr_nums.add(int(m.group(1)))
-    return pr_nums
-
-
-def _index_pr_bugs(bug_paths, known_pr_numbers=None):
-    """Load PR bug candidates and index them by PR number.
-
-    Returns a dict mapping PR number (int) to list of bug candidates.
-    Candidates affecting multiple PRs appear under each PR.
-    When a candidate has no extractable PR numbers (e.g. from cross-release
-    rebase bug files that lack job URLs), it is assigned to all known PRs.
-    """
-    by_pr = {}
-    known = set(known_pr_numbers or [])
-    for path in bug_paths:
-        for cand in load_bug_candidates(path):
-            pr_nums = _extract_pr_numbers(cand)
-            if not pr_nums and known:
-                pr_nums = known
-            for num in pr_nums:
-                by_pr.setdefault(num, []).append(cand)
-    return by_pr
+        if score >= MATCH_THRESHOLD:
+            matches.append((score, cand))
+    if not matches:
+        return None
+    matches.sort(key=lambda x: x[0], reverse=True)
+    # Merge duplicates/regressions from all matching candidates (de-duped by key)
+    merged = dict(matches[0][1])
+    seen_dup_keys = {d["key"] for d in merged.get("duplicates", [])}
+    seen_reg_keys = {r["key"] for r in merged.get("regressions", [])}
+    all_dups = list(merged.get("duplicates", []))
+    all_regs = list(merged.get("regressions", []))
+    for _, cand in matches[1:]:
+        for d in cand.get("duplicates", []):
+            if d["key"] not in seen_dup_keys:
+                seen_dup_keys.add(d["key"])
+                all_dups.append(d)
+        for r in cand.get("regressions", []):
+            if r["key"] not in seen_reg_keys:
+                seen_reg_keys.add(r["key"])
+                all_regs.append(r)
+    merged["duplicates"] = all_dups
+    merged["regressions"] = all_regs
+    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -375,33 +353,29 @@ def _collect_linked_bugs(bug_data, pr_bug_paths):
     linked = {}
     details = {}
 
+    def _add(cand, release_label):
+        for dup in cand.get("duplicates", []):
+            key = dup.get("key", "")
+            if not key:
+                continue
+            existing = linked.get(key, [])
+            if any(l["release"] == release_label for l in existing):
+                continue
+            linked.setdefault(key, []).append({
+                "release": release_label,
+                "error_signature": cand.get("error_signature", ""),
+                "affected_jobs": cand.get("affected_jobs", 0),
+            })
+            if key not in details:
+                details[key] = {"summary": dup.get("summary", ""), "status": dup.get("status", ""), "updated": dup.get("updated", "")}
+
     for version, candidates in bug_data.items():
         for cand in candidates:
-            for dup in cand.get("duplicates", []):
-                key = dup.get("key", "")
-                if not key:
-                    continue
-                linked.setdefault(key, []).append({
-                    "release": version,
-                    "error_signature": cand.get("error_signature", ""),
-                    "affected_jobs": cand.get("affected_jobs", 0),
-                })
-                if key not in details:
-                    details[key] = {"summary": dup.get("summary", ""), "status": dup.get("status", ""), "updated": dup.get("updated", "")}
+            _add(cand, version)
 
     for path in pr_bug_paths:
         for cand in load_bug_candidates(path):
-            for dup in cand.get("duplicates", []):
-                key = dup.get("key", "")
-                if not key:
-                    continue
-                linked.setdefault(key, []).append({
-                    "release": "PRs",
-                    "error_signature": cand.get("error_signature", ""),
-                    "affected_jobs": cand.get("affected_jobs", 0),
-                })
-                if key not in details:
-                    details[key] = {"summary": dup.get("summary", ""), "status": dup.get("status", ""), "updated": dup.get("updated", "")}
+            _add(cand, "PRs")
 
     return linked, details
 
@@ -418,9 +392,49 @@ def _pick_bug_fields(issue, links=None):
     return entry
 
 
-def build_bugs_tab_data(open_bugs_data, bug_data, pr_bug_paths):
+def _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_bug_candidates):
+    """Add release/PR associations discovered by pooled candidate matching.
+
+    Walks each release's and PR's issues, runs match_issue_to_bugs against the
+    pooled candidates, and records new (key, release) associations in linked_map.
+    Only processes duplicates (open bugs), not regressions (closed bugs).
+    """
+    def _scan_issues(issues, release_label):
+        for issue in issues:
+            match = match_issue_to_bugs(issue.get("title", ""), all_bug_candidates)
+            if not match:
+                continue
+            for entry in match.get("duplicates", []):
+                key = entry.get("key", "")
+                if not key:
+                    continue
+                existing = linked_map.get(key, [])
+                if any(l["release"] == release_label for l in existing):
+                    continue
+                linked_map.setdefault(key, []).append({
+                    "release": release_label,
+                    "error_signature": match.get("error_signature", ""),
+                    "affected_jobs": issue.get("job_count", 0),
+                })
+                if key not in linked_details:
+                    linked_details[key] = {"summary": entry.get("summary", ""), "status": entry.get("status", ""), "updated": entry.get("updated", "")}
+
+    for version, rdata in (releases_data or {}).items():
+        if rdata and rdata.get("issues"):
+            _scan_issues(rdata["issues"], version)
+
+    if pr_data and pr_data.get("prs"):
+        for pr in pr_data["prs"]:
+            if pr.get("issues"):
+                _scan_issues(pr["issues"], "PRs")
+
+
+def build_bugs_tab_data(open_bugs_data, bug_data, pr_bug_paths, releases_data=None, pr_data=None, all_bug_candidates=None):
     """Cross-reference open bugs query with bug mapping files."""
     linked_map, linked_details = _collect_linked_bugs(bug_data, pr_bug_paths)
+
+    if all_bug_candidates and (releases_data or pr_data):
+        _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_bug_candidates)
 
     if open_bugs_data and open_bugs_data.get("issues"):
         linked = []
@@ -795,11 +809,11 @@ def render_release_section(version, rdata, bug_candidates):
     return "\n".join(lines)
 
 
-def render_pr_section(pr_data, all_pr_bugs, pr_status, pr_error=None):
+def render_pr_section(pr_data, bug_candidates, pr_status, pr_error=None):
     """Render the Pull Requests tab.
 
     pr_data: analyzed PR summary (from aggregate), may be None.
-    all_pr_bugs: dict mapping PR number (int) to list of bug candidates.
+    bug_candidates: flat list of all bug candidates (pooled across all sources).
     pr_status: list of all PR status snapshots (from prepare), may be None.
     pr_error: collection error message string, or None.
     """
@@ -917,12 +931,11 @@ def render_pr_section(pr_data, all_pr_bugs, pr_status, pr_error=None):
             lines.append(f'                <span class="breakdown-item"><strong>{pending}</strong> Running</span>')
         lines.append("            </div>")
 
-        pr_bugs = all_pr_bugs.get(pr["number"], [])
         if analysis and analysis.get("issues"):
 
             lines.append('            <table class="issues-table">')
             for issue in analysis["issues"]:
-                bug_match = match_issue_to_bugs(issue.get("title", ""), pr_bugs)
+                bug_match = match_issue_to_bugs(issue.get("title", ""), bug_candidates)
                 jc = issue["job_count"]
                 sev = issue.get("severity", "UNKNOWN").upper()
                 sev_css = f"severity-{sev.lower()}" if sev in ("HIGH", "MEDIUM", "LOW", "CRITICAL") else ""
@@ -957,7 +970,7 @@ def render_pr_section(pr_data, all_pr_bugs, pr_status, pr_error=None):
     return "\n".join(toc_lines) + "\n\n" + "\n".join(lines)
 
 
-def generate_html(releases_data, bug_data, pr_data, all_pr_bugs, pr_status, timestamp, pr_error=None, bugs_tab_data=None):
+def generate_html(releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error=None, bugs_tab_data=None):
     date_str = timestamp.strftime("%Y-%m-%d")
     time_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1015,10 +1028,9 @@ def generate_html(releases_data, bug_data, pr_data, all_pr_bugs, pr_status, time
 
     sections = []
     for version, rdata in releases_data.items():
-        bugs = bug_data.get(version, [])
-        sections.append(render_release_section(version, rdata, bugs))
+        sections.append(render_release_section(version, rdata, all_bug_candidates))
 
-    pr_section = render_pr_section(pr_data, all_pr_bugs, pr_status, pr_error)
+    pr_section = render_pr_section(pr_data, all_bug_candidates, pr_status, pr_error)
     bugs_section = render_bugs_section(bugs_tab_data) if bugs_tab_data else ""
 
     return f"""\
@@ -1180,14 +1192,18 @@ def main():
 
     pr_data = load_json(pr_entry["summary"])
     pr_status = load_json(pr_entry["status"])
-
-    known_pr_nums = {s["pr_number"] for s in (pr_status or [])}
-    all_pr_bugs = _index_pr_bugs(pr_entry["bugs"], known_pr_nums)
     pr_error = pr_entry.get("error")
+
+    # Pool all bug candidates from every source for cross-release correlation
+    all_bug_candidates = []
+    for version in releases:
+        all_bug_candidates.extend(bug_data[version])
+    for path in pr_entry["bugs"]:
+        all_bug_candidates.extend(load_bug_candidates(path))
 
     # Load open bugs data, build bugs tab, and persist summary
     open_bugs_data = load_json(files["open_bugs"])
-    bugs_tab_data = build_bugs_tab_data(open_bugs_data, bug_data, pr_entry["bugs"])
+    bugs_tab_data = build_bugs_tab_data(open_bugs_data, bug_data, pr_entry["bugs"], releases_data, pr_data, all_bug_candidates)
 
     bugs_summary_path = os.path.join(workdir, "analyze-ci-bugs-summary.json")
     with open(bugs_summary_path, "w") as f:
@@ -1201,7 +1217,7 @@ def main():
 
     # Generate HTML
     timestamp = datetime.now(timezone.utc)
-    html_content = generate_html(releases_data, bug_data, pr_data, all_pr_bugs, pr_status, timestamp, pr_error, bugs_tab_data)
+    html_content = generate_html(releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error, bugs_tab_data)
 
     output_path = os.path.join(workdir, "microshift-ci-doctor-report.html")
     with open(output_path, "w") as f:
