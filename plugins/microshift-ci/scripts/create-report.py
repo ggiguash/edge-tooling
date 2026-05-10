@@ -359,7 +359,7 @@ def _collect_linked_bugs(bug_data, pr_bug_paths):
             if not key:
                 continue
             existing = linked.get(key, [])
-            if any(l["release"] == release_label for l in existing):
+            if any(link["release"] == release_label for link in existing):
                 continue
             linked.setdefault(key, []).append({
                 "release": release_label,
@@ -409,7 +409,7 @@ def _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_b
                 if not key:
                     continue
                 existing = linked_map.get(key, [])
-                if any(l["release"] == release_label for l in existing):
+                if any(link["release"] == release_label for link in existing):
                     continue
                 linked_map.setdefault(key, []).append({
                     "release": release_label,
@@ -456,7 +456,7 @@ def build_bugs_tab_data(open_bugs_data, bug_data, pr_bug_paths, releases_data=No
                 linked.append(_pick_bug_fields(det, links))
 
         return {
-            "total_open": len(open_bugs_data["issues"]),
+            "total_open": len(linked) + len(unlinked),
             "linked": linked,
             "unlinked": unlinked,
             "jira_query_available": True,
