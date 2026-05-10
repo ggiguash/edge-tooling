@@ -185,7 +185,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
    - `date`: today's date in YYYY-MM-DD format
    - For each issue: extract `key` from the issue, `summary`/`status`/`priority`/`assignee`/`created`/`updated` from the fields. Use the status name, priority name, and assignee display name. Truncate `created` and `updated` to date only (first 10 characters).
 
-3. This step can run immediately after Step 3 completes — it does not depend on create-bugs output.
+3. This step can run immediately after Step 3 completes — it does not depend on create-bugs output. It is also used by the `refresh` sub-command.
 
 **Error Handling**:
 
@@ -271,6 +271,7 @@ HTML report generated: <WORKDIR>/microshift-ci-doctor-report.html
 
 - **Deterministic scripts** handle: data collection, artifact download, aggregation, HTML generation
 - **LLM agents** handle: per-job root cause analysis (Step 2), Jira bug search (Step 3), open bugs query (Step 3b)
+- `doctor.sh refresh` re-runs only `create-report.py` (no aggregation). Use it after `/microshift-ci:create-bugs --create` or any JIRA state change — run Step 3b first to update `analyze-ci-open-bugs.json`, then `doctor.sh refresh`
 - All agents (all releases + PRs) are launched in a single parallel wave — no per-release agents
 - The `prepare` script downloads all artifacts upfront so prow-job agents use local paths (no redundant downloads)
 - The `finalize` script runs aggregation and HTML generation in one call

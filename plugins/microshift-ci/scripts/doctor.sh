@@ -316,6 +316,35 @@ cmd_graphs() {
 }
 
 # ---------------------------------------------------------------------------
+# refresh
+# ---------------------------------------------------------------------------
+
+cmd_refresh() {
+    local releases_arg=""
+
+    while [[ ${#} -gt 0 ]]; do
+        case "${1}" in
+            --workdir) WORKDIR="${2}"; shift 2 ;;
+            -*) echo "Unknown option: ${1}" >&2; return 1 ;;
+            *) releases_arg="${1}"; shift ;;
+        esac
+    done
+
+    WORKDIR="${WORKDIR:-/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)}"
+
+    if [[ -z "${releases_arg}" ]]; then
+        echo "Error: releases argument required" >&2
+        echo "Usage: $(basename "$0") refresh [--workdir DIR] <release1,release2,...>" >&2
+        return 1
+    fi
+
+    # Generate HTML report (reads existing summary + bug files)
+    echo "=== Generating HTML report ===" >&2
+    python3 "${SCRIPT_DIR}/create-report.py" \
+        --workdir "${WORKDIR}" "${releases_arg}"
+}
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
@@ -326,6 +355,7 @@ usage() {
     echo "  prepare  [--workdir DIR] <releases> [--rebase]  Collect jobs and download artifacts" >&2
     echo "  graphs   [--workdir DIR] [--timezone TZ]        Generate PCP performance graphs" >&2
     echo "  finalize [--workdir DIR] <releases>             Aggregate results and generate HTML" >&2
+    echo "  refresh  [--workdir DIR] <releases>             Re-query bugs and regenerate HTML" >&2
     echo "" >&2
     echo "  <releases>: comma-separated release versions (e.g., 4.18,4.19,4.20,main)" >&2
     echo "  --workdir DIR: work directory (default: /tmp/microshift-ci-claude-workdir.YYMMDD)" >&2
@@ -344,6 +374,7 @@ main() {
         prepare)  cmd_prepare "${@}" ;;
         graphs)   cmd_graphs "${@}" ;;
         finalize) cmd_finalize "${@}" ;;
+        refresh)  cmd_refresh "${@}" ;;
         *) echo "Unknown command: ${cmd}" >&2; usage ;;
     esac
 }
