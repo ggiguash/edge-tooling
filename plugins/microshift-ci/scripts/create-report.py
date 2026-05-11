@@ -120,7 +120,13 @@ CSS = """\
         .anchor-link { font-size: 0.85em; }
         .section-anchor { font-size: 0.75em; margin-left: 8px; vertical-align: middle; }
         .copy-toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 8px 16px; border-radius: 6px; font-size: 0.85em; z-index: 1000; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
-        .copy-toast.show { opacity: 1; }"""
+        .copy-toast.show { opacity: 1; }
+        .bugs-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        .bugs-table th { text-align: left; padding: 8px 6px; border-bottom: 2px solid #dee2e6; font-size: 0.85em; color: #6c757d; text-transform: uppercase; }
+        .bugs-table td { padding: 6px; border-bottom: 1px solid #eee; font-size: 0.9em; vertical-align: middle; }
+        .bugs-table tr:hover { background: #f8f9fa; }
+        .link-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; font-weight: 700; text-transform: uppercase; }
+        .link-badge-unlinked { background: #fff3cd; color: #856404; }"""
 
 JS = """\
 function showTab(e, name) {
@@ -223,7 +229,7 @@ document.querySelector('.container').style.display='';
 # ---------------------------------------------------------------------------
 
 def discover_files(workdir, releases):
-    result = {"releases": {}, "prs": {"summary": None, "status": None, "bugs": [], "error": None}}
+    result = {"releases": {}, "prs": {"summary": None, "status": None, "bugs": [], "error": None}, "open_bugs": None}
 
     for version in releases:
         entry = {"summary": None, "bugs": None, "jobs": None, "error": None}
@@ -257,6 +263,10 @@ def discover_files(workdir, releases):
     if os.path.exists(path):
         with open(path) as f:
             result["prs"]["error"] = f.read().strip()
+
+    path = os.path.join(workdir, "analyze-ci-open-bugs.json")
+    if os.path.exists(path):
+        result["open_bugs"] = path
 
     return result
 
@@ -298,52 +308,279 @@ def match_issue_to_bugs(issue_title, bug_candidates):
     issue_tokens = _tokenize(issue_title)
     if not issue_tokens:
         return None
-    best = None
-    best_score = 0.0
+    matches = []
     for cand in bug_candidates:
         sig_tokens = _tokenize(cand["error_signature"])
         if not sig_tokens:
             continue
         score = len(issue_tokens & sig_tokens) / len(sig_tokens)
-        if score > best_score:
-            best_score = score
-            best = cand
-    return best if best_score >= MATCH_THRESHOLD else None
+        if score >= MATCH_THRESHOLD:
+            matches.append((score, cand))
+    if not matches:
+        return None
+    matches.sort(key=lambda x: x[0], reverse=True)
+    # Merge duplicates/regressions from all matching candidates (de-duped by key)
+    merged = dict(matches[0][1])
+    seen_dup_keys = {d["key"] for d in merged.get("duplicates", [])}
+    seen_reg_keys = {r["key"] for r in merged.get("regressions", [])}
+    all_dups = list(merged.get("duplicates", []))
+    all_regs = list(merged.get("regressions", []))
+    for _, cand in matches[1:]:
+        for d in cand.get("duplicates", []):
+            if d["key"] not in seen_dup_keys:
+                seen_dup_keys.add(d["key"])
+                all_dups.append(d)
+        for r in cand.get("regressions", []):
+            if r["key"] not in seen_reg_keys:
+                seen_reg_keys.add(r["key"])
+                all_regs.append(r)
+    merged["duplicates"] = all_dups
+    merged["regressions"] = all_regs
+    return merged
 
 
-def _extract_pr_numbers(candidate):
-    """Extract PR numbers from a bug candidate's job names/URLs.
+# ---------------------------------------------------------------------------
+# Bugs tab data
+# ---------------------------------------------------------------------------
 
-    Handles two patterns:
-    - File-derived job names: "-pr123-" (from analyze-ci-prs-job-*-pr<N>-*.txt)
-    - Prow URLs: ".../pull/openshift_microshift/123/..."
+def _collect_linked_bugs(bug_data, pr_bug_paths):
+    """Extract all JIRA keys from bug mapping duplicates, with release associations.
+
+    Returns (linked, details) where:
+    - linked: dict mapping JIRA key to list of {release, error_signature, affected_jobs}
+    - details: dict mapping JIRA key to {summary, status, updated} from the mapping file
     """
-    pr_nums = set()
-    for job in candidate.get("jobs", []):
-        url = job.get("job_url", "")
-        m = re.search(r"/pull/[^/]+/(\d+)/", url)
-        if m:
-            pr_nums.add(int(m.group(1)))
-        name = job.get("job_name", "")
-        m = re.search(r"-pr(\d+)-", name)
-        if m:
-            pr_nums.add(int(m.group(1)))
-    return pr_nums
+    linked = {}
+    details = {}
 
+    def _add(cand, release_label):
+        for dup in cand.get("duplicates", []):
+            key = dup.get("key", "")
+            if not key:
+                continue
+            existing = linked.get(key, [])
+            if any(link["release"] == release_label for link in existing):
+                continue
+            linked.setdefault(key, []).append({
+                "release": release_label,
+                "error_signature": cand.get("error_signature", ""),
+                "affected_jobs": cand.get("affected_jobs", 0),
+            })
+            if key not in details:
+                details[key] = {"summary": dup.get("summary", ""), "status": dup.get("status", ""), "updated": dup.get("updated", "")}
 
-def _index_pr_bugs(bug_paths):
-    """Load PR bug candidates and index them by PR number.
+    for version, candidates in bug_data.items():
+        for cand in candidates:
+            _add(cand, version)
 
-    Returns a dict mapping PR number (int) to list of bug candidates.
-    Candidates affecting multiple PRs appear under each PR.
-    """
-    by_pr = {}
-    for path in bug_paths:
+    for path in pr_bug_paths:
         for cand in load_bug_candidates(path):
-            pr_nums = _extract_pr_numbers(cand)
-            for num in pr_nums:
-                by_pr.setdefault(num, []).append(cand)
-    return by_pr
+            _add(cand, "PRs")
+
+    return linked, details
+
+
+def _pick_bug_fields(issue, links=None):
+    entry = {
+        "key": issue.get("key", ""),
+        "summary": issue.get("summary", ""),
+        "status": issue.get("status", ""),
+        "updated": issue.get("updated", ""),
+    }
+    if links is not None:
+        entry["links"] = links
+    return entry
+
+
+def _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_bug_candidates):
+    """Add release/PR associations discovered by pooled candidate matching.
+
+    Walks each release's and PR's issues, runs match_issue_to_bugs against the
+    pooled candidates, and records new (key, release) associations in linked_map.
+    Only processes duplicates (open bugs), not regressions (closed bugs).
+    """
+    def _scan_issues(issues, release_label):
+        for issue in issues:
+            match = match_issue_to_bugs(issue.get("title", ""), all_bug_candidates)
+            if not match:
+                continue
+            for entry in match.get("duplicates", []):
+                key = entry.get("key", "")
+                if not key:
+                    continue
+                existing = linked_map.get(key, [])
+                if any(link["release"] == release_label for link in existing):
+                    continue
+                linked_map.setdefault(key, []).append({
+                    "release": release_label,
+                    "error_signature": match.get("error_signature", ""),
+                    "affected_jobs": issue.get("job_count", 0),
+                })
+                if key not in linked_details:
+                    linked_details[key] = {"summary": entry.get("summary", ""), "status": entry.get("status", ""), "updated": entry.get("updated", "")}
+
+    for version, rdata in (releases_data or {}).items():
+        if rdata and rdata.get("issues"):
+            _scan_issues(rdata["issues"], version)
+
+    if pr_data and pr_data.get("prs"):
+        for pr in pr_data["prs"]:
+            if pr.get("issues"):
+                _scan_issues(pr["issues"], "PRs")
+
+
+def build_bugs_tab_data(open_bugs_data, bug_data, pr_bug_paths, releases_data=None, pr_data=None, all_bug_candidates=None):
+    """Cross-reference open bugs query with bug mapping files."""
+    linked_map, linked_details = _collect_linked_bugs(bug_data, pr_bug_paths)
+
+    if all_bug_candidates and (releases_data or pr_data):
+        _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_bug_candidates)
+
+    if open_bugs_data and open_bugs_data.get("issues"):
+        linked = []
+        unlinked = []
+        seen_keys = set()
+
+        for issue in open_bugs_data["issues"]:
+            key = issue["key"]
+            seen_keys.add(key)
+            if key in linked_map:
+                linked.append(_pick_bug_fields(issue, linked_map[key]))
+            else:
+                unlinked.append(_pick_bug_fields(issue))
+
+        # Keys in mapping files but not in open bugs query
+        for key, links in linked_map.items():
+            if key not in seen_keys:
+                det = dict(linked_details.get(key, {}), key=key)
+                linked.append(_pick_bug_fields(det, links))
+
+        return {
+            "total_open": len(linked) + len(unlinked),
+            "linked": linked,
+            "unlinked": unlinked,
+            "jira_query_available": True,
+        }
+
+    # Graceful degradation: no open bugs file, use mapping files only
+    linked = []
+    for key, links in linked_map.items():
+        det = dict(linked_details.get(key, {}), key=key)
+        linked.append(_pick_bug_fields(det, links))
+    return {
+        "total_open": 0,
+        "linked": linked,
+        "unlinked": [],
+        "jira_query_available": False,
+    }
+
+
+def _format_release_links(links):
+    """Format release associations as linked '4.20 (2), 4.22 (1)'."""
+    by_release = {}
+    for link in links:
+        rel = link["release"]
+        by_release[rel] = by_release.get(rel, 0) + link["affected_jobs"]
+    parts = []
+    for r, c in sorted(by_release.items()):
+        anchor = "tab-pull-requests" if r == "PRs" else f"release-{_e(r)}"
+        parts.append(f'<a href="#{anchor}">{_e(r)}</a> ({c})')
+    return ", ".join(parts)
+
+
+_PRIORITY_ORDER = {"blocker": 0, "critical": 1, "major": 2, "normal": 3, "minor": 4, "trivial": 5}
+
+
+def _bug_sort_key(bug):
+    prio = _PRIORITY_ORDER.get(bug.get("priority", "").lower(), 99)
+    return (prio, bug.get("key", ""))
+
+
+def render_bugs_section(bugs_data):
+    """Render the Bugs tab HTML."""
+    linked = bugs_data["linked"]
+    unlinked = bugs_data["unlinked"]
+    jira_available = bugs_data["jira_query_available"]
+
+    if not linked and not unlinked:
+        return (
+            '        <div class="release-section">\n'
+            "            <p>No bug data available. "
+            "Run the full doctor workflow to populate bug information.</p>\n"
+            "        </div>"
+        )
+
+    lines = []
+
+    # Summary cards
+    total_linked = len(linked)
+    total_unlinked = len(unlinked)
+    total = bugs_data["total_open"] if jira_available else total_linked
+
+    lines.append('        <div class="release-section">')
+    lines.append('            <div class="release-header">')
+    lines.append('                <h2>AI-Generated Bugs</h2>')
+    lines.append('            </div>')
+    lines.append('            <div class="overview-grid">')
+    lines.append('                <div class="overview-card">')
+    lines.append(f'                    <div class="number">{total}</div>')
+    lines.append('                    <div class="label">Total Open</div>')
+    lines.append('                </div>')
+    lines.append('                <div class="overview-card">')
+    css = "status-pass" if total_linked > 0 else ""
+    lines.append(f'                    <div class="number {css}">{total_linked}</div>')
+    lines.append('                    <div class="label">Linked to Failures</div>')
+    lines.append('                </div>')
+    if jira_available:
+        lines.append('                <div class="overview-card">')
+        css = "status-fail" if total_unlinked > 0 else ""
+        lines.append(f'                    <div class="number {css}">{total_unlinked}</div>')
+        lines.append('                    <div class="label">Not Linked</div>')
+        lines.append('                </div>')
+    lines.append('            </div>')
+
+    if not jira_available:
+        lines.append(
+            '            <p class="job-date">Only bugs linked to current failures are shown. '
+            "Run the full doctor workflow to include all open AI-generated bugs.</p>"
+        )
+
+    # Table
+    all_bugs = sorted(linked, key=_bug_sort_key) + sorted(unlinked, key=_bug_sort_key)
+
+    if all_bugs:
+        lines.append('            <table class="bugs-table">')
+        lines.append("            <thead><tr>")
+        lines.append('                <th>JIRA</th><th>Status</th><th>Summary</th>')
+        lines.append('                <th>Releases</th><th>Updated</th>')
+        lines.append("            </tr></thead>")
+        lines.append("            <tbody>")
+
+        for bug in all_bugs:
+            key = _e(bug["key"])
+            href = f"https://issues.redhat.com/browse/{key}"
+            summary = _e(bug.get("summary", ""))
+            status = _e(bug.get("status", ""))
+            updated = _e(bug.get("updated", ""))
+
+            if bug.get("links"):
+                releases_cell = _format_release_links(bug["links"])
+            else:
+                releases_cell = '<span class="link-badge link-badge-unlinked">NOT LINKED</span>'
+
+            lines.append("            <tr>")
+            lines.append(f'                <td><a href="{href}" target="_blank">{key}</a></td>')
+            lines.append(f"                <td>{status}</td>")
+            lines.append(f"                <td>{summary}</td>")
+            lines.append(f"                <td>{releases_cell}</td>")
+            lines.append(f"                <td>{updated}</td>")
+            lines.append("            </tr>")
+
+        lines.append("            </tbody>")
+        lines.append("            </table>")
+
+    lines.append("        </div>")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -572,11 +809,11 @@ def render_release_section(version, rdata, bug_candidates):
     return "\n".join(lines)
 
 
-def render_pr_section(pr_data, all_pr_bugs, pr_status, pr_error=None):
+def render_pr_section(pr_data, bug_candidates, pr_status, pr_error=None):
     """Render the Pull Requests tab.
 
     pr_data: analyzed PR summary (from aggregate), may be None.
-    all_pr_bugs: dict mapping PR number (int) to list of bug candidates.
+    bug_candidates: flat list of all bug candidates (pooled across all sources).
     pr_status: list of all PR status snapshots (from prepare), may be None.
     pr_error: collection error message string, or None.
     """
@@ -694,12 +931,11 @@ def render_pr_section(pr_data, all_pr_bugs, pr_status, pr_error=None):
             lines.append(f'                <span class="breakdown-item"><strong>{pending}</strong> Running</span>')
         lines.append("            </div>")
 
-        pr_bugs = all_pr_bugs.get(pr["number"], [])
         if analysis and analysis.get("issues"):
 
             lines.append('            <table class="issues-table">')
             for issue in analysis["issues"]:
-                bug_match = match_issue_to_bugs(issue.get("title", ""), pr_bugs)
+                bug_match = match_issue_to_bugs(issue.get("title", ""), bug_candidates)
                 jc = issue["job_count"]
                 sev = issue.get("severity", "UNKNOWN").upper()
                 sev_css = f"severity-{sev.lower()}" if sev in ("HIGH", "MEDIUM", "LOW", "CRITICAL") else ""
@@ -734,7 +970,7 @@ def render_pr_section(pr_data, all_pr_bugs, pr_status, pr_error=None):
     return "\n".join(toc_lines) + "\n\n" + "\n".join(lines)
 
 
-def generate_html(releases_data, bug_data, pr_data, all_pr_bugs, pr_status, timestamp, pr_error=None):
+def generate_html(releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error=None, bugs_tab_data=None):
     date_str = timestamp.strftime("%Y-%m-%d")
     time_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -792,10 +1028,10 @@ def generate_html(releases_data, bug_data, pr_data, all_pr_bugs, pr_status, time
 
     sections = []
     for version, rdata in releases_data.items():
-        bugs = bug_data.get(version, [])
-        sections.append(render_release_section(version, rdata, bugs))
+        sections.append(render_release_section(version, rdata, all_bug_candidates))
 
-    pr_section = render_pr_section(pr_data, all_pr_bugs, pr_status, pr_error)
+    pr_section = render_pr_section(pr_data, all_bug_candidates, pr_status, pr_error)
+    bugs_section = render_bugs_section(bugs_tab_data) if bugs_tab_data else ""
 
     return f"""\
 <!DOCTYPE html>
@@ -820,6 +1056,7 @@ def generate_html(releases_data, bug_data, pr_data, all_pr_bugs, pr_status, time
     <div class="tab-bar">
         <button class="tab-btn active" onclick="showTab(event, 'periodics')">Periodics</button>
         <button class="tab-btn" onclick="showTab(event, 'pull-requests')">Pull Requests</button>
+        <button class="tab-btn" onclick="showTab(event, 'bugs')">Bugs</button>
     </div>
 
     <div id="tab-periodics" class="tab-content active">
@@ -835,6 +1072,10 @@ def generate_html(releases_data, bug_data, pr_data, all_pr_bugs, pr_status, time
 
     <div id="tab-pull-requests" class="tab-content">
 {pr_section}
+    </div>
+
+    <div id="tab-bugs" class="tab-content">
+{bugs_section}
     </div>
 
     <p>&nbsp;</p><p>&nbsp;</p><p>&nbsp;</p><p>&nbsp;</p>
@@ -916,6 +1157,8 @@ def main():
     else:
         print("  PRs: no data")
 
+    print(f"  Open bugs: {'found' if files['open_bugs'] else 'not available'}")
+
     if not found_any:
         print(f"\nError: no analysis files found in {workdir}", file=sys.stderr)
         sys.exit(1)
@@ -949,9 +1192,22 @@ def main():
 
     pr_data = load_json(pr_entry["summary"])
     pr_status = load_json(pr_entry["status"])
-
-    all_pr_bugs = _index_pr_bugs(pr_entry["bugs"])
     pr_error = pr_entry.get("error")
+
+    # Pool all bug candidates from every source for cross-release correlation
+    all_bug_candidates = []
+    for version in releases:
+        all_bug_candidates.extend(bug_data[version])
+    for path in pr_entry["bugs"]:
+        all_bug_candidates.extend(load_bug_candidates(path))
+
+    # Load open bugs data, build bugs tab, and persist summary
+    open_bugs_data = load_json(files["open_bugs"])
+    bugs_tab_data = build_bugs_tab_data(open_bugs_data, bug_data, pr_entry["bugs"], releases_data, pr_data, all_bug_candidates)
+
+    bugs_summary_path = os.path.join(workdir, "analyze-ci-bugs-summary.json")
+    with open(bugs_summary_path, "w") as f:
+        json.dump(bugs_tab_data, f, indent=2)
 
     # Set graphs directory for rendering
     global _GRAPHS_DIR
@@ -961,7 +1217,7 @@ def main():
 
     # Generate HTML
     timestamp = datetime.now(timezone.utc)
-    html_content = generate_html(releases_data, bug_data, pr_data, all_pr_bugs, pr_status, timestamp, pr_error)
+    html_content = generate_html(releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error, bugs_tab_data)
 
     output_path = os.path.join(workdir, "microshift-ci-doctor-report.html")
     with open(output_path, "w") as f:
@@ -992,6 +1248,14 @@ def main():
         print(f"    {len(pr_data['prs'])} rebase PRs with {pr_data['total_failed']} total failed jobs")
     else:
         print("    No PR data")
+    print("  Bugs:")
+    if bugs_tab_data["jira_query_available"]:
+        print(f"    {bugs_tab_data['total_open']} open AI-generated bugs"
+              f" ({len(bugs_tab_data['linked'])} linked, {len(bugs_tab_data['unlinked'])} not linked)")
+    elif bugs_tab_data["linked"]:
+        print(f"    {len(bugs_tab_data['linked'])} linked bugs (JIRA query not available)")
+    else:
+        print("    No bug data")
     print(f"\nHTML report generated: {output_path}")
 
 

@@ -181,10 +181,10 @@ If results are found, fetch their details with `mcp__jira__jira_get_issue` and f
       "step_name": "<step_name>",
       "affected_jobs": <count for this source>,
       "duplicates": [
-        {"key": "<JIRA-KEY>", "summary": "<summary>", "status": "<status>"}
+        {"key": "<JIRA-KEY>", "summary": "<summary>", "status": "<status>", "updated": "<YYYY-MM-DD>"}
       ],
       "regressions": [
-        {"key": "<JIRA-KEY>", "summary": "<summary>", "status": "<status>"}
+        {"key": "<JIRA-KEY>", "summary": "<summary>", "status": "<status>", "updated": "<YYYY-MM-DD>"}
       ]
     }
   ]
