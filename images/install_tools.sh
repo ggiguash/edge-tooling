@@ -51,7 +51,11 @@ install_google_cloud_cli() {
   rm -rf /opt/google-cloud-sdk
   tar -xzf "${gcloud_archive}" -C /opt
   /opt/google-cloud-sdk/install.sh --quiet --path-update false
-  ln -sf /opt/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud
+  for bin in gcloud gcloud-crc32c gsutil; do
+    if [ ! -f "/usr/local/bin/${bin}" ]; then
+      ln -sf /opt/google-cloud-sdk/bin/${bin} /usr/local/bin/${bin}
+    fi
+  done
   rm -f "${gcloud_archive}"
 }
 
