@@ -48,7 +48,13 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 
 1. Parse `<ARGUMENTS>` into a list of release versions.
 2. Check for rebase PR sources in the workdir by looking for `analyze-ci-bug-candidates-rebase-release-*.json` files. Extract the source identifiers (e.g., `rebase-release-4.22`).
-3. Launch `/microshift-ci:create-bugs` in dry-run mode as **Agents** — one per release version, plus one per rebase PR source:
+3. Delete existing bug mapping files so create-bugs performs fresh JIRA queries:
+
+   ```text
+   rm -f <WORKDIR>/analyze-ci-bugs-*.json
+   ```
+
+4. Launch `/microshift-ci:create-bugs` in dry-run mode as **Agents** — one per release version, plus one per rebase PR source:
 
    **For release versions:**
 
@@ -62,8 +68,8 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
    Agent: subagent_type=general_purpose, prompt="Run /microshift-ci:create-bugs rebase-release-<version>"
    ```
 
-4. Launch **ALL** agents in a **single message** as **foreground** agents. They run concurrently.
-5. Each agent produces `<WORKDIR>/analyze-ci-bugs-<source>.json` with fresh JIRA data including the open bugs list.
+5. Launch **ALL** agents in a **single message** as **foreground** agents. They run concurrently.
+6. Each agent produces `<WORKDIR>/analyze-ci-bugs-<source>.json` with fresh JIRA data including the open bugs list.
 
 **Error Handling**:
 
