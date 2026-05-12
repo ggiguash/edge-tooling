@@ -1,3 +1,5 @@
+# Daily Update
+
 Update today's TODO file based on what was accomplished in this conversation.
 
 ## Steps
