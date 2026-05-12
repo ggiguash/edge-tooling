@@ -71,5 +71,5 @@ ssh "ec2-user@${HYPERVISOR}" "
     echo ''
 
     echo '=== etcd Endpoint Health ==='
-    ssh ${SSH_OPTS} core@${MASTER_0} 'sudo podman exec etcd etcdctl endpoint health --cluster -w table' 2>/dev/null
+    ssh ${SSH_OPTS} core@${MASTER_0} 'sudo podman exec etcd etcdctl endpoint health --cluster -w table' 2>/dev/null || true
 " 2>/dev/null

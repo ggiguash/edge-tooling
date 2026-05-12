@@ -57,25 +57,29 @@ for node in "$MASTER_0" "$MASTER_1"; do
     echo "  Collecting podman-etcd logs..."
     ssh "ec2-user@${HYPERVISOR}" "
         ssh ${SSH_OPTS} core@${node} 'sudo grep \"podman-etcd(etcd)\" /var/log/pacemaker/pacemaker.log | tail -100'
-    " 2>/dev/null > "${LOG_DIR}/${node_name}-podman-etcd.log"
+    " 2>/dev/null > "${LOG_DIR}/${node_name}-podman-etcd.log" \
+        || echo "  WARNING: failed to collect podman-etcd logs from ${node_name}"
 
     # etcd container logs (snapshots, member operations)
     echo "  Collecting etcd container logs..."
     ssh "ec2-user@${HYPERVISOR}" "
         ssh ${SSH_OPTS} core@${node} 'sudo podman logs etcd 2>&1 | grep -E \"saved snapshot|member|learner|peerURL|force_new_cluster\" | tail -50'
-    " 2>/dev/null > "${LOG_DIR}/${node_name}-etcd-container.log"
+    " 2>/dev/null > "${LOG_DIR}/${node_name}-etcd-container.log" \
+        || echo "  WARNING: failed to collect etcd container logs from ${node_name}"
 
     # Full pacemaker journal
     echo "  Collecting pacemaker journal..."
     ssh "ec2-user@${HYPERVISOR}" "
         ssh ${SSH_OPTS} core@${node} 'sudo journalctl -u pacemaker --no-pager --since \"${MINUTES_AGO} minutes ago\"'
-    " 2>/dev/null > "${LOG_DIR}/${node_name}-pacemaker-journal.log"
+    " 2>/dev/null > "${LOG_DIR}/${node_name}-pacemaker-journal.log" \
+        || echo "  WARNING: failed to collect pacemaker journal from ${node_name}"
 
     # ETCD initial cluster config
     echo "  Collecting etcd config logs..."
     ssh "ec2-user@${HYPERVISOR}" "
         ssh ${SSH_OPTS} core@${node} 'sudo grep -E \"ETCD_NAME|ETCD_INITIAL_CLUSTER|ETCD_INITIAL_ADVERTISE|ETCD_INITIAL_CLUSTER_STATE\" /var/log/pacemaker/pacemaker.log | tail -10'
-    " 2>/dev/null > "${LOG_DIR}/${node_name}-etcd-config.log"
+    " 2>/dev/null > "${LOG_DIR}/${node_name}-etcd-config.log" \
+        || echo "  WARNING: failed to collect etcd config logs from ${node_name}"
 
     echo ""
 done

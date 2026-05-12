@@ -106,7 +106,11 @@ echo ""
 echo "=== Verifying RPM version ==="
 for node in "$MASTER_0" "$MASTER_1"; do
     node_name="master-$(echo "$node" | awk -F. '{print $4 - 20}')"
-    version=$(ssh "ec2-user@${HYPERVISOR}" "ssh ${SSH_OPTS} core@${node} 'rpm -qa | grep resource-agents'" 2>/dev/null)
+    version=$(ssh "ec2-user@${HYPERVISOR}" "ssh ${SSH_OPTS} core@${node} 'rpm -qa | grep resource-agents'" 2>/dev/null || true)
+    if [ -z "$version" ]; then
+        echo "  ERROR: failed to verify RPM version on ${node_name}"
+        exit 1
+    fi
     echo "  ${node_name}: ${version}"
 done
 echo ""
@@ -114,10 +118,15 @@ echo ""
 # Step 7: Verify fix code (optional)
 if [ -n "$FIX_GREP_PATTERN" ]; then
     echo "=== Verifying fix code presence ==="
-    printf '%s\n' "$FIX_GREP_PATTERN" | \
-        ssh "ec2-user@${HYPERVISOR}" "
-            ssh ${SSH_OPTS} core@${MASTER_1} 'grep -nf /dev/stdin /usr/lib/ocf/resource.d/heartbeat/podman-etcd'
-        " 2>/dev/null
+    for node in "$MASTER_0" "$MASTER_1"; do
+        node_name="master-$(echo "$node" | awk -F. '{print $4 - 20}')"
+        echo "--- ${node_name} ---"
+        printf '%s\n' "$FIX_GREP_PATTERN" | \
+            ssh "ec2-user@${HYPERVISOR}" "
+                ssh ${SSH_OPTS} core@${node} 'grep -nf /dev/stdin /usr/lib/ocf/resource.d/heartbeat/podman-etcd'
+            " 2>/dev/null \
+            || echo "  WARNING: fix pattern not found on ${node_name}"
+    done
     echo ""
 fi
 
