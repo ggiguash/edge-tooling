@@ -305,16 +305,101 @@ mode_restart() {
     done < <(echo "${pr_data}" | jq -r '.[] | [.number, .title, .url] | @tsv')
 }
 
+# Close-duplicates mode: close older PRs superseded by newer ones.
+# Groups PRs by target branch + title prefix. Within each group,
+# keeps the newest PR (highest number) and closes older ones.
+mode_close_duplicates() {
+    local filter="${1:-}" author="${2:-}" execute="${3:-false}"
+
+    if [[ -z "${filter}" || -z "${author}" ]]; then
+        echo "Error: --filter and --author are required for close-duplicates mode" >&2
+        echo "Example: --mode close-duplicates --filter 'rebase-release-' --author 'microshift-rebase-script[bot]'" >&2
+        return 1
+    fi
+
+    ${execute} || echo "[DRY-RUN] Use --execute to actually close PRs" >&2
+
+    echo "Fetching open PRs (author: ${author}, filter: ${filter})..." >&2
+    local pr_data
+    pr_data=$(gh pr list --repo "${GH_REPO}" --state open --limit 100 \
+        --json "number,title,url,baseRefName" \
+        --author "${author}")
+
+    # Filter to PRs whose title contains the filter string
+    pr_data=$(echo "${pr_data}" | jq -c --arg f "${filter}" \
+        '[.[] | select(.title | contains($f))]')
+
+    [[ "$(echo "${pr_data}" | jq 'length')" -eq 0 ]] && { echo "No matching PRs found."; return; }
+
+    # Group by (target branch, title prefix up to the token after --filter).
+    # E.g. filter="rebase-release-", title="NO-ISSUE: rebase-release-4.19-..."
+    #   → group key = "release-4.19|rebase-release-4.19"
+    local groups
+    groups=$(echo "${pr_data}" | jq -c --arg f "${filter}" '
+        [.[] | . + {
+            group_key: (
+                .baseRefName + "|" +
+                (.title | capture("(?<k>" + $f + "[^- ]+)") | .k)
+            )
+        }]
+        | group_by(.group_key)
+        | map(select(length > 1) | sort_by(.number) | reverse)
+    ')
+
+    local group_count
+    group_count=$(echo "${groups}" | jq 'length')
+
+    if [[ "${group_count}" -eq 0 ]]; then
+        echo "No duplicate PRs found."
+        return
+    fi
+
+    for i in $(seq 0 $((group_count - 1))); do
+        local group newest_number newest_title group_key
+        group=$(echo "${groups}" | jq -c ".[$i]")
+        newest_number=$(echo "${group}" | jq '.[0].number')
+        newest_title=$(echo "${group}" | jq -r '.[0].title')
+        group_key=$(echo "${group}" | jq -r '.[0].group_key')
+
+        echo "${group_key}: keeping PR #${newest_number} (${newest_title})"
+
+        local dup_count
+        dup_count=$(echo "${group}" | jq 'length - 1')
+
+        for j in $(seq 1 "${dup_count}"); do
+            local dup_number dup_title
+            dup_number=$(echo "${group}" | jq ".[$j].number")
+            dup_title=$(echo "${group}" | jq -r ".[$j].title")
+
+            local comment="Closing as duplicate: superseded by #${newest_number}."
+            comment+=$'\n'"${SIGNATURE}"
+
+            echo "  Closing PR #${dup_number} (${dup_title})..."
+            if ${execute}; then
+                gh pr comment "${dup_number}" --repo "${GH_REPO}" --body "${comment}"
+                gh pr close "${dup_number}" --repo "${GH_REPO}"
+            else
+                echo "  gh pr comment ${dup_number} --repo ${GH_REPO} --body '${comment}'"
+                echo "  gh pr close ${dup_number} --repo ${GH_REPO}"
+            fi
+        done
+    done
+}
+
 usage() {
     echo "Usage: ${0} [--mode MODE] [--filter STRING] [--author USER] [--execute]" >&2
-    echo "  --mode MODE:     Operation mode (default: summary)" >&2
-    echo "    summary: JSON array of PRs with pass/fail counts" >&2
-    echo "    detail:  JSON array of PRs with full job lists" >&2
-    echo "    approve: Approve PRs where ALL test jobs passed (dry-run by default)" >&2
-    echo "    restart: Restart failed test jobs by commenting /test (dry-run by default)" >&2
-    echo "  --filter STRING: Only include PRs whose title contains STRING" >&2
-    echo "  --author USER:   Only include PRs authored by USER" >&2
-    echo "  --execute:       Actually post comments (approve/restart modes). Without this flag, only shows what would be done." >&2
+    echo "  --mode MODE:       Operation mode (default: summary)" >&2
+    echo "    summary:           JSON array of PRs with pass/fail counts" >&2
+    echo "    detail:            JSON array of PRs with full job lists" >&2
+    echo "    approve:           Approve PRs where ALL test jobs passed (dry-run by default)" >&2
+    echo "    restart:           Restart failed test jobs by commenting /test (dry-run by default)" >&2
+    echo "    close-duplicates:  Close older PRs with same target branch and title prefix (dry-run by default)" >&2
+    echo "                       Requires --filter and --author. PRs are grouped by target branch +" >&2
+    echo "                       title text up to the token after FILTER (e.g. 'rebase-release-' groups" >&2
+    echo "                       by 'rebase-release-X.Y')" >&2
+    echo "  --filter STRING:   Only include PRs whose title contains STRING" >&2
+    echo "  --author USER:     Only include PRs authored by USER" >&2
+    echo "  --execute:         Actually post comments/close PRs (action modes). Without this flag, only shows what would be done." >&2
     exit 1
 }
 
@@ -347,6 +432,7 @@ main() {
         detail)  mode_detail "${filter}" "${author}" ;;
         approve) mode_approve "${filter}" "${author}" "${execute}" ;;
         restart) mode_restart "${filter}" "${author}" "${execute}" ;;
+        close-duplicates) mode_close_duplicates "${filter}" "${author}" "${execute}" ;;
         *) echo "Error: Unknown mode '${mode}'" >&2; usage ;;
     esac
 }
