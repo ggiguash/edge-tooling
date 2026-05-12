@@ -324,7 +324,9 @@ def find_job_files(workdir, source):
                     pr_statuses = []
             for pr in pr_statuses:
                 if f"rebase-release-{release}" in pr.get("title", ""):
-                    rebase_pr_numbers.add(pr.get("pr_number"))
+                    pr_num = pr.get("pr_number")
+                    if pr_num is not None:
+                        rebase_pr_numbers.add(int(pr_num))
 
         pattern = os.path.join(workdir, "analyze-ci-prs-job-*.txt")
         all_files = sorted(glob_mod.glob(pattern))
