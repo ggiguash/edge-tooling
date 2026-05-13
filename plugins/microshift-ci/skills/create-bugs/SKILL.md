@@ -255,6 +255,7 @@ This writes `<WORKDIR>/analyze-ci-bug-candidates-merged.json`. Read and use this
        Would create: N
        Would skip (Jira duplicate): N
        Would skip (infrastructure): N
+       Would skip (stale regression): N
 
      To create these bugs, run:
        /microshift-ci:create-bugs <sources> --create
@@ -319,7 +320,8 @@ When `--auto` is active, apply these rules in order for each candidate:
 |-----------|----------|--------|
 | `failure_type` is `"infrastructure"` | **Skip** | `"Infrastructure failure — not a product bug"` |
 | Has open duplicates from Jira search | **Skip** | `"Duplicate of <JIRA-KEY>"` |
-| Has closed regressions but no open duplicates | **Create** | Add `"Potential regression of <JIRA-KEY>"` to the bug description's Additional Info section |
+| Has closed regressions but no open duplicates — and **all** job `finished` dates are **on or before** the regression's `updated` date | **Skip** | `"Stale failure predating fix for <JIRA-KEY> (updated <YYYY-MM-DD>)"` |
+| Has closed regressions but no open duplicates — and **any** job `finished` date is **after** the regression's `updated` date | **Create** | Add `"Potential regression of <JIRA-KEY>"` to the bug description's Additional Info section |
 | No duplicates, no regressions | **Create** | `"No existing duplicates"` |
 
 ### Step 4: Create Bug via MCP (create mode only)
@@ -515,6 +517,13 @@ CANDIDATES (<N> unique failures from <M> total across <S> sources)
      Potential Regressions: USHIFT-YYYYY [Closed]
      Decision: Potential regression of USHIFT-YYYYY [Closed]
 
+  4. [WOULD SKIP]
+     MicroShift CI: <error_signature>
+     Severity: X | Total Jobs: Y | Step: <step_name>
+     Releases: <source1> (N jobs)
+     Potential Regressions: USHIFT-ZZZZZ [Closed]
+     Decision: Stale failure predating fix for USHIFT-ZZZZZ (updated YYYY-MM-DD)
+
 ...
 
 SUMMARY
@@ -522,6 +531,7 @@ SUMMARY
   Unique failures: N (from M total candidates)
   Would create: N
   Would skip (Jira duplicate): N
+  Would skip (stale regression): N
 
 To create these bugs, run:
   /microshift-ci:create-bugs <source1>,<source2>,... --create
