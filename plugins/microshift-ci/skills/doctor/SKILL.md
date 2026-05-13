@@ -137,7 +137,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
    ```
 
 3. Launch all create-bugs agents in a **single message** as **foreground** agents (do NOT use `run_in_background`). They run concurrently.
-4. Each agent produces `<WORKDIR>/analyze-ci-bugs-<source>.json`
+4. Each agent produces `<WORKDIR>/analyze-ci-bugs-<source>.json` (including open bugs data for the Bugs tab)
 5. When all agents return, immediately proceed to Step 4 in the same turn. Do NOT stop or end your turn between Step 3 and Step 4.
 
 **Error Handling**:
@@ -219,11 +219,13 @@ HTML report generated: <WORKDIR>/microshift-ci-doctor-report.html
 
 - **microshift-ci:prow-job**: Single job analysis (used by Step 2 agents)
 - **microshift-ci:create-bugs**: Bug correlation and creation (used in Step 3; can also be run with `--create` after this command)
+- **microshift-ci:doctor-refresh**: Re-run bug correlation and regenerate the HTML report after JIRA state changes
 
 ## Notes
 
 - **Deterministic scripts** handle: data collection, artifact download, aggregation, HTML generation
-- **LLM agents** handle: per-job root cause analysis (Step 2), Jira bug search (Step 3)
+- **LLM agents** handle: per-job root cause analysis (Step 2), Jira bug search and open bugs query (Step 3)
+- `/microshift-ci:doctor-refresh` re-queries JIRA and regenerates the HTML report. Use it after `/microshift-ci:create-bugs --create` or any JIRA state change
 - All agents (all releases + PRs) are launched in a single parallel wave — no per-release agents
 - The `prepare` script downloads all artifacts upfront so prow-job agents use local paths (no redundant downloads)
 - The `finalize` script runs aggregation and HTML generation in one call

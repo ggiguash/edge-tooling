@@ -1,3 +1,5 @@
+inheritance: true
+
 language: en-US
 
 reviews:
@@ -9,8 +11,12 @@ reviews:
   review_status: true
   changed_files_summary: true
   collapse_walkthrough: false
-  request_changes_workflow: false
+  request_changes_workflow: true
   abort_on_close: true
+  auto_apply_labels: true
+  labeling_instructions:
+    - label: "ready-for-human-review"
+      instructions: "Apply when CodeRabbit approves the PR with no outstanding comments or requested changes."
 
   auto_review:
     enabled: true
@@ -46,6 +52,14 @@ reviews:
         - Modularity: under 500 lines, reference material in separate files
         - Tool restrictions: allowed-tools specified to limit blast radius
         Flag missing edge cases or safety guards as severity "high".
+
+    - path: "plugins/*/.claude-plugin/plugin.json"
+      instructions: |
+        If the "version" field changed, check whether the same version bump appears in
+        .claude-plugin/marketplace.json for this plugin. Claude Code uses the marketplace
+        version for update detection — a stale marketplace version prevents users from
+        seeing available updates. Flag as severity "medium" if marketplace.json is not
+        included in the PR diff with a matching version bump.
 
     - path: ".claude/skills/**"
       instructions: |

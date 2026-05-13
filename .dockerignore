@@ -1,0 +1,22 @@
+.git
+.gitmodules
+.DS_Store
+
+# Local/dev metadata
+.mcp.json
+.worktrees
+.reports
+
+# Environment and secrets
+.env
+
+# Python cache/artifacts
+*.pyc
+__pycache__/
+
+# Generated lint outputs
+markdownlint-cli2-junit.xml
+markdownlint-cli2-results.json
+
+# Local Claude lock files
+.claude/**/*.lock
