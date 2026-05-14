@@ -192,7 +192,7 @@ mode_detail() {
 # Approve mode: add /verified to PRs where all jobs pass
 mode_approve() {
     local filter="${1:-}" author="${2:-}" execute="${3:-false}"
-    local pr_data
+    local pr_data had_error=0
 
     ${execute} || echo "[DRY-RUN] Use --execute to actually post comments" >&2
     echo "Fetching open PRs..." >&2
@@ -231,21 +231,27 @@ mode_approve() {
             comment+="${SIGNATURE}"
             echo "PR #${pr_number}: All ${total} jobs passed, approving..."
             if ${execute}; then
-                gh pr comment "${pr_number}" --repo "${GH_REPO}" --body "${comment}"
+                if gh pr comment "${pr_number}" --repo "${GH_REPO}" --body "${comment}"; then
+                    echo "PR #${pr_number}: Approved"
+                else
+                    echo "PR #${pr_number}: Failed to post approve comment" >&2
+                    had_error=1
+                fi
             else
-                echo "gh pr comment ${pr_number} --repo ${GH_REPO} --body '${comment}'"
+                echo "gh pr comment ${pr_number} --repo ${GH_REPO} --body '/verified by ci ...'"
             fi
-            echo "PR #${pr_number}: Approved"
         else
             echo "PR #${pr_number}: ${success}/${total} jobs passed, skipping"
         fi
     done < <(echo "${pr_data}" | jq -r '.[] | [.number, .title, .url] | @tsv')
+
+    return "${had_error}"
 }
 
 # Restart mode: comment /test for each failed job
 mode_restart() {
     local filter="${1:-}" author="${2:-}" execute="${3:-false}"
-    local pr_data
+    local pr_data had_error=0
 
     ${execute} || echo "[DRY-RUN] Use --execute to actually post comments" >&2
     echo "Fetching open PRs..." >&2
@@ -301,19 +307,25 @@ mode_restart() {
         comment+="${SIGNATURE}"
         echo "PR #${pr_number}: Restarting ${#failed_jobs[@]} failed job(s): ${failed_jobs[*]}"
         if ${execute}; then
-            gh pr comment "${pr_number}" --repo "${GH_REPO}" --body "${comment}"
+            if gh pr comment "${pr_number}" --repo "${GH_REPO}" --body "${comment}"; then
+                echo "PR #${pr_number}: Restart comment posted"
+            else
+                echo "PR #${pr_number}: Failed to post restart comment" >&2
+                had_error=1
+            fi
         else
-            echo "gh pr comment ${pr_number} --repo ${GH_REPO} --body '${comment}'"
+            echo "gh pr comment ${pr_number} --repo ${GH_REPO} --body '/test <failed-jobs> ...'"
         fi
-        echo "PR #${pr_number}: Restart comment posted"
     done < <(echo "${pr_data}" | jq -r '.[] | [.number, .title, .url] | @tsv')
+
+    return "${had_error}"
 }
 
 # Close-duplicates mode: close older PRs superseded by newer ones.
 # Groups PRs by target branch. Within each group, keeps the newest
 # PR (highest number) and closes older ones.
 mode_close_duplicates() {
-    local filter="${1:-}" author="${2:-}" execute="${3:-false}"
+    local filter="${1:-}" author="${2:-}" execute="${3:-false}" had_error=0
 
     if [[ -z "${filter}" || -z "${author}" ]]; then
         echo "Error: --filter and --author are required for close-duplicates mode" >&2
@@ -369,13 +381,19 @@ mode_close_duplicates() {
 
             echo "Closing PR #${dup_number} (${dup_title})..."
             if ${execute}; then
-                gh pr comment "${dup_number}" --repo "${GH_REPO}" --body "${comment}"
-                echo "PR #${dup_number}: Close comment posted"
+                if gh pr comment "${dup_number}" --repo "${GH_REPO}" --body "${comment}"; then
+                    echo "PR #${dup_number}: Close comment posted"
+                else
+                    echo "PR #${dup_number}: Failed to post close comment" >&2
+                    had_error=1
+                fi
             else
-                echo "gh pr comment ${dup_number} --repo ${GH_REPO} --body '${comment}'"
+                echo "gh pr comment ${dup_number} --repo ${GH_REPO} --body 'Closing as duplicate: superseded by #${newest_number}. ...'"
             fi
         done
     done
+
+    return "${had_error}"
 }
 
 usage() {
