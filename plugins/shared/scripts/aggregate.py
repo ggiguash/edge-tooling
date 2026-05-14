@@ -2,9 +2,8 @@
 """
 Aggregate per-job analysis reports into a release or PR summary JSON file.
 
-Reads per-job report files (containing STRUCTURED SUMMARY blocks and prose),
-groups jobs by ERROR_SIGNATURE similarity, and produces JSON consumed by
-create-report.py.
+Shared across products (MicroShift, LVMS, etc.) via symlinks in each
+plugin's scripts/ directory.
 
 Usage:
     aggregate.py --release 4.22 [--workdir DIR]
@@ -115,18 +114,13 @@ def _normalize_step_name(step_name):
     """Extract the step ref from a fully-qualified Prow step name.
 
     Prow step names follow the pattern ``<test-variant>-<step-ref>``
-    where the step ref typically starts with ``openshift-microshift-``.
-    The LLM sometimes includes the test-variant prefix, sometimes not,
-    which would cause identical steps to land in different buckets
-    during two-pass grouping.
+    where the step ref typically starts with a known prefix such as
+    ``openshift-microshift-``.  The LLM sometimes includes the
+    test-variant prefix, sometimes not, which would cause identical
+    steps to land in different buckets during two-pass grouping.
 
-    Examples:
-        "openshift-microshift-infra-aws-ec2"
-            → "openshift-microshift-infra-aws-ec2"
-        "e2e-aws-tests-bootc-arm-nightly-el10-openshift-microshift-infra-aws-ec2"
-            → "openshift-microshift-infra-aws-ec2"
-        "clusterbot-nightly-openshift-microshift-infra-aws-ec2"
-            → "openshift-microshift-infra-aws-ec2"
+    The regex harmlessly falls through for products that don't match
+    the MicroShift pattern — the original step_name is returned as-is.
     """
     m = re.search(r"(openshift-microshift-\S+)", step_name)
     return m.group(1) if m else step_name
@@ -368,14 +362,15 @@ def main():
     if mode is None:
         print(
             "Usage:\n"
-            "  aggregate.py --release <version> [--workdir DIR]\n"
-            "  aggregate.py --prs [--workdir DIR]",
+            "  aggregate.py --release <version> --workdir DIR\n"
+            "  aggregate.py --prs --workdir DIR",
             file=sys.stderr,
         )
         sys.exit(1)
 
     if workdir is None:
-        workdir = f"/tmp/microshift-ci-claude-workdir.{datetime.now().strftime('%y%m%d')}"
+        print("Error: --workdir is required", file=sys.stderr)
+        sys.exit(1)
 
     if not os.path.isdir(workdir):
         print(f"Error: work directory does not exist: {workdir}", file=sys.stderr)

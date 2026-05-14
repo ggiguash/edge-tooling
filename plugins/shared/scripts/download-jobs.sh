@@ -164,9 +164,10 @@ main() {
 
     # Exclude failed downloads, then add artifacts_dir
     local output_json="${jobs_json}"
-    for bid in ${failed_ids}; do
+    while IFS= read -r bid; do
+        [[ -z "${bid}" ]] && continue
         output_json=$(echo "${output_json}" | jq --arg id "${bid}" '[.[] | select(.build_id != $id)]')
-    done
+    done <<< "${failed_ids}"
     echo "${output_json}" | jq --arg workdir "${WORKDIR}" '[.[] | . + {artifacts_dir: ($workdir + "/artifacts/" + .build_id)}]'
 }
 

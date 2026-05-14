@@ -2,11 +2,11 @@
 """
 Generate an HTML report from analyze-ci JSON files.
 
-Reads JSON summary files (from aggregate.py) and JSON bug mapping
-files (from microshift-ci:create-bugs) to produce a consolidated HTML report.
+Shared across components (MicroShift, LVMS, etc.) via symlinks in each
+plugin's scripts/ directory.
 
 Usage:
-    create-report.py [--workdir DIR] <release1,release2,...>
+    create-report.py --component <component> [--workdir DIR] <release1,release2,...>
 """
 
 import base64
@@ -36,6 +36,11 @@ STOP_WORDS = frozenset({
     "but", "from", "that", "this", "all", "has", "have", "had", "do",
     "does", "did", "will", "would", "could", "should", "may", "might",
 })
+
+COMPONENT_TITLES = {
+    "microshift": "MicroShift",
+    "lvm-operator": "LVMS",
+}
 
 CSS = """\
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; color: #333; }
@@ -977,7 +982,7 @@ def render_pr_section(pr_data, bug_candidates, pr_status, pr_error=None):
     return "\n".join(toc_lines) + "\n\n" + "\n".join(lines)
 
 
-def generate_html(releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error=None, bugs_tab_data=None):
+def generate_html(product_title, releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error=None, bugs_tab_data=None):
     date_str = timestamp.strftime("%Y-%m-%d")
     time_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1045,7 +1050,7 @@ def generate_html(releases_data, all_bug_candidates, pr_data, pr_status, timesta
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>MicroShift CI Doctor Report - {date_str}</title>
+    <title>{product_title} CI Doctor Report - {date_str}</title>
     <style>
 {CSS}
     </style>
@@ -1053,7 +1058,7 @@ def generate_html(releases_data, all_bug_candidates, pr_data, pr_status, timesta
 <body>
 <div id="loading" style="display:flex;align-items:center;justify-content:center;height:80vh;font-family:sans-serif;color:#6c757d;font-size:1.2em;">Loading report&hellip;</div>
 <div class="container" style="display:none">
-    <h1>MicroShift CI Doctor Report</h1>
+    <h1>{product_title} CI Doctor Report</h1>
     <p class="timestamp">Generated: {time_str} UTC</p>
 
     <div class="overview-grid">
@@ -1102,6 +1107,7 @@ def generate_html(releases_data, all_bug_candidates, pr_data, pr_status, timesta
 def main():
     workdir = None
     releases_arg = None
+    component = None
 
     args = sys.argv[1:]
     i = 0
@@ -1112,6 +1118,12 @@ def main():
                 sys.exit(1)
             workdir = args[i + 1]
             i += 2
+        elif args[i] == "--component":
+            if i + 1 >= len(args):
+                print("Error: --component requires an argument", file=sys.stderr)
+                sys.exit(1)
+            component = args[i + 1]
+            i += 2
         elif args[i].startswith("-"):
             print(f"Unknown option: {args[i]}", file=sys.stderr)
             sys.exit(1)
@@ -1120,8 +1132,18 @@ def main():
             i += 1
 
     if not releases_arg:
-        print("Usage: create-report.py [--workdir DIR] <release1,release2,...>", file=sys.stderr)
+        print("Usage: create-report.py --component <component> [--workdir DIR] <release1,release2,...>", file=sys.stderr)
         sys.exit(1)
+
+    if not component:
+        print("Error: --component is required", file=sys.stderr)
+        sys.exit(1)
+
+    if component not in COMPONENT_TITLES:
+        print(f"Error: unsupported component '{component}'. Supported: {', '.join(COMPONENT_TITLES)}", file=sys.stderr)
+        sys.exit(1)
+
+    component_title = COMPONENT_TITLES[component]
 
     releases = [v.strip() for v in releases_arg.split(",") if v.strip()]
     if not releases:
@@ -1129,7 +1151,7 @@ def main():
         sys.exit(1)
 
     if workdir is None:
-        workdir = f"/tmp/microshift-ci-claude-workdir.{datetime.now().strftime('%y%m%d')}"
+        workdir = f"/tmp/{component}-ci-claude-workdir.{datetime.now().strftime('%y%m%d')}"
 
     if not os.path.isdir(workdir):
         print(f"Error: work directory does not exist: {workdir}", file=sys.stderr)
@@ -1237,9 +1259,9 @@ def main():
 
     # Generate HTML
     timestamp = datetime.now(timezone.utc)
-    html_content = generate_html(releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error, bugs_tab_data)
+    html_content = generate_html(component_title, releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error, bugs_tab_data)
 
-    output_path = os.path.join(workdir, "microshift-ci-doctor-report.html")
+    output_path = os.path.join(workdir, f"{component}-ci-doctor-report.html")
     with open(output_path, "w") as f:
         f.write(html_content)
 

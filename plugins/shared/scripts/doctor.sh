@@ -1,12 +1,14 @@
 #!/usr/bin/bash
 set -euo pipefail
 
-# Deterministic orchestration for microshift-ci:doctor.
+# Deterministic orchestration for CI doctor workflows.
+# Shared across components (MicroShift, LVMS, etc.) via symlinks in each
+# plugin's scripts/ directory.
 #
 # Two phases called by the doctor skill with LLM steps in between:
 #
-#   doctor.sh prepare --workdir DIR <releases> [--rebase]
-#     - Collects failed jobs for each release and rebase PRs
+#   doctor.sh prepare --component <component> --workdir DIR <releases> [--rebase]
+#     - Collects failed jobs for each release
 #     - Downloads all artifacts in parallel
 #     - Writes per-release and PR jobs JSON files
 #
@@ -14,19 +16,13 @@ set -euo pipefail
 #     - Generates PCP performance graphs for all jobs with pmlogs
 #     - Outputs PNG files to ${WORKDIR}/graphs/<build_id>/
 #
-#   doctor.sh finalize --workdir DIR <releases>
+#   doctor.sh finalize --component <component> --workdir DIR <releases>
 #     - Runs aggregate.py for each release and PRs
 #     - Runs create-report.py to generate HTML (embeds graphs if present)
-#
-# Usage from doctor skill:
-#   1. doctor.sh prepare --workdir $WORKDIR 4.18,4.19,4.20,main --rebase
-#   2. doctor.sh graphs --workdir $WORKDIR
-#   3. (LLM launches prow-job agents for all jobs)
-#   4. (LLM launches create-bugs agents for Jira search)
-#   5. doctor.sh finalize --workdir $WORKDIR 4.18,4.19,4.20,main
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WORKDIR=""
+COMPONENT=""
 
 # ---------------------------------------------------------------------------
 # prepare
@@ -39,17 +35,20 @@ cmd_prepare() {
     while [[ ${#} -gt 0 ]]; do
         case "${1}" in
             --workdir) WORKDIR="${2}"; shift 2 ;;
+            --component) COMPONENT="${2}"; shift 2 ;;
             --rebase) do_rebase=true; shift ;;
             -*) echo "Unknown option: ${1}" >&2; return 1 ;;
             *) releases_arg="${1}"; shift ;;
         esac
     done
 
-    WORKDIR="${WORKDIR:-/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)}"
+    [[ -z "${COMPONENT}" ]] && { echo "Error: --component is required" >&2; return 1; }
+
+    WORKDIR="${WORKDIR:-/tmp/${COMPONENT}-ci-claude-workdir.$(date +%y%m%d)}"
 
     if [[ -z "${releases_arg}" ]]; then
         echo "Error: releases argument required" >&2
-        echo "Usage: $(basename "$0") prepare [--workdir DIR] <release1,release2,...> [--rebase]" >&2
+        echo "Usage: $(basename "$0") prepare --component <component> [--workdir DIR] <release1,release2,...> [--rebase]" >&2
         return 1
     fi
 
@@ -69,7 +68,7 @@ cmd_prepare() {
         echo "  Collecting failed periodic jobs..." >&2
         local raw_json raw_err
         raw_err=$(mktemp)
-        if ! raw_json=$(bash "${SCRIPT_DIR}/prow-jobs-for-release.sh" "${release}" 2>"${raw_err}"); then
+        if ! raw_json=$(bash "${SCRIPT_DIR}/prow-jobs-for-release.sh" --component "${COMPONENT}" "${release}" 2>"${raw_err}"); then
             echo "  ERROR: failed to collect jobs for release ${release}:" >&2
             local err_msg
             err_msg=$(cat "${raw_err}")
@@ -237,16 +236,19 @@ cmd_finalize() {
     while [[ ${#} -gt 0 ]]; do
         case "${1}" in
             --workdir) WORKDIR="${2}"; shift 2 ;;
+            --component) COMPONENT="${2}"; shift 2 ;;
             -*) echo "Unknown option: ${1}" >&2; return 1 ;;
             *) releases_arg="${1}"; shift ;;
         esac
     done
 
-    WORKDIR="${WORKDIR:-/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)}"
+    [[ -z "${COMPONENT}" ]] && { echo "Error: --component is required" >&2; return 1; }
+
+    WORKDIR="${WORKDIR:-/tmp/${COMPONENT}-ci-claude-workdir.$(date +%y%m%d)}"
 
     if [[ -z "${releases_arg}" ]]; then
         echo "Error: releases argument required" >&2
-        echo "Usage: $(basename "$0") finalize [--workdir DIR] <release1,release2,...>" >&2
+        echo "Usage: $(basename "$0") finalize --component <component> [--workdir DIR] <release1,release2,...>" >&2
         return 1
     fi
 
@@ -274,7 +276,7 @@ cmd_finalize() {
     # Generate HTML report
     echo "=== Generating HTML report ===" >&2
     python3 "${SCRIPT_DIR}/create-report.py" \
-        --workdir "${WORKDIR}" "${releases_arg}"
+        --component "${COMPONENT}" --workdir "${WORKDIR}" "${releases_arg}"
 }
 
 # ---------------------------------------------------------------------------
@@ -287,13 +289,16 @@ cmd_graphs() {
     while [[ ${#} -gt 0 ]]; do
         case "${1}" in
             --workdir) WORKDIR="${2}"; shift 2 ;;
+            --component) COMPONENT="${2}"; shift 2 ;;
             --timezone) timezone="${2}"; shift 2 ;;
             -*) echo "Unknown option: ${1}" >&2; return 1 ;;
             *) echo "Unknown argument: ${1}" >&2; return 1 ;;
         esac
     done
 
-    WORKDIR="${WORKDIR:-/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)}"
+    [[ -z "${COMPONENT}" ]] && { echo "Error: --component is required" >&2; return 1; }
+
+    WORKDIR="${WORKDIR:-/tmp/${COMPONENT}-ci-claude-workdir.$(date +%y%m%d)}"
 
     if [[ ! -d "${WORKDIR}/artifacts" ]]; then
         echo "No artifacts found in ${WORKDIR}, skipping graph generation." >&2
@@ -325,23 +330,26 @@ cmd_refresh() {
     while [[ ${#} -gt 0 ]]; do
         case "${1}" in
             --workdir) WORKDIR="${2}"; shift 2 ;;
+            --component) COMPONENT="${2}"; shift 2 ;;
             -*) echo "Unknown option: ${1}" >&2; return 1 ;;
             *) releases_arg="${1}"; shift ;;
         esac
     done
 
-    WORKDIR="${WORKDIR:-/tmp/microshift-ci-claude-workdir.$(date +%y%m%d)}"
+    [[ -z "${COMPONENT}" ]] && { echo "Error: --component is required" >&2; return 1; }
+
+    WORKDIR="${WORKDIR:-/tmp/${COMPONENT}-ci-claude-workdir.$(date +%y%m%d)}"
 
     if [[ -z "${releases_arg}" ]]; then
         echo "Error: releases argument required" >&2
-        echo "Usage: $(basename "$0") refresh [--workdir DIR] <release1,release2,...>" >&2
+        echo "Usage: $(basename "$0") refresh --component <component> [--workdir DIR] <release1,release2,...>" >&2
         return 1
     fi
 
     # Generate HTML report (reads existing summary + bug files)
     echo "=== Generating HTML report ===" >&2
     python3 "${SCRIPT_DIR}/create-report.py" \
-        --workdir "${WORKDIR}" "${releases_arg}"
+        --component "${COMPONENT}" --workdir "${WORKDIR}" "${releases_arg}"
 }
 
 # ---------------------------------------------------------------------------
@@ -349,16 +357,17 @@ cmd_refresh() {
 # ---------------------------------------------------------------------------
 
 usage() {
-    echo "Usage: $(basename "$0") <command> [--workdir DIR] [options]" >&2
+    echo "Usage: $(basename "$0") <command> --component <component> [--workdir DIR] [options]" >&2
     echo "" >&2
     echo "Commands:" >&2
-    echo "  prepare  [--workdir DIR] <releases> [--rebase]  Collect jobs and download artifacts" >&2
-    echo "  graphs   [--workdir DIR] [--timezone TZ]        Generate PCP performance graphs" >&2
-    echo "  finalize [--workdir DIR] <releases>             Aggregate results and generate HTML" >&2
-    echo "  refresh  [--workdir DIR] <releases>             Regenerate HTML from existing workdir data" >&2
+    echo "  prepare  --component C [--workdir DIR] <releases> [--rebase]  Collect jobs and download artifacts" >&2
+    echo "  graphs   --component C [--workdir DIR] [--timezone TZ]       Generate PCP performance graphs" >&2
+    echo "  finalize --component C [--workdir DIR] <releases>             Aggregate results and generate HTML" >&2
+    echo "  refresh  --component C [--workdir DIR] <releases>             Regenerate HTML from existing workdir data" >&2
     echo "" >&2
+    echo "  --component C: component name (e.g., microshift, lvms)" >&2
     echo "  <releases>: comma-separated release versions (e.g., 4.18,4.19,4.20,main)" >&2
-    echo "  --workdir DIR: work directory (default: /tmp/microshift-ci-claude-workdir.YYMMDD)" >&2
+    echo "  --workdir DIR: work directory (default: /tmp/<component>-ci-claude-workdir.YYMMDD)" >&2
     exit 1
 }
 
