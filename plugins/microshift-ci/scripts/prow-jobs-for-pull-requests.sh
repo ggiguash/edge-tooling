@@ -369,10 +369,13 @@ mode_close_duplicates() {
 
             echo "Closing PR #${dup_number} (${dup_title})..."
             if ${execute}; then
-                gh pr comment "${dup_number}" --repo "${GH_REPO}" --body "${comment}"
-                echo "PR #${dup_number}: Close comment posted"
+                if gh pr comment "${dup_number}" --repo "${GH_REPO}" --body "${comment}"; then
+                    echo "PR #${dup_number}: Close comment posted"
+                else
+                    echo "PR #${dup_number}: Failed to post close comment" >&2
+                fi
             else
-                echo "gh pr comment ${dup_number} --repo ${GH_REPO} --body '${comment}'"
+                echo "gh pr comment ${dup_number} --repo ${GH_REPO} --body 'Closing as duplicate: superseded by #${newest_number}. ...'"
             fi
         done
     done
