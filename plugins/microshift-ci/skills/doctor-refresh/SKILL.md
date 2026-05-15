@@ -80,7 +80,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 Run the refresh script:
 
 ```text
-bash plugins/microshift-ci/scripts/doctor.sh refresh --workdir <WORKDIR> <ARGUMENTS>
+bash plugins/microshift-ci/scripts/doctor.sh refresh --component microshift --workdir <WORKDIR> <ARGUMENTS>
 ```
 
 ### Step 4: Report Completion

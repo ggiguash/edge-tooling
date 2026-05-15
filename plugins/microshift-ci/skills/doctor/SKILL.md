@@ -42,7 +42,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 2. Run the prepare script:
 
    ```text
-   bash plugins/microshift-ci/scripts/doctor.sh prepare --workdir <WORKDIR> <ARGUMENTS> --rebase
+   bash plugins/microshift-ci/scripts/doctor.sh prepare --component microshift --workdir <WORKDIR> <ARGUMENTS> --rebase
    ```
 
 3. The script deterministically:
@@ -75,7 +75,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 1. Run the graphs script (this is deterministic, no LLM needed):
 
    ```text
-   bash plugins/microshift-ci/scripts/doctor.sh graphs --workdir <WORKDIR>
+   bash plugins/microshift-ci/scripts/doctor.sh graphs --component microshift --workdir <WORKDIR>
    ```
 
 2. The script finds PCP archives in downloaded artifacts and generates PNG graphs at `<WORKDIR>/graphs/<build_id>/`:
@@ -155,7 +155,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 1. Run the finalize script:
 
    ```text
-   bash plugins/microshift-ci/scripts/doctor.sh finalize --workdir <WORKDIR> <ARGUMENTS>
+   bash plugins/microshift-ci/scripts/doctor.sh finalize --component microshift --workdir <WORKDIR> <ARGUMENTS>
    ```
 
 2. The script deterministically:
