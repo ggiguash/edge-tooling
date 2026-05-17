@@ -20,20 +20,24 @@ Analyze MicroShift CI failures, produce HTML reports, and create JIRA bugs.
 | `/microshift-ci:create-bugs` | Search JIRA for duplicates and create bugs (dry-run by default) |
 | `/microshift-ci:doctor-refresh` | Re-run bug correlation and regenerate the HTML report |
 | `/microshift-ci:continue-session` | Download CI Doctor artifacts from a completed prow job |
+| `/microshift-ci:fix-test-bugs` | Attempt to fix CI bugs by opening PRs in openshift/microshift (dry-run by default) |
 
 ## Usage
 
 ### Full pipeline
+
 ```text
 /microshift-ci:doctor 4.19,4.20,4.21,4.22
 ```
 
 ### Single job analysis
+
 ```text
 /microshift-ci:prow-job https://prow.ci.openshift.org/view/gs/test-platform-results/logs/<job-name>/<job-id>
 ```
 
 ### Create bugs from analysis
+
 ```text
 /microshift-ci:create-bugs 4.22           # dry-run
 /microshift-ci:create-bugs 4.22 --create  # interactive creation
