@@ -117,6 +117,7 @@ main() {
 
     local dl_err
     dl_err=$(mktemp)
+    trap 'rm -f "${dl_err}"' EXIT
 
     # gsutil cp -r .../artifacts/ workdir/ → workdir/artifacts/...
     # so we download into a temp parent and move files up
@@ -125,12 +126,10 @@ main() {
     if ! gsutil -q -m cp -r "${gcs_artifacts}/" "${dl_tmp}/" 2>"${dl_err}"; then
         echo "Error: download failed" >&2
         [[ -s "${dl_err}" ]] && cat "${dl_err}" >&2
-        rm -f "${dl_err}"
         rm -rf "${dl_tmp}" "${workdir}"
         exit 1
     fi
     [[ -s "${dl_err}" ]] && cat "${dl_err}" >&2
-    rm -f "${dl_err}"
 
     # gsutil cp -r creates a subdirectory named "artifacts" inside dl_tmp;
     # move all files up to the workdir root (flat layout)
