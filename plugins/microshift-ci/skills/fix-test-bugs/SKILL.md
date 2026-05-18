@@ -30,7 +30,7 @@ Operates in **dry-run mode by default** — shows which bugs are eligible and wh
   - `--open` (mutually exclusive with `<keys>`): Query JIRA for all unresolved AI-generated bugs (`labels = microshift-ci-ai-generated AND resolution = Unresolved`) and use the resulting keys
   - `<keys>` (mutually exclusive with `--open`): One or more USHIFT bug keys (e.g., `USHIFT-1234` or `USHIFT-1234,USHIFT-5678`)
   - `--fix` (optional): Attempt fixes. Without this flag, only a dry-run report is produced.
-  - `--auto` (optional): In `--fix` mode, automatically attempt HIGH confidence fixes without prompting. MEDIUM confidence fixes still require a prompt. Invalid without `--fix`.
+  - `--auto` (optional): In `--fix` mode, automatically attempt all eligible fixes without prompting. Invalid without `--fix`.
 
 ## Work Directory
 
@@ -61,11 +61,6 @@ Evaluated in order per bug. Must pass all gates to be eligible.
 | 2. In-scope files | Scan bug description for file paths in `test/`, `scripts/`, `docs/`. Also resolve bare filenames to their directory (e.g., `el98@rpm-standard1.sh` -> `test/scenarios/`, `configure-pri.sh` -> `scripts/multinode/`). Skip if ALL referenced files are outside the allowed directories (e.g., only `cmd/`, `pkg/`, `vendor/`). | Fix target outside allowed dirs |
 | 3. Root cause is code-fixable | Skip if root cause indicates: product bug in MicroShift core (not test/script issue), transient environmental issue, or upstream dependency problem with no local workaround. Pass if root cause points to: test logic, timeout, configuration, assertion, variable resolution, checksum, script error handling, or documentation. | Not code-fixable |
 
-### Confidence Assignment
-
-- **HIGH**: description suggests a specific code change in a specific file within the allowed directories (e.g., "increase timeout", "fix variable assignment", "update checksum", "add retry logic")
-- **MEDIUM**: description identifies the problem area but fix is not spelled out
-
 ## Implementation Steps
 
 ### Step 1: Fetch Bug Details
@@ -87,7 +82,7 @@ Evaluated in order per bug. Must pass all gates to be eligible.
    - Changelog via `mcp__jira__jira_batch_get_changelogs(issue_ids_or_keys=<key>)`
 5. Save each changelog to `<WORKDIR>/changelog-<key>.json` and run `bash plugins/microshift-ci/scripts/check-jira-pr-links.sh <WORKDIR>/changelog-<key>.json <key>` to check for JIRA-linked PRs
 6. Apply Gates 1-3 to each bug
-7. Record status: `eligible` (HIGH/MEDIUM) or `skipped` (with gate and reason)
+7. Record status: `eligible` or `skipped` (with gate and reason)
 
 ### Step 2: Present Dry-Run Report
 
@@ -95,7 +90,6 @@ For each bug, show:
 
 ```text
 N. [WOULD FIX / SKIPPED] <USHIFT-XXXX>: <summary>
-   Confidence: HIGH/MEDIUM
    Files: <identified test/ files>
    Fix approach: <from bug description>
    Reason: <skip reason if skipped>
@@ -105,7 +99,7 @@ Summary counters:
 
 ```text
 SUMMARY
-  Total: N | Eligible: N (HIGH: X, MEDIUM: Y) | Skipped: N
+  Total: N | Eligible: N | Skipped: N
   Skip breakdown: PR exists=N, outside allowed dirs=N, not code-fixable=N
 ```
 
@@ -113,7 +107,7 @@ If no `--fix` flag, stop here.
 
 ### Step 3: Attempt Fix (per eligible bug)
 
-Process eligible bugs **sequentially** (one at a time — the single working tree is reused). For each bug (prompted in interactive mode, auto for HIGH in `--auto` mode):
+Process eligible bugs **sequentially** (one at a time — the single working tree is reused). For each bug (prompted in interactive mode, automatic in `--auto` mode):
 
 1. **Clone repo** (once, before first fix):
 
