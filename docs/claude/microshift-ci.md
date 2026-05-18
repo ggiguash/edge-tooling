@@ -10,20 +10,26 @@
 ## What Runs in CI
 
 A periodic Prow job (`periodic-ci-openshift-eng-edge-tooling-main-microshift-ci-doctor`)
-runs daily and performs three phases automatically:
+runs daily and performs these phases automatically:
 
-1. **Analysis** - `/microshift-ci:doctor 4.18,4.19,4.20,4.21,4.22,5.0,main`
-   (50 min budget, 100 turns)
-2. **Bug creation dry-run** - `/microshift-ci:create-bugs <releases>`
-   (10 min budget, 50 turns)
-3. **Close duplicate rebase PRs** - closes older rebase PRs superseded by newer ones
-4. **Rebase PR restart** - restarts failed rebase bot PR tests
+1. **Analysis** — `/microshift-ci:doctor <releases>` (45 min, 100 turns)
+2. **Bug creation** — `/microshift-ci:create-bugs <releases> --create --auto`
+   (10 min, 50 turns)
+3. **Fix test bugs dry-run** — `/microshift-ci:fix-test-bugs --open`
+   (5 min, 20 turns) — reports which bugs are eligible for auto-fix
+4. **Report refresh** — `/microshift-ci:doctor-refresh <releases>`
+   (5 min, 30 turns) — re-generates the HTML report with new bug links
+5. **Close duplicate rebase PRs** — closes older rebase PRs superseded by newer ones
+6. **Rebase PR restart** — restarts failed rebase bot PR tests
 
 The job produces an HTML report, per-job analysis files, bug mapping JSON,
 and a session archive for local continuation. All artifacts are available
 in the Prow job's artifact directory.
 
 ## Daily Workflow
+
+The commands below use `<releases>` as a placeholder for the comma-separated
+release list. The current CI default is `4.18,4.19,4.20,4.21,4.22,5.0,main`.
 
 Start from the CI job results - don't re-run doctor locally.
 
@@ -56,7 +62,7 @@ commands work on the downloaded data.
 ### 3. Review bug candidates
 
 ```text
-/microshift-ci:create-bugs 4.20,4.21,4.22,5.0,main --auto
+/microshift-ci:create-bugs <releases> --auto
 ```
 
 Dry-run: shows what bugs would be created or skipped, with decisions
@@ -65,13 +71,44 @@ Dry-run: shows what bugs would be created or skipped, with decisions
 ### 4. Create bugs
 
 ```text
-/microshift-ci:create-bugs 4.20,4.21,4.22,5.0,main --auto --create
+/microshift-ci:create-bugs <releases> --auto --create
 ```
 
 Executes: creates JIRA bugs in USHIFT, skips duplicates and infrastructure failures.
 Drop `--auto` for interactive per-candidate prompts.
 
-### 5. Investigate specific failures
+### 5. Fix eligible bugs
+
+```text
+/microshift-ci:fix-test-bugs --open
+```
+
+Queries JIRA for all unresolved AI-generated bugs (`labels = microshift-ci-ai-generated`),
+evaluates each against eligibility check gates, and reports which bugs can be
+auto-fixed in `test/`, `scripts/`, or `docs/`.
+
+Gates:
+
+1. **No existing PR** — checks JIRA links and GitHub for OPEN/MERGED PRs
+2. **In-scope files** — fix target must be in `test/`, `scripts/`, or `docs/`
+3. **Code-fixable** — root cause is a test/script issue, not a product bug
+
+To attempt fixes (opens draft PRs in openshift/microshift):
+
+```text
+/microshift-ci:fix-test-bugs --open --fix --auto
+```
+
+`--auto` auto-fixes HIGH confidence bugs; MEDIUM confidence bugs prompt for
+confirmation. Each fix gets its own branch and draft PR for independent review.
+
+Can also target specific bugs:
+
+```text
+/microshift-ci:fix-test-bugs USHIFT-1234,USHIFT-5678 --fix
+```
+
+### 6. Investigate specific failures
 
 ```text
 /microshift-ci:prow-job <prow-url>
@@ -83,10 +120,10 @@ Drop `--auto` for interactive per-candidate prompts.
 - `test-job` - comprehensive job metadata and all scenario results
 - `test-scenario` - deep dive into one scenario's test results
 
-### 6. Refresh report after changes
+### 7. Refresh report after changes
 
 ```text
-/microshift-ci:doctor-refresh 4.20,4.21,4.22,5.0,main
+/microshift-ci:doctor-refresh <releases>
 ```
 
 Re-runs JIRA correlation and regenerates the HTML report from existing
