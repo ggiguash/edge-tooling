@@ -99,8 +99,8 @@ To attempt fixes (opens draft PRs in openshift/microshift):
 /microshift-ci:fix-test-bugs --open --fix --auto
 ```
 
-`--auto` auto-fixes HIGH confidence bugs; MEDIUM confidence bugs prompt for
-confirmation. Each fix gets its own branch and draft PR for independent review.
+`--auto` attempts all eligible fixes without prompting.
+Each fix gets its own branch and draft PR for independent review.
 
 Can also target specific bugs:
 
