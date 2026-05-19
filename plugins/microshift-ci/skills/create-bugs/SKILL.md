@@ -409,8 +409,7 @@ For each candidate where user chose "create":
        description="<constructed description>",
        components="MicroShift",
        additional_fields={
-           "labels": ["microshift-ci-ai-generated"],
-           "security": {"name": "Red Hat Employee"}
+           "labels": ["microshift-ci-ai-generated"]
        }
    )
    ```
@@ -592,7 +591,6 @@ Run the analysis first:
 - In `--auto` mode, infrastructure failures (`failure_type: "infrastructure"`) are automatically skipped — these are transient CI/cloud issues, not product bugs. Classification uses the same step-name-based logic as the HTML report (`classify_breakdown` in `classify.py`). In interactive mode (no `--auto`), all failures are shown and the user decides
 - Bugs are created in USHIFT with component "MicroShift"; duplicate search covers both USHIFT and OCPBUGS
 - All created bugs are labeled with `microshift-ci-ai-generated` for tracking
-- Security level is set to "Red Hat Employee" on all created issues
 - The STRUCTURED SUMMARY block in job files is required — this is a contract with `/microshift-ci:prow-job`
 - Machine-readable bug mapping files (`analyze-ci-bugs-<source>.json`) are written per source in Step 2 (both dry-run and create modes). They serve two purposes: (1) consumed by `create-report.py` to show JIRA bug links in the HTML report, and (2) consumed by `--merge` in Step 2a for Jira-based deduplication across releases
 
