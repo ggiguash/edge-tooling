@@ -4,12 +4,14 @@ Add a task to today's TODO file.
 
 ## Arguments
 
-`$ARGUMENTS` — the task description to add.
+`$ARGUMENTS` — the task description to add. If empty, infer from current context.
 
 ## Steps
 
 1. Run `date +%Y-%m-%d` to get today's date, then read `$HOME/.daily/YYYY/MM/YYYY-MM-DD.md`. If the file doesn't exist, stop and tell the user.
-2. Parse the argument as a task description. If it contains a URL, include it inline. If a Jira ticket key is present (e.g., `OCPEDGE-123`), preserve it as a prefix.
+2. Determine the task description:
+   - **If `$ARGUMENTS` is provided:** use it directly. Preserve any URLs or Jira ticket keys inline.
+   - **If empty:** infer from the current git branch and recent commits. Confirm with the user before adding.
 3. Check for duplicates — if an equivalent item already exists, tell the user and stop.
 4. Append `- [ ] <description>` to the **Backlog** section.
 5. Show the user what was added, then write the file.
