@@ -8,7 +8,7 @@ the create-bugs skill to search Jira against.
 
 Usage:
     search-bugs.py <source> --workdir DIR
-    search-bugs.py --merge <bugs-file1.json> <bugs-file2.json> ... --workdir DIR
+    search-bugs.py --merge <bugs-file1.json> <bugs-file2.json> ... --output FILE --workdir DIR
     search-bugs.py --report <results.json> --candidates <merged.json> --workdir DIR
 
     <source> is one of:
@@ -26,7 +26,7 @@ Usage:
 
 Output:
     ${WORKDIR}/analyze-ci-bug-candidates-<source>.json       (default mode)
-    ${WORKDIR}/analyze-ci-bug-candidates-merged.json          (--merge mode)
+    <output>                                                   (--merge mode, via --output)
     ${WORKDIR}/analyze-ci-create-bugs-{<source>|merged}.txt  (--report mode)
 """
 
@@ -919,6 +919,7 @@ def main():
     merge_files = []
     report_file = None
     candidates_file = None
+    output_file = None
 
     args = sys.argv[1:]
     i = 0
@@ -944,6 +945,12 @@ def main():
                 sys.exit(1)
             workdir = args[i + 1]
             i += 2
+        elif args[i] == "--output":
+            if i + 1 >= len(args):
+                print("Error: --output requires an argument", file=sys.stderr)
+                sys.exit(1)
+            output_file = args[i + 1]
+            i += 2
         elif args[i].startswith("-"):
             print(f"Unknown option: {args[i]}", file=sys.stderr)
             sys.exit(1)
@@ -964,12 +971,12 @@ def main():
         return main_report(report_file, candidates_file, workdir)
 
     if merge_mode:
-        return main_merge(merge_files, workdir)
+        return main_merge(merge_files, output_file, workdir)
 
     if not source:
         print(
             "Usage: search-bugs.py <source> --workdir DIR\n"
-            "       search-bugs.py --merge <bugs-file1.json> ... --workdir DIR\n"
+            "       search-bugs.py --merge <bugs-file1.json> ... --output FILE --workdir DIR\n"
             "       search-bugs.py --report <results.json> --candidates <merged.json> --workdir DIR\n"
             "  <source>: release version (4.22), PR (pr-6396), or rebase (rebase-release-4.22)",
             file=sys.stderr,
@@ -1033,11 +1040,11 @@ def main():
     print(json.dumps(result, indent=2))
 
 
-def main_merge(merge_files, workdir):
+def main_merge(merge_files, output_file, workdir):
     """Entry point for --merge mode."""
     if not merge_files:
         print(
-            "Usage: search-bugs.py --merge <candidates1.json> <candidates2.json> ... --workdir DIR",
+            "Usage: search-bugs.py --merge <candidates1.json> <candidates2.json> ... --output FILE --workdir DIR",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -1051,6 +1058,10 @@ def main_merge(merge_files, workdir):
         print("Error: --workdir DIR is required", file=sys.stderr)
         sys.exit(1)
 
+    if not output_file:
+        print("Error: --output FILE is required for --merge", file=sys.stderr)
+        sys.exit(1)
+
     os.makedirs(workdir, exist_ok=True)
 
     print(f"Merging {len(merge_files)} candidate files", file=sys.stderr)
@@ -1062,11 +1073,10 @@ def main_merge(merge_files, workdir):
     print(f"Merged {n_total} candidates into {n_merged} unique failures "
           f"({n_cross} cross-release duplicates)", file=sys.stderr)
 
-    output_path = os.path.join(workdir, "analyze-ci-bug-candidates-merged.json")
-    with open(output_path, "w") as f:
+    with open(output_file, "w") as f:
         json.dump(result, f, indent=2)
 
-    print(f"Written: {output_path}", file=sys.stderr)
+    print(f"Written: {output_file}", file=sys.stderr)
     print(json.dumps(result, indent=2))
 
 

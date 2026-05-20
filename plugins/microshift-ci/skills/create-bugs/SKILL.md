@@ -80,9 +80,10 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 
 1. Parse `<ARGUMENTS>` to extract source(s) and detect `--create` and `--auto` flags
 2. Split sources on commas to get `SOURCES` list (e.g., `["4.22"]` or `["4.20", "4.21", "4.22", "5.0", "main"]`)
-3. Determine mode: if `--create` is present, set `MODE=create`; otherwise `MODE=dry-run`
-4. Determine today's WORKDIR path by running `date +%y%m%d` and substituting into `/tmp/microshift-ci-claude-workdir.YYMMDD`. Run `mkdir -p` on it.
-5. For **each source** in `SOURCES`, run the preparation script:
+3. Compute `SOURCE_TAG` — a short identifier used in per-run output filenames (merged candidates, results, report). Use the **first source** in the list (e.g., `4.22`, `main`, `rebase-release-4.22`). Do NOT concatenate all sources.
+4. Determine mode: if `--create` is present, set `MODE=create`; otherwise `MODE=dry-run`
+5. Determine today's WORKDIR path by running `date +%y%m%d` and substituting into `/tmp/microshift-ci-claude-workdir.YYMMDD`. Run `mkdir -p` on it.
+6. For **each source** in `SOURCES`, run the preparation script:
 
    ```text
    python3 plugins/microshift-ci/scripts/search-bugs.py <source> --workdir <WORKDIR>
@@ -225,10 +226,10 @@ Run the merge script (even for a single source — it produces a unified output 
 Before invoking, also check for any `analyze-ci-bug-candidates-rebase-*.json` files in `<WORKDIR>`. If found, include them in the merge so rebase PR failures are deduplicated against release failures.
 
 ```text
-python3 plugins/microshift-ci/scripts/search-bugs.py --merge <WORKDIR>/analyze-ci-bug-candidates-<source1>.json [<source2>.json ...] [<WORKDIR>/analyze-ci-bug-candidates-rebase-*.json] --workdir <WORKDIR>
+python3 plugins/microshift-ci/scripts/search-bugs.py --merge <WORKDIR>/analyze-ci-bug-candidates-<source1>.json [<source2>.json ...] [<WORKDIR>/analyze-ci-bug-candidates-rebase-*.json] --output <WORKDIR>/analyze-ci-bug-candidates-merged-<SOURCE_TAG>.json --workdir <WORKDIR>
 ```
 
-This writes `<WORKDIR>/analyze-ci-bug-candidates-merged.json`. Read and use this file for all subsequent steps.
+This writes `<WORKDIR>/analyze-ci-bug-candidates-merged-<SOURCE_TAG>.json`. Read and use this file for all subsequent steps.
 
 ### Step 3: Present Bug Candidates to User
 
@@ -302,7 +303,7 @@ When `--auto` is active, apply these rules in order for each candidate:
 
 #### Results JSON
 
-As you process each candidate (applying auto-decision policy or prompting user), build a results array. After all candidates are processed (and Step 4/4a completes for create mode), write the results to `<WORKDIR>/analyze-ci-bug-results.json`:
+As you process each candidate (applying auto-decision policy or prompting user), build a results array. After all candidates are processed (and Step 4/4a completes for create mode), write the results to `<WORKDIR>/analyze-ci-bug-results-<SOURCE_TAG>.json`:
 
 ```json
 {
@@ -486,13 +487,13 @@ For each candidate where user chose "reopen":
 
 **Actions**:
 
-1. Ensure `<WORKDIR>/analyze-ci-bug-results.json` was written in Step 3
+1. Ensure `<WORKDIR>/analyze-ci-bug-results-<SOURCE_TAG>.json` was written in Step 3
 2. Generate the report:
 
    ```text
    python3 plugins/microshift-ci/scripts/search-bugs.py \
-     --report <WORKDIR>/analyze-ci-bug-results.json \
-     --candidates <WORKDIR>/analyze-ci-bug-candidates-merged.json \
+     --report <WORKDIR>/analyze-ci-bug-results-<SOURCE_TAG>.json \
+     --candidates <WORKDIR>/analyze-ci-bug-candidates-merged-<SOURCE_TAG>.json \
      --workdir <WORKDIR>
    ```
 
