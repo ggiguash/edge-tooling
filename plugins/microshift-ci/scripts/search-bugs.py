@@ -728,12 +728,14 @@ def _compute_summary_counters(results):
     return counters
 
 
-def format_dry_run_report(candidates_data, results_data):
-    """Produce deterministic dry-run report."""
+def format_report(candidates_data, results_data):
+    """Produce deterministic report for both dry-run and create modes."""
     candidates = candidates_data["candidates"]
     results = results_data["results"]
     sources = candidates_data["sources"]
     date = results_data["date"]
+    mode = results_data["mode"]
+    is_dry_run = mode == "dry-run"
 
     result_lookup = {r["error_signature"]: r for r in results}
     counters = _compute_summary_counters(results)
@@ -741,25 +743,39 @@ def format_dry_run_report(candidates_data, results_data):
     n_total = candidates_data["total_candidates"]
     n_sources = len(sources)
 
+    title = "DRY-RUN REPORT" if is_dry_run else "CREATION REPORT"
+    section = "CANDIDATES" if is_dry_run else "RESULTS"
+
     lines = [
         SEPARATOR,
-        "ANALYZE-CI CREATE BUGS - DRY-RUN REPORT",
+        f"ANALYZE-CI CREATE BUGS - {title}",
         f"Sources: {', '.join(sources)}",
         f"Date: {date}",
         SEPARATOR,
         "",
-        f"CANDIDATES ({n_unique} unique failures from {n_total} total across {n_sources} {'source' if n_sources == 1 else 'sources'})",
+        f"{section} ({n_unique} unique failures from {n_total} total across {n_sources} {'source' if n_sources == 1 else 'sources'})",
     ]
 
     for i, cand in enumerate(candidates, 1):
         r = result_lookup[cand["error_signature"]]
         action = r["action"]
+        jira_key = r.get("jira_key", "")
 
-        tag_map = {"skip": "WOULD SKIP", "create": "WOULD CREATE"}
-        tag = tag_map.get(action, f"WOULD {action.upper()}")
+        if is_dry_run:
+            tag_map = {"skip": "WOULD SKIP", "create": "WOULD CREATE"}
+            tag = f"[{tag_map.get(action, f'WOULD {action.upper()}')}]"
+        else:
+            action_labels = {
+                "create": f"{jira_key} (CREATED)",
+                "skip": "SKIPPED",
+                "link": f"{jira_key} (LINKED)",
+                "reopen": f"{jira_key} (REOPENED)",
+                "failed": "FAILED",
+            }
+            tag = action_labels.get(action, action.upper())
 
         lines.append("")
-        lines.append(f"  {i}. [{tag}]")
+        lines.append(f"  {i}. {tag}")
         lines.append(f"     MicroShift CI: {cand['error_signature']}")
         lines.append(f"     Severity: {cand['severity']} | Total Jobs: {cand['affected_jobs']} | Step: {cand['step_name']}")
         lines.append(f"     Releases: {_format_releases(cand.get('releases', []))}")
@@ -775,100 +791,37 @@ def format_dry_run_report(candidates_data, results_data):
         if jobs_block:
             lines.append(jobs_block)
 
+        if not is_dry_run and jira_key and action in ("create", "link", "reopen"):
+            lines.append(f"     URL: {JIRA_URL_BASE}/{jira_key}")
+
         lines.append(f"     Decision: {r['reason']}")
 
-    sources_str = ",".join(sources)
     lines.extend([
         "",
         "SUMMARY",
         f"  Sources processed: {n_sources}",
         f"  Unique failures: {n_unique} (from {n_total} total candidates)",
-        f"  Would create: {counters['create']}",
-        f"  Would skip (Jira duplicate): {counters['skip_duplicate']}",
-        f"  Would skip (infrastructure): {counters['skip_infrastructure']}",
-        f"  Would skip (stale regression): {counters['skip_stale_regression']}",
-        "",
-        "To create these bugs, run:",
-        f"  /microshift-ci:create-bugs {sources_str} --create",
-        f"  /microshift-ci:create-bugs {sources_str} --auto --create",
     ])
-
-    return "\n".join(lines)
-
-
-def format_create_report(candidates_data, results_data):
-    """Produce deterministic create-mode report."""
-    candidates = candidates_data["candidates"]
-    results = results_data["results"]
-    sources = candidates_data["sources"]
-    date = results_data["date"]
-
-    result_lookup = {r["error_signature"]: r for r in results}
-    counters = _compute_summary_counters(results)
-    n_unique = len(candidates)
-    n_total = candidates_data["total_candidates"]
-    n_sources = len(sources)
-
-    lines = [
-        SEPARATOR,
-        "ANALYZE-CI CREATE BUGS - CREATION REPORT",
-        f"Sources: {', '.join(sources)}",
-        f"Date: {date}",
-        SEPARATOR,
-        "",
-        f"RESULTS ({n_unique} unique failures from {n_total} total across {n_sources} {'source' if n_sources == 1 else 'sources'})",
-    ]
-
-    for i, cand in enumerate(candidates, 1):
-        r = result_lookup[cand["error_signature"]]
-        action = r["action"]
-        jira_key = r["jira_key"]
-
-        lines.append("")
-
-        if action == "create":
-            lines.append(f"  {i}. {jira_key} (CREATED)")
-            lines.append(f"     MicroShift CI: {cand['error_signature']}")
-            lines.append(f"     Releases: {_format_releases(cand.get('releases', []))}")
-            grouped = _format_grouped_with(cand.get("merged_signatures", []))
-            if grouped:
-                lines.append(grouped)
-            lines.append(f"     URL: {JIRA_URL_BASE}/{jira_key}")
-            if "regression" in r["reason"].lower():
-                lines.append(f"     Reason: {r['reason']}")
-        elif action == "skip":
-            lines.append(f"  {i}. SKIPPED")
-            lines.append(f"     MicroShift CI: {cand['error_signature']}")
-            lines.append(f"     Releases: {_format_releases(cand.get('releases', []))}")
-            lines.append(f"     Reason: {r['reason']}")
-        elif action == "link":
-            lines.append(f"  {i}. {jira_key} (LINKED)")
-            lines.append(f"     MicroShift CI: {cand['error_signature']}")
-            lines.append(f"     Releases: {_format_releases(cand.get('releases', []))}")
-            lines.append(f"     URL: {JIRA_URL_BASE}/{jira_key}")
-        elif action == "reopen":
-            lines.append(f"  {i}. {jira_key} (REOPENED)")
-            lines.append(f"     MicroShift CI: {cand['error_signature']}")
-            lines.append(f"     Releases: {_format_releases(cand.get('releases', []))}")
-            lines.append(f"     URL: {JIRA_URL_BASE}/{jira_key}")
-            lines.append(f"     Reason: {r['reason']}")
-        elif action == "failed":
-            lines.append(f"  {i}. FAILED")
-            lines.append(f"     MicroShift CI: {cand['error_signature']}")
-            lines.append(f"     Releases: {_format_releases(cand.get('releases', []))}")
-            lines.append(f"     Reason: {r['reason']}")
-
-    lines.extend([
-        "",
-        "SUMMARY",
-        f"  Sources processed: {n_sources}",
-        f"  Unique failures: {n_unique} (from {n_total} total candidates)",
-        f"  Created: {counters['create']}",
-        f"  Skipped: {counters['skip_duplicate'] + counters['skip_infrastructure'] + counters['skip_stale_regression']}",
-        f"  Linked to existing: {counters['link']}",
-        f"  Reopened: {counters['reopen']}",
-        f"  Failed: {counters['failed']}",
-    ])
+    if is_dry_run:
+        sources_str = ",".join(sources)
+        lines.extend([
+            f"  Would create: {counters['create']}",
+            f"  Would skip (Jira duplicate): {counters['skip_duplicate']}",
+            f"  Would skip (infrastructure): {counters['skip_infrastructure']}",
+            f"  Would skip (stale regression): {counters['skip_stale_regression']}",
+            "",
+            "To create these bugs, run:",
+            f"  /microshift-ci:create-bugs {sources_str} --create",
+            f"  /microshift-ci:create-bugs {sources_str} --auto --create",
+        ])
+    else:
+        lines.extend([
+            f"  Created: {counters['create']}",
+            f"  Skipped: {counters['skip_duplicate'] + counters['skip_infrastructure'] + counters['skip_stale_regression']}",
+            f"  Linked to existing: {counters['link']}",
+            f"  Reopened: {counters['reopen']}",
+            f"  Failed: {counters['failed']}",
+        ])
 
     return "\n".join(lines)
 
@@ -886,11 +839,7 @@ def main_report(report_file, candidates_file, workdir):
 
     _validate_results(results_data, candidates_data)
 
-    mode = results_data["mode"]
-    if mode == "dry-run":
-        report = format_dry_run_report(candidates_data, results_data)
-    else:
-        report = format_create_report(candidates_data, results_data)
+    report = format_report(candidates_data, results_data)
 
     sources = candidates_data["sources"]
     if len(sources) == 1:
