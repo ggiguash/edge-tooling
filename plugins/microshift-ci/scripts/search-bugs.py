@@ -846,7 +846,7 @@ def main_report(report_file, candidates_file, workdir):
     if len(release_sources) > 1:
         tag = "merged"
     else:
-        tag = sources[0]
+        tag = release_sources[0] if release_sources else sources[0]
     filename = f"analyze-ci-create-bugs-{tag}.txt"
 
     output_path = os.path.join(workdir, filename)
