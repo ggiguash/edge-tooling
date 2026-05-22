@@ -127,7 +127,11 @@ CSS = """\
         .copy-toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 8px 16px; border-radius: 6px; font-size: 0.85em; z-index: 1000; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
         .copy-toast.show { opacity: 1; }
         .bugs-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
-        .bugs-table th { text-align: left; padding: 8px 6px; border-bottom: 2px solid #dee2e6; font-size: 0.85em; color: #6c757d; text-transform: uppercase; }
+        .bugs-table th { text-align: left; padding: 8px 6px; border-bottom: 2px solid #dee2e6; font-size: 0.85em; color: #6c757d; text-transform: uppercase; cursor: pointer; user-select: none; white-space: nowrap; }
+        .bugs-table th:hover { color: #333; }
+        .bugs-table th:after { content: ' \\25B2\\25BC'; font-size: 0.7em; opacity: 0.35; letter-spacing: -2px; }
+        .bugs-table th.sort-asc:after { content: ' \\25B2'; font-size: 0.8em; opacity: 1; color: #0d6efd; letter-spacing: normal; }
+        .bugs-table th.sort-desc:after { content: ' \\25BC'; font-size: 0.8em; opacity: 1; color: #0d6efd; letter-spacing: normal; }
         .bugs-table td { padding: 6px; border-bottom: 1px solid #eee; font-size: 0.9em; vertical-align: middle; }
         .bugs-table tr:hover { background: #f8f9fa; }
         .link-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; font-weight: 700; text-transform: uppercase; }
@@ -226,7 +230,28 @@ document.querySelector('.container').style.display='';
     }
     openAnchor();
     window.addEventListener('hashchange', openAnchor);
-})();"""
+})();
+document.querySelectorAll('.bugs-table').forEach(function(table) {
+    var headers = table.querySelectorAll('th');
+    function sortBy(colIdx, asc) {
+        headers.forEach(function(h) { h.classList.remove('sort-asc', 'sort-desc'); });
+        headers[colIdx].classList.add(asc ? 'sort-asc' : 'sort-desc');
+        var tbody = table.querySelector('tbody');
+        var rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort(function(a, b) {
+            var av = a.cells[colIdx].textContent.trim().toLowerCase();
+            var bv = b.cells[colIdx].textContent.trim().toLowerCase();
+            return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+        });
+        rows.forEach(function(r) { tbody.appendChild(r); });
+    }
+    headers.forEach(function(th, colIdx) {
+        th.addEventListener('click', function() {
+            sortBy(colIdx, !th.classList.contains('sort-asc'));
+        });
+    });
+    if (headers.length) sortBy(headers.length - 1, false);
+});"""
 
 
 # ---------------------------------------------------------------------------
