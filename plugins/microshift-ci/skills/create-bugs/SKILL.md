@@ -483,6 +483,42 @@ For each candidate where user chose "reopen":
 - If the transition fails, report error and ask user if they want to retry, create a new bug instead, or skip
 - Do NOT retry automatically
 
+### Step 4b: Update Bug Mapping Files (create mode only)
+
+**Precondition**: At least one candidate had action `create` or `reopen` in Step 4/4a.
+
+After all bugs are created/reopened, update the per-source bug mapping files (`<WORKDIR>/analyze-ci-bugs-<source>.json`) so that newly created bugs are reflected in the JIRA data consumed by the HTML report generator.
+
+**Actions**:
+
+1. **Collect new bugs**: Gather all candidates where action was `create` or `reopen`. For each, record the `jira_key`, `error_signature`, and the summary used in creation.
+
+2. **Update each mapping file**: For every `<WORKDIR>/analyze-ci-bugs-<source>.json` file (all sources, not just the current one):
+
+   a. **Add to `open_bugs`**: Append each new bug to the `open_bugs` array (skip if the key already exists):
+
+      ```json
+      {
+        "key": "USHIFT-XXXX",
+        "summary": "MicroShift CI: <error_signature>",
+        "status": "To Do",
+        "priority": "Undefined",
+        "assignee": "Unassigned",
+        "created": "<today YYYY-MM-DD>",
+        "updated": "<today YYYY-MM-DD>"
+      }
+      ```
+
+   b. **Add to `duplicates`**: Find the candidate entry in the file's `candidates` array whose `error_signature` matches. If found, append the new bug to its `duplicates` array (skip if the key already exists):
+
+      ```json
+      {"key": "USHIFT-XXXX", "summary": "MicroShift CI: <error_signature>", "status": "To Do", "updated": "<today YYYY-MM-DD>"}
+      ```
+
+   c. **Write the updated file** back to disk.
+
+3. **Skip if no bugs were created**: If all candidates were skipped or failed, do not modify mapping files.
+
 ### Step 5: Generate Results Report (Deterministic Script)
 
 **Actions**:

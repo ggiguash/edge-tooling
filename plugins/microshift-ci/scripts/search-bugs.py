@@ -842,10 +842,14 @@ def main_report(report_file, candidates_file, workdir):
     report = format_report(candidates_data, results_data)
 
     sources = candidates_data["sources"]
-    if len(sources) == 1:
-        filename = f"analyze-ci-create-bugs-{sources[0]}.txt"
+    release_sources = [s for s in sources if not s.startswith("rebase-")]
+    if len(release_sources) > 1:
+        tag = "merged"
+    elif len(release_sources) == 1:
+        tag = release_sources[0]
     else:
-        filename = "analyze-ci-create-bugs-merged.txt"
+        tag = "merged" if len(sources) > 1 else sources[0]
+    filename = f"analyze-ci-create-bugs-{tag}.txt"
 
     output_path = os.path.join(workdir, filename)
     report_with_footer = report + f"\n\nReport saved: {output_path}\n{SEPARATOR}\n"
