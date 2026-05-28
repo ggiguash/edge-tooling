@@ -512,7 +512,7 @@ After all bugs are created/reopened, update the per-source bug mapping files (`<
    b. **Add to `duplicates`**: Find the candidate entry in the file's `candidates` array whose `error_signature` matches. If found, append the new bug to its `duplicates` array (skip if the key already exists):
 
       ```json
-      {"key": "USHIFT-XXXX", "summary": "MicroShift CI: <error_signature>", "status": "To Do", "updated": "<today YYYY-MM-DD>"}
+      {"key": "USHIFT-XXXX", "summary": "MicroShift CI: <error_signature>", "status": "To Do", "assignee": "Unassigned", "updated": "<today YYYY-MM-DD>"}
       ```
 
    c. **Write the updated file** back to disk.

@@ -455,7 +455,7 @@ def _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_b
                     "affected_jobs": issue.get("job_count", 0),
                 })
                 if key not in linked_details:
-                    linked_details[key] = {"summary": entry.get("summary", ""), "status": entry.get("status", ""), "updated": entry.get("updated", "")}
+                    linked_details[key] = {"summary": entry.get("summary", ""), "status": entry.get("status", ""), "assignee": entry.get("assignee", ""), "updated": entry.get("updated", "")}
 
     for version, rdata in (releases_data or {}).items():
         if rdata and rdata.get("issues"):
