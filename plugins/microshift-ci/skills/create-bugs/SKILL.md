@@ -194,10 +194,10 @@ If more than 50 results, paginate with `start_at` until all issues are fetched. 
       "step_name": "<step_name>",
       "affected_jobs": <count for this source>,
       "duplicates": [
-        {"key": "<JIRA-KEY>", "summary": "<summary>", "status": "<status>", "updated": "<YYYY-MM-DD>"}
+        {"key": "<JIRA-KEY>", "summary": "<summary>", "status": "<status>", "assignee": "<display_name>", "updated": "<YYYY-MM-DD>"}
       ],
       "regressions": [
-        {"key": "<JIRA-KEY>", "summary": "<summary>", "status": "<status>", "updated": "<YYYY-MM-DD>"}
+        {"key": "<JIRA-KEY>", "summary": "<summary>", "status": "<status>", "assignee": "<display_name>", "updated": "<YYYY-MM-DD>"}
       ]
     }
   ],
