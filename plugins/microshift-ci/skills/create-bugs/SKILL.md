@@ -81,7 +81,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 2. Split sources on commas to get `SOURCES` list (e.g., `["4.22"]` or `["4.20", "4.21", "4.22", "5.0", "main"]`)
 3. Compute `SOURCE_TAG` — a short identifier used in per-run output filenames (merged candidates, results, report). Use the **first source** in the list (e.g., `4.22`, `main`, `rebase-release-4.22`). Do NOT concatenate all sources.
 4. Determine mode: if `--create` is present, set `MODE=create`; otherwise `MODE=dry-run`
-5. Determine today's WORKDIR path by running `date +%y%m%d` and substituting into `/tmp/microshift-ci-claude-workdir.YYMMDD`. Run `mkdir -p` on it.
+5. Determine today's WORKDIR path by running `date +%y%m%d` and substituting into `/tmp/microshift-ci-claude-workdir.<YYMMDD>`. Run `mkdir -p` on it.
 6. For **each source** in `SOURCES`, run the preparation script:
 
    ```text
