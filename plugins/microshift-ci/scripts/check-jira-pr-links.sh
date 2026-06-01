@@ -31,10 +31,15 @@ JIRA_KEY="${2}"
 [[ -f "${CHANGELOG_FILE}" ]] || { echo "Error: file not found: ${CHANGELOG_FILE}" >&2; exit 2; }
 
 # --- Source 1: JIRA changelog ---
-tmpout=$(mktemp)
-trap 'rm -f "${tmpout}"' EXIT
-
-python3 - "${CHANGELOG_FILE}" > "${tmpout}" <<'PYEOF' && rc=0 || rc=$?
+found=""
+while IFS= read -r pr_url; do
+    [[ -z "${pr_url}" ]] && continue
+    pr_state=$(gh pr view "${pr_url}" --json state --jq '.state' 2>/dev/null || true)
+    if [[ "${pr_state}" == "OPEN" || "${pr_state}" == "MERGED" ]]; then
+        echo "${pr_url}"
+        found=1
+    fi
+done < <(python3 - "${CHANGELOG_FILE}" <<'PYEOF' 2>/dev/null || true
 import json
 import re
 import sys
@@ -77,30 +82,11 @@ for entry in changelogs:
             if rm_id in active_prs:
                 del active_prs[rm_id]
 
-if active_prs:
-    for pr_url in active_prs.values():
-        print(pr_url)
-    sys.exit(0)
-else:
-    sys.exit(1)
+for pr_url in active_prs.values():
+    print(pr_url)
 PYEOF
-
-if [[ ${rc} -eq 0 ]]; then
-    # Verify each JIRA-linked PR is OPEN or MERGED on GitHub (not CLOSED without merge)
-    local_found=""
-    while IFS= read -r pr_url; do
-        [[ -z "${pr_url}" ]] && continue
-        pr_state=$(gh pr view "${pr_url}" --json state --jq '.state' 2>/dev/null || true)
-        if [[ "${pr_state}" == "OPEN" || "${pr_state}" == "MERGED" ]]; then
-            local_found="${local_found}${pr_url}"$'\n'
-        fi
-    done < "${tmpout}"
-    local_found="${local_found%$'\n'}"
-    if [[ -n "${local_found}" ]]; then
-        echo "${local_found}"
-        exit 0
-    fi
-fi
+)
+[[ -n "${found}" ]] && exit 0
 
 # --- Source 2: GitHub fallback ---
 gh_urls=$(gh pr list --repo openshift/microshift --search "${JIRA_KEY} in:title" --state open --json url --jq '.[].url' 2>/dev/null || true)
