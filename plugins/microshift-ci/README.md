@@ -40,7 +40,7 @@ Analyze MicroShift CI failures, produce HTML reports, and create JIRA bugs.
 
 ```text
 /microshift-ci:create-bugs 4.22           # dry-run
-/microshift-ci:create-bugs 4.22 --create  # interactive creation
+/microshift-ci:create-bugs 4.22 --create  # create/update bugs
 ```
 
 ## Requirements
