@@ -34,7 +34,12 @@ JIRA_KEY="${2}"
 found=""
 while IFS= read -r pr_url; do
     [[ -z "${pr_url}" ]] && continue
-    pr_state=$(gh pr view "${pr_url}" --json state --jq '.state' 2>/dev/null || true)
+    gh_err=""
+    pr_state=$(gh pr view "${pr_url}" --json state --jq '.state' 2>&1) || gh_err="$?"
+    if [[ -n "${gh_err}" ]]; then
+        echo "Error: gh pr view failed for ${pr_url} (exit ${gh_err}): ${pr_state}" >&2
+        exit 1
+    fi
     if [[ "${pr_state}" == "OPEN" || "${pr_state}" == "MERGED" ]]; then
         echo "${pr_url}"
         found=1

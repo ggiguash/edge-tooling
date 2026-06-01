@@ -165,7 +165,7 @@ mode_detail() {
 
     echo "Fetching job results..." >&2
     local output_tmp="${SCRIPT_TMPDIR}/detail-output"
-    : > "${output_tmp}"
+    echo -n "" > "${output_tmp}"
 
     while IFS=$'\t' read -r pr_number pr_title pr_url; do
         local tmpdir="${SCRIPT_TMPDIR}/detail-pr-${pr_number}"

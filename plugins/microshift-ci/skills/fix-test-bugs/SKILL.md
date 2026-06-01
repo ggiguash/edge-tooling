@@ -1,6 +1,6 @@
 ---
 name: microshift-ci:fix-test-bugs
-argument-hint: [--open | <USHIFT-1234>[,<USHIFT-5678>,...]] [--fix] [--auto]
+argument-hint: [--open | <USHIFT-1234>[,<USHIFT-5678>,...]] [--fix]
 description: Attempt to fix CI bugs by opening PRs in openshift/microshift (dry-run by default)
 user-invocable: true
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, mcp__jira__jira_get_issue, mcp__jira__jira_batch_get_changelogs, mcp__jira__jira_search
@@ -12,10 +12,10 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, mcp__jira__jira_get_i
 
 ```bash
 /microshift-ci:fix-test-bugs --open
-/microshift-ci:fix-test-bugs --open --fix --auto
+/microshift-ci:fix-test-bugs --open --fix
 /microshift-ci:fix-test-bugs USHIFT-1234,USHIFT-5678
 /microshift-ci:fix-test-bugs USHIFT-1234 --fix
-/microshift-ci:fix-test-bugs USHIFT-1234,USHIFT-5678 --fix --auto
+/microshift-ci:fix-test-bugs USHIFT-1234,USHIFT-5678 --fix
 ```
 
 ## Description
@@ -30,7 +30,6 @@ Operates in **dry-run mode by default** — shows which bugs are eligible and wh
   - `--open` (required if no keys given): Query JIRA for all unresolved AI-generated bugs (`labels = microshift-ci-ai-generated AND resolution = Unresolved`) and use the resulting keys. Mutually exclusive with explicit keys.
   - `<keys>` (required if no `--open`): One or more USHIFT bug keys (e.g., `USHIFT-1234` or `USHIFT-1234,USHIFT-5678`). Mutually exclusive with `--open`.
   - `--fix` (optional): Attempt fixes. Without this flag, only a dry-run report is produced.
-  - `--auto` (optional): In `--fix` mode, automatically attempt all eligible fixes without prompting. Invalid without `--fix`.
 
 ## Work Directory
 
@@ -64,10 +63,9 @@ Evaluated in order per bug. Must pass all gates to be eligible.
 
 ### Step 1: Fetch Bug Details
 
-1. Parse `<ARGUMENTS>` to extract JIRA keys and flags (`--open`, `--fix`, `--auto`)
+1. Parse `<ARGUMENTS>` to extract JIRA keys and flags (`--open`, `--fix`)
 2. Validate:
    - If neither `--open` nor explicit bug keys were provided, show error: "Error: must specify either --open or one or more USHIFT bug keys" and stop
-   - If `--auto` is present without `--fix`, show error and stop
    - If `--open` is present with explicit keys, show error and stop
 3. If `--open` was passed, query JIRA to discover keys:
 
@@ -109,7 +107,7 @@ If no `--fix` flag, stop here.
 
 ### Step 3: Attempt Fix (per eligible bug)
 
-Process eligible bugs **sequentially** (one at a time — the single working tree is reused). For each bug (prompted in interactive mode, automatic in `--auto` mode):
+Process eligible bugs **sequentially** (one at a time — the single working tree is reused). For each eligible bug:
 
 1. **Clone repo** (once, before first fix):
 
