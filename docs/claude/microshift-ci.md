@@ -13,9 +13,9 @@ A periodic Prow job (`periodic-ci-openshift-eng-edge-tooling-main-microshift-ci-
 runs daily and performs these phases automatically:
 
 1. **Close duplicate rebase PRs** - closes older rebase PRs superseded by newer ones
-2. **Analysis** - `/microshift-ci:doctor <releases>` (45 min, 100 turns)
+2. **Analysis** - `/microshift-ci:doctor <releases>` (35 min, 100 turns)
 3. **Bug creation** - `/microshift-ci:create-bugs <releases> --create`
-   (10 min, 50 turns)
+   (15 min, 50 turns)
 4. **Fix test bugs dry-run** - `/microshift-ci:fix-test-bugs --open`
    (5 min, 20 turns) - reports which bugs are eligible for auto-fix
 5. **Report refresh** - `/microshift-ci:doctor-refresh <releases>`
