@@ -3,7 +3,7 @@ name: microshift-ci:fix-test-bugs
 argument-hint: [--open | <USHIFT-1234>[,<USHIFT-5678>,...]] [--fix]
 description: Attempt to fix CI bugs by opening PRs in openshift/microshift (dry-run by default)
 user-invocable: true
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, mcp__jira__jira_get_issue, mcp__jira__jira_batch_get_changelogs, mcp__jira__jira_search
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, mcp__jira__jira_get_issue, mcp__jira__jira_search
 ---
 
 # microshift-ci:fix-test-bugs
@@ -39,7 +39,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 /tmp/microshift-ci-claude-workdir.<YYMMDD>
 ```
 
-Create `<WORKDIR>/fix-test-bugs/` at the start of the skill for intermediate files. The repo clone lives at `<WORKDIR>/microshift/` (shared with other skills).
+The repo clone lives at `<WORKDIR>/microshift/` (shared with other skills).
 
 ## Prerequisites
 
@@ -55,32 +55,29 @@ Evaluated in order per bug. Must pass all gates to be eligible.
 
 | Gate | Check | Skip Reason |
 |------|-------|-------------|
-| 1. Existing PR | Fetch JIRA changelog via `mcp__jira__jira_batch_get_changelogs(issue_ids_or_keys=<key>)`, save JSON to `<WORKDIR>/fix-test-bugs/changelog-<key>.json`, then run `bash plugins/microshift-ci/scripts/check-jira-pr-links.sh <WORKDIR>/fix-test-bugs/changelog-<key>.json <key>`. The script checks both JIRA links and GitHub (fallback) internally, verifying PR state. Skip if it exits 0 (prints PR URL). CLOSED (unmerged) PRs do not block. | PR already exists |
+| 1. Existing PR | Run `bash plugins/microshift-ci/scripts/check-jira-pr-links.sh <key>`. The script searches GitHub for open or merged PRs whose title contains the JIRA key. Skip if it exits 0 (prints PR URL). CLOSED (unmerged) PRs do not block. | PR already exists |
 | 2. In-scope files | Scan bug description for file paths in `test/`, `scripts/`, `docs/`. Also resolve bare filenames to their directory (e.g., `el98@rpm-standard1.sh` -> `test/scenarios/`, `configure-pri.sh` -> `scripts/multinode/`). Skip if ALL referenced files are outside the allowed directories (e.g., only `cmd/`, `pkg/`, `vendor/`). | Fix target outside allowed dirs |
 | 3. Root cause is code-fixable | Skip if root cause indicates: product bug in MicroShift core (not test/script issue), transient environmental issue, or upstream dependency problem with no local workaround. Pass if root cause points to: test logic, timeout, configuration, assertion, variable resolution, checksum, script error handling, or documentation. | Not code-fixable |
 
 ## Implementation Steps
 
-### Step 1: Fetch Bug Details
+### Step 1: Resolve Issue List and Evaluate Eligibility
 
 1. Parse `<ARGUMENTS>` to extract JIRA keys and flags (`--open`, `--fix`)
 2. Validate:
    - If neither `--open` nor explicit bug keys were provided, show error: "Error: must specify either --open or one or more USHIFT bug keys" and stop
    - If `--open` is present with explicit keys, show error and stop
-3. If `--open` was passed, query JIRA to discover keys:
+3. Compute the issue list:
+   - If `--open`: query JIRA to discover keys:
 
-   ```text
-   mcp__jira__jira_search(jql='labels = "microshift-ci-ai-generated" AND resolution = Unresolved', fields='summary', limit=50)
-   ```
+     ```text
+     mcp__jira__jira_search(jql='labels = "microshift-ci-ai-generated" AND resolution = Unresolved', fields='summary', limit=100)
+     ```
 
-   Extract issue keys from the results. If none found, report "No unresolved AI-generated bugs found" and stop.
-
-4. For each JIRA key, fetch in parallel:
-   - Bug details via `mcp__jira__jira_get_issue(issue_key=<key>)`
-   - Changelog via `mcp__jira__jira_batch_get_changelogs(issue_ids_or_keys=<key>)`
-5. Save each changelog to `<WORKDIR>/fix-test-bugs/changelog-<key>.json` and run `bash plugins/microshift-ci/scripts/check-jira-pr-links.sh <WORKDIR>/fix-test-bugs/changelog-<key>.json <key>` to check for JIRA-linked PRs
-6. Apply Gates 1-3 to each bug
-7. Record status: `eligible` or `skipped` (with gate and reason)
+     Extract issue keys from the results. If none found, report "No unresolved AI-generated bugs found" and stop.
+   - If explicit keys: use those directly.
+4. Fetch bug details for all keys in parallel via `mcp__jira__jira_get_issue(issue_key=<key>)`
+5. Apply Gates 1-3 to each bug and record status: `eligible` or `skipped` (with gate and reason)
 
 ### Step 2: Present Dry-Run Report
 
