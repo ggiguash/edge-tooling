@@ -62,7 +62,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 
 ### Step 3: Check for Closed Bugs
 
-Read `<WORKDIR>/close-stale-bugs/closed-bugs.json`. If the file exists, parse the `closed` array. If it is non-empty, join the keys with commas to form an `IGNORE_KEYS` string (e.g., `USHIFT-1234,USHIFT-5678`). If the file does not exist or the array is empty, skip this — do not pass `--ignore` in Step 4.
+Read `<WORKDIR>/close-stale-bugs/closed-bugs.json`. If the file does not exist, skip this step — do not pass `--ignore` in Step 4. If the file exists but fails to parse as valid JSON, or the parsed object does not contain an array field named `closed`, log a warning and proceed as if the file were absent (do not set `IGNORE_KEYS`, do not pass `--ignore` in Step 4). If the `closed` array is present and non-empty, join the keys with commas to form an `IGNORE_KEYS` string (e.g., `USHIFT-1234,USHIFT-5678`).
 
 ### Step 4: Regenerate HTML Report
 

@@ -480,7 +480,7 @@ def _pick_bug_fields(issue, links=None):
     return entry
 
 
-def _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_bug_candidates):
+def _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_bug_candidates, ignore_keys=None):
     """Add release/PR associations discovered by pooled candidate matching.
 
     Walks each release's and PR's issues, runs match_issue_to_bugs against the
@@ -494,7 +494,7 @@ def _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_b
                 continue
             for entry in match.get("duplicates", []):
                 key = entry.get("key", "")
-                if not key:
+                if not key or (ignore_keys and key in ignore_keys):
                     continue
                 existing = linked_map.get(key, [])
                 if any(link["release"] == release_label for link in existing):
@@ -522,7 +522,7 @@ def build_bugs_tab_data(open_bugs_data, bug_data, pr_bug_paths, releases_data=No
     linked_map, linked_details = _collect_linked_bugs(bug_data, pr_bug_paths, ignore_keys)
 
     if all_bug_candidates and (releases_data or pr_data):
-        _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_bug_candidates)
+        _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_bug_candidates, ignore_keys)
 
     if open_bugs_data and open_bugs_data.get("issues"):
         linked = []
