@@ -430,7 +430,7 @@ def match_issue_to_bugs(issue_title, bug_candidates):
 # Bugs tab data
 # ---------------------------------------------------------------------------
 
-def _collect_linked_bugs(bug_data, pr_bug_paths):
+def _collect_linked_bugs(bug_data, pr_bug_paths, ignore_keys=None):
     """Extract all JIRA keys from bug mapping duplicates, with release associations.
 
     Returns (linked, details) where:
@@ -443,7 +443,7 @@ def _collect_linked_bugs(bug_data, pr_bug_paths):
     def _add(cand, release_label):
         for dup in cand.get("duplicates", []):
             key = dup.get("key", "")
-            if not key:
+            if not key or (ignore_keys and key in ignore_keys):
                 continue
             existing = linked.get(key, [])
             if any(link["release"] == release_label for link in existing):
@@ -480,7 +480,7 @@ def _pick_bug_fields(issue, links=None):
     return entry
 
 
-def _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_bug_candidates):
+def _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_bug_candidates, ignore_keys=None):
     """Add release/PR associations discovered by pooled candidate matching.
 
     Walks each release's and PR's issues, runs match_issue_to_bugs against the
@@ -494,7 +494,7 @@ def _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_b
                 continue
             for entry in match.get("duplicates", []):
                 key = entry.get("key", "")
-                if not key:
+                if not key or (ignore_keys and key in ignore_keys):
                     continue
                 existing = linked_map.get(key, [])
                 if any(link["release"] == release_label for link in existing):
@@ -517,12 +517,12 @@ def _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_b
                 _scan_issues(pr["issues"], "PRs")
 
 
-def build_bugs_tab_data(open_bugs_data, bug_data, pr_bug_paths, releases_data=None, pr_data=None, all_bug_candidates=None):
+def build_bugs_tab_data(open_bugs_data, bug_data, pr_bug_paths, releases_data=None, pr_data=None, all_bug_candidates=None, ignore_keys=None):
     """Cross-reference open bugs query with bug mapping files."""
-    linked_map, linked_details = _collect_linked_bugs(bug_data, pr_bug_paths)
+    linked_map, linked_details = _collect_linked_bugs(bug_data, pr_bug_paths, ignore_keys)
 
     if all_bug_candidates and (releases_data or pr_data):
-        _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_bug_candidates)
+        _add_matched_links(linked_map, linked_details, releases_data, pr_data, all_bug_candidates, ignore_keys)
 
     if open_bugs_data and open_bugs_data.get("issues"):
         linked = []
@@ -1206,6 +1206,7 @@ def main():
     workdir = None
     releases_arg = None
     component = None
+    ignore_keys = set()
 
     args = sys.argv[1:]
     i = 0
@@ -1221,6 +1222,12 @@ def main():
                 print("Error: --component requires an argument", file=sys.stderr)
                 sys.exit(1)
             component = args[i + 1]
+            i += 2
+        elif args[i] == "--ignore":
+            if i + 1 >= len(args):
+                print("Error: --ignore requires an argument", file=sys.stderr)
+                sys.exit(1)
+            ignore_keys = {k.strip() for k in args[i + 1].split(",") if k.strip()}
             i += 2
         elif args[i].startswith("-"):
             print(f"Unknown option: {args[i]}", file=sys.stderr)
@@ -1343,7 +1350,17 @@ def main():
         open_bugs_data = {"date": datetime.now(timezone.utc).strftime("%Y-%m-%d"), "total": len(all_open_bugs), "issues": all_open_bugs}
     else:
         open_bugs_data = load_json(files["open_bugs"])
-    bugs_tab_data = build_bugs_tab_data(open_bugs_data, bug_data, pr_entry["bugs"], releases_data, pr_data, all_bug_candidates)
+
+    if ignore_keys:
+        print(f"  Ignoring {len(ignore_keys)} closed bug(s): {', '.join(sorted(ignore_keys))}")
+        if open_bugs_data and open_bugs_data.get("issues"):
+            open_bugs_data["issues"] = [b for b in open_bugs_data["issues"] if b.get("key") not in ignore_keys]
+            open_bugs_data["total"] = len(open_bugs_data["issues"])
+        for version in bug_data:
+            for cand in bug_data[version]:
+                cand["duplicates"] = [d for d in cand.get("duplicates", []) if d.get("key") not in ignore_keys]
+
+    bugs_tab_data = build_bugs_tab_data(open_bugs_data, bug_data, pr_entry["bugs"], releases_data, pr_data, all_bug_candidates, ignore_keys)
 
     bugs_summary_path = os.path.join(workdir, "analyze-ci-bugs-summary.json")
     with open(bugs_summary_path, "w") as f:

@@ -18,6 +18,7 @@ Analyze MicroShift CI failures, produce HTML reports, and create JIRA bugs.
 | `/microshift-ci:test-job` | Comprehensive job metadata and scenario results |
 | `/microshift-ci:test-scenario` | Analyze individual test scenario results |
 | `/microshift-ci:create-bugs` | Search JIRA for duplicates and create bugs (dry-run by default) |
+| `/microshift-ci:close-stale-bugs` | Close stale, unlinked, unassigned AI-generated bugs (dry-run by default) |
 | `/microshift-ci:doctor-refresh` | Regenerate the HTML report from existing data |
 | `/microshift-ci:continue-session` | Download CI Doctor artifacts from a completed prow job |
 | `/microshift-ci:fix-test-bugs` | Attempt to fix CI bugs by opening PRs in openshift/microshift (dry-run by default) |

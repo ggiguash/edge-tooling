@@ -330,11 +330,17 @@ cmd_graphs() {
 
 cmd_refresh() {
     local releases_arg=""
+    local ignore_keys=""
 
     while [[ ${#} -gt 0 ]]; do
         case "${1}" in
             --workdir) WORKDIR="${2}"; shift 2 ;;
             --component) COMPONENT="${2}"; shift 2 ;;
+            --ignore)
+                if [[ -z "${2:-}" || "${2:-}" == -* ]]; then
+                    echo "Error: --ignore requires a non-empty argument" >&2; return 1
+                fi
+                ignore_keys="${2}"; shift 2 ;;
             -*) echo "Unknown option: ${1}" >&2; return 1 ;;
             *) releases_arg="${1}"; shift ;;
         esac
@@ -346,14 +352,17 @@ cmd_refresh() {
 
     if [[ -z "${releases_arg}" ]]; then
         echo "Error: releases argument required" >&2
-        echo "Usage: $(basename "$0") refresh --component <component> [--workdir DIR] <release1,release2,...>" >&2
+        echo "Usage: $(basename "$0") refresh --component <component> [--workdir DIR] [--ignore KEY1,KEY2,...] <release1,release2,...>" >&2
         return 1
     fi
 
     # Generate HTML report (reads existing summary + bug files)
     echo "=== Generating HTML report ===" >&2
-    python3 "${SCRIPT_DIR}/create-report.py" \
-        --component "${COMPONENT}" --workdir "${WORKDIR}" "${releases_arg}"
+    local -a report_args=(--component "${COMPONENT}" --workdir "${WORKDIR}")
+    if [[ -n "${ignore_keys}" ]]; then
+        report_args+=(--ignore "${ignore_keys}")
+    fi
+    python3 "${SCRIPT_DIR}/create-report.py" "${report_args[@]}" "${releases_arg}"
 }
 
 # ---------------------------------------------------------------------------
@@ -367,7 +376,7 @@ usage() {
     echo "  prepare  --component C [--workdir DIR] <releases> [--rebase]  Collect jobs and download artifacts" >&2
     echo "  graphs   --component C [--workdir DIR] [--timezone TZ]       Generate PCP performance graphs" >&2
     echo "  finalize --component C [--workdir DIR] <releases>             Aggregate results and generate HTML" >&2
-    echo "  refresh  --component C [--workdir DIR] <releases>             Regenerate HTML from existing workdir data" >&2
+    echo "  refresh  --component C [--workdir DIR] [--ignore KEY1,KEY2,...] <releases>  Regenerate HTML from existing workdir data" >&2
     echo "" >&2
     echo "  --component C: component name (e.g., microshift, lvms)" >&2
     echo "  <releases>: comma-separated release versions (e.g., 4.18,4.19,4.20,main)" >&2

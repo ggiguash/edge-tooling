@@ -60,15 +60,21 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 
 **Do NOT** delete bug mapping files. **Do NOT** launch create-bugs agents. The mapping files are produced by the preceding `/microshift-ci:create-bugs` session and include newly created bugs (via Step 4c of the create-bugs skill).
 
-### Step 3: Regenerate HTML Report
+### Step 3: Check for Closed Bugs
+
+Read `<WORKDIR>/close-stale-bugs/closed-bugs.json`. If the file does not exist, skip this step — do not pass `--ignore` in Step 4. If the file exists but fails to parse as valid JSON, or the parsed object does not contain an array field named `closed`, log a warning and proceed as if the file were absent (do not set `IGNORE_KEYS`, do not pass `--ignore` in Step 4). If the `closed` array is present and non-empty, join the keys with commas to form an `IGNORE_KEYS` string (e.g., `USHIFT-1234,USHIFT-5678`).
+
+### Step 4: Regenerate HTML Report
 
 Run the refresh script:
 
 ```text
-bash plugins/microshift-ci/scripts/doctor.sh refresh --component microshift --workdir <WORKDIR> <ARGUMENTS>
+bash plugins/microshift-ci/scripts/doctor.sh refresh --component microshift --workdir <WORKDIR> [--ignore <IGNORE_KEYS>] <ARGUMENTS>
 ```
 
-### Step 4: Report Completion
+Include `--ignore <IGNORE_KEYS>` only if Step 3 produced a non-empty key list.
+
+### Step 5: Report Completion
 
 Display the path to the regenerated HTML report.
 
