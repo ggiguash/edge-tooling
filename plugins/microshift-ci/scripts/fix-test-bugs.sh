@@ -62,7 +62,9 @@ cmd_check() {
 
     while [[ ${#} -gt 0 ]]; do
         case "${1}" in
-            --jira-keys) jira_keys="${2}"; shift 2 ;;
+            --jira-keys)
+                [[ ${#} -ge 2 && "${2}" != -* ]] || { echo "Error: --jira-keys requires a value" >&2; return 1; }
+                jira_keys="${2}"; shift 2 ;;
             -*) echo "Unknown option: ${1}" >&2; return 1 ;;
             *) echo "Unknown argument: ${1}" >&2; return 1 ;;
         esac
@@ -84,11 +86,12 @@ cmd_check() {
                 --search "${key} in:title" --state "${state}" \
                 --json url,title 2>/dev/null) || raw_json='[]'
 
-            # Post-filter: title must start with "KEY:" or "KEY " to avoid
-            # substring matches (e.g. USHIFT-123 matching USHIFT-1234).
+            # Post-filter: KEY must appear at start or after whitespace, followed
+            # by ":" or " " to avoid substring matches (e.g. USHIFT-123 matching
+            # USHIFT-1234) while catching multi-key and [release-X.Y] titles.
             local filtered
             filtered=$(echo "${raw_json}" | jq --arg key "${key}" --arg state "${state}" \
-                '[.[] | select(.title | test("^" + $key + "[: ]")) | {url, state: $state}]')
+                '[.[] | select(.title | test("(^|\\s)" + $key + "[: ]")) | {url, state: $state}]')
 
             prs=$(echo "${prs}" "${filtered}" | jq -s '.[0] + .[1]')
         done

@@ -55,7 +55,7 @@ Evaluated in order per bug. Must pass all gates to be eligible.
 
 | Gate | Check | Skip Reason |
 |------|-------|-------------|
-| 1. Existing PR | Checked in batch before the per-bug loop (see Step 1). Skip if the key's array is non-empty (any open or merged PR). CLOSED (unmerged) PRs do not block. | PR already exists |
+| 1. Existing PR | Checked in batch before the per-bug loop (see Step 1). Skip if the key's array is non-empty (any open or merged PR). CLOSED (unmerged) PRs do not block. | PR already \<state\>: \<url\> (e.g., "PR already merged: https://...") |
 | 2. In-scope files | Scan bug description for file paths in `test/`, `scripts/`, `docs/`. Also resolve bare filenames to their directory (e.g., `el98@rpm-standard1.sh` -> `test/scenarios/`, `configure-pri.sh` -> `scripts/multinode/`). Skip if ALL referenced files are outside the allowed directories (e.g., only `cmd/`, `pkg/`, `vendor/`). | Fix target outside allowed dirs |
 | 3. Root cause is code-fixable | Skip if root cause indicates: product bug in MicroShift core (not test/script issue), transient environmental issue, or upstream dependency problem with no local workaround. Pass if root cause points to: test logic, timeout, configuration, assertion, variable resolution, checksum, script error handling, or documentation. | Not code-fixable |
 
