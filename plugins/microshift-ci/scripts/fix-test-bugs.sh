@@ -3,7 +3,10 @@ set -euo pipefail
 
 # Deterministic git/GitHub operations for the fix-test-bugs skill.
 #
-# Three subcommands called by the skill with LLM steps in between:
+# Subcommands called by the skill with LLM steps in between:
+#
+#   fix-test-bugs.sh check --jira-keys KEY1,KEY2,...
+#     - Batch check for existing PRs across multiple JIRA keys (JSON output)
 #
 #   fix-test-bugs.sh clone --workdir DIR
 #     - Clones openshift/microshift into DIR/microshift/
@@ -48,6 +51,55 @@ cleanup_stale_branches() {
             git push origin --delete "${branch}" 2>/dev/null || true
         fi
     done <<< "${remote_branches}"
+}
+
+# ---------------------------------------------------------------------------
+# check — batch PR lookup for multiple JIRA keys
+# ---------------------------------------------------------------------------
+
+cmd_check() {
+    local jira_keys=""
+
+    while [[ ${#} -gt 0 ]]; do
+        case "${1}" in
+            --jira-keys)
+                [[ ${#} -ge 2 && "${2}" != -* ]] || { echo "Error: --jira-keys requires a value" >&2; return 1; }
+                jira_keys="${2}"; shift 2 ;;
+            -*) echo "Unknown option: ${1}" >&2; return 1 ;;
+            *) echo "Unknown argument: ${1}" >&2; return 1 ;;
+        esac
+    done
+
+    [[ -z "${jira_keys}" ]] && { echo "Error: --jira-keys is required" >&2; return 1; }
+
+    local result="{}"
+    local key
+
+    IFS=',' read -ra keys <<< "${jira_keys^^}"
+    for key in "${keys[@]}"; do
+        [[ "${key}" =~ ^[A-Z][A-Z0-9]+-[0-9]+$ ]] || { echo "Error: invalid key: ${key}" >&2; return 1; }
+        local prs="[]"
+        local raw_json state
+
+        for state in open merged; do
+            raw_json=$(gh pr list --repo openshift/microshift \
+                --search "${key} in:title" --state "${state}" \
+                --json url,title 2>/dev/null) || raw_json='[]'
+
+            # Post-filter: KEY must appear at start or after whitespace, followed
+            # by ":" or " " to avoid substring matches (e.g. USHIFT-123 matching
+            # USHIFT-1234) while catching multi-key and [release-X.Y] titles.
+            local filtered
+            filtered=$(echo "${raw_json}" | jq --arg key "${key}" --arg state "${state}" \
+                '[.[] | select(.title | test("(^|\\s)" + $key + "[: ]")) | {url, state: $state}]')
+
+            prs=$(echo "${prs}" "${filtered}" | jq -s '.[0] + .[1]')
+        done
+
+        result=$(echo "${result}" | jq --arg key "${key}" --argjson prs "${prs}" '. + {($key): $prs}')
+    done
+
+    echo "${result}"
 }
 
 # ---------------------------------------------------------------------------
@@ -251,9 +303,11 @@ usage() {
 Usage: $(basename "$0") <command> [options]
 
 Commands:
-  clone   --workdir DIR                              Clone openshift/microshift and set up remotes
-  branch  --workdir DIR --jira-key KEY               Create branch from upstream/main
-  submit  --workdir DIR --jira-key KEY --summary TXT --rationale TXT  Verify, commit, push, and create PR
+  check   --jira-keys KEY1,KEY2,...       Batch check for existing PRs (JSON output)
+  clone   --workdir DIR                   Clone openshift/microshift and set up remotes
+  branch  --workdir DIR --jira-key KEY    Create branch from upstream/main
+  submit  --workdir DIR --jira-key KEY
+          --summary TXT --rationale TXT   Verify, commit, push, and create PR
 EOF
     exit 1
 }
@@ -267,6 +321,7 @@ main() {
     shift
 
     case "${cmd}" in
+        check)  cmd_check "${@}" ;;
         clone)  cmd_clone "${@}" ;;
         branch) cmd_branch "${@}" ;;
         submit) cmd_submit "${@}" ;;
