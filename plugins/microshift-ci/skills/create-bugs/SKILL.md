@@ -151,7 +151,6 @@ jql: ... AND issuetype = Bug AND text ~ "OCP-68256" AND status not in (Closed, V
 **After searches A and B**:
 
 1. Merge and deduplicate results from all search queries (A, B1, B2)
-2. If potential duplicates are found, fetch their details with `mcp__jira__jira_get_issue` to show summary and status
 
 **Search C — Regression check (MANDATORY for every candidate)**:
 
@@ -166,7 +165,7 @@ mcp__jira__jira_search(
 )
 ```
 
-Record **every** result as a regression entry — these are shown in the HTML report with distinct "Regressions" styling. Do NOT filter for relevance — downstream scripts use Jaccard similarity to match bugs to failures.
+Record **every** result as a regression entry — these are shown in the HTML report with distinct "Regressions" styling.
 
 **Note**: Run searches in parallel where possible. All three searches (A, B, C) can run concurrently per candidate.
 
@@ -174,9 +173,10 @@ Record **every** result as a regression entry — these are shown in the HTML re
 
 After completing ALL searches for a candidate:
 
-1. **`duplicates` array**: Must contain ALL unique open bugs returned by searches A and B (deduplicated by key). Do NOT stop at the first match — record every issue returned. Do NOT filter for relevance — downstream scripts use Jaccard similarity to match bugs to failures.
+1. **`duplicates` array**: Must contain ALL unique open bugs returned by searches A and B (deduplicated by key). Do NOT stop at the first match — record every issue returned.
 2. **`regressions` array**: Must contain ALL unique closed/verified bugs returned by Search C (deduplicated by key). An empty `regressions` array means Search C returned zero results — not that it was skipped.
-3. For each entry in both arrays, fetch details with `mcp__jira__jira_get_issue` and record: `key`, `summary`, `status`, `assignee` (display name), `updated` (YYYY-MM-DD).
+3. Do NOT filter either array for relevance — downstream scripts use Jaccard similarity to match bugs to failures.
+4. Extract `key`, `summary`, `status`, `assignee` (display name), and `updated` (YYYY-MM-DD) directly from the search results — `jira_search` returns these fields by default. Do NOT call `jira_get_issue` for each entry.
 
 **Query for open AI-generated bugs**: After completing all per-candidate searches, run one additional query to fetch all open bugs with the `microshift-ci-ai-generated` label:
 
@@ -226,7 +226,7 @@ If more than 50 results, paginate with `start_at` until all issues are fetched. 
 ```
 
 1. **IMPORTANT**: These files must be written in BOTH dry-run and create modes. They enable `create-report.py` to show linked bugs in the HTML report, and are consumed by the merge step (Step 2a) for Jira-based deduplication.
-2. **IMPORTANT**: The `duplicates` array must contain ALL open bugs returned by searches A and B. The `regressions` array must contain ALL closed/verified bugs returned by Search C. Do NOT omit results and do NOT filter for relevance — downstream scripts use Jaccard similarity to match bugs to failures. Missing entries mean missing bug links in the HTML report.
+2. **IMPORTANT**: The `duplicates` and `regressions` arrays must contain ALL results from their respective searches — do NOT omit or filter (see "Recording results" above). Missing entries mean missing bug links in the HTML report.
 3. Use empty arrays `[]` for `duplicates` and `regressions` only when the respective searches returned zero results.
 4. The `failure_type` field must be set from the candidate's computed `failure_type` (via `classify_breakdown`). This field is required for downstream `--merge` to correctly skip infrastructure failures without needing `stack_layer`.
 
@@ -410,7 +410,7 @@ For each candidate where action is "update":
    a. Fetch the target bug's comments:
 
       ```python
-      mcp__jira__jira_get_issue(issue_key="<JIRA-KEY>", fields="comment", comment_limit=100)
+      mcp__jira__jira_get_issue(issue_key="<JIRA-KEY>", fields="comment", comment_limit=50)
       ```
 
    b. Find the most recent comment containing the marker string `"CI Doctor: New occurrences detected"`.
