@@ -259,6 +259,7 @@ def build_candidates(groups):
             "error_signature": rep["error_signature"],
             "root_cause": rep.get("root_cause", ""),
             "severity": max(j["severity"] for j in group),
+            "stack_layer": rep.get("stack_layer", ""),
             "failure_type": classify_breakdown(
                 rep["stack_layer"],
                 rep.get("step_name", ""),
@@ -559,6 +560,7 @@ def merge_candidate_files(filepaths, workdir=None):
             "error_signature": rep["error_signature"],
             "root_cause": rep.get("root_cause", ""),
             "severity": max(c["severity"] for c in group),
+            "stack_layer": rep.get("stack_layer", ""),
             "failure_type": rep.get("failure_type", "test"),
             "step_name": ", ".join(step_names) if step_names else rep.get("step_name", ""),
             "affected_jobs": sum(c["affected_jobs"] for c in group),
@@ -585,6 +587,83 @@ def merge_candidate_files(filepaths, workdir=None):
         "total_candidates": total_candidates,
         "candidates": merged_candidates,
     }
+
+
+# ---------------------------------------------------------------------------
+# Auto-decision policy
+# ---------------------------------------------------------------------------
+
+
+def apply_auto_decisions(candidates):
+    """Apply the auto-decision policy to merged candidates.
+
+    Returns a results list with one entry per candidate, each containing:
+    error_signature, action, jira_key, skip_category, reason.
+    """
+    results = []
+    for cand in candidates:
+        sig = cand["error_signature"]
+        duplicates = cand.get("duplicates", [])
+        regressions = cand.get("regressions", [])
+        failure_type = cand.get("failure_type", "test")
+        jobs = cand.get("jobs", [])
+
+        if failure_type == "infrastructure":
+            results.append({
+                "error_signature": sig,
+                "action": "skip",
+                "jira_key": "",
+                "skip_category": "infrastructure",
+                "reason": "Infrastructure failure — not a product bug",
+            })
+            continue
+
+        if duplicates:
+            target = duplicates[0]
+            key = target["key"]
+            results.append({
+                "error_signature": sig,
+                "action": "update",
+                "jira_key": key,
+                "skip_category": "",
+                "reason": f"Will update {key} with new CI occurrences",
+            })
+            continue
+
+        if regressions:
+            reg = regressions[0]
+            reg_key = reg["key"]
+            reg_updated = reg.get("updated", "")
+            job_dates = [j.get("finished", "") for j in jobs if j.get("finished")]
+            all_stale = all(d <= reg_updated for d in job_dates) if job_dates and reg_updated else False
+
+            if all_stale:
+                results.append({
+                    "error_signature": sig,
+                    "action": "skip",
+                    "jira_key": "",
+                    "skip_category": "stale_regression",
+                    "reason": f"Stale failure predating fix for {reg_key} (updated {reg_updated})",
+                })
+            else:
+                results.append({
+                    "error_signature": sig,
+                    "action": "create",
+                    "jira_key": "",
+                    "skip_category": "",
+                    "reason": f"Potential regression of {reg_key}",
+                })
+            continue
+
+        results.append({
+            "error_signature": sig,
+            "action": "create",
+            "jira_key": "",
+            "skip_category": "",
+            "reason": "No existing duplicates",
+        })
+
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -1022,6 +1101,13 @@ def main_merge(merge_files, output_file, workdir):
     n_cross = n_total - n_merged
     print(f"Merged {n_total} candidates into {n_merged} unique failures "
           f"({n_cross} cross-release duplicates)", file=sys.stderr)
+
+    result["results"] = apply_auto_decisions(result["candidates"])
+
+    n_create = sum(1 for r in result["results"] if r["action"] == "create")
+    n_update = sum(1 for r in result["results"] if r["action"] == "update")
+    n_skip = sum(1 for r in result["results"] if r["action"] == "skip")
+    print(f"Auto-decision: {n_create} create, {n_update} update, {n_skip} skip", file=sys.stderr)
 
     with open(output_file, "w") as f:
         json.dump(result, f, indent=2)

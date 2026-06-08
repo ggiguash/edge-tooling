@@ -3,7 +3,7 @@ name: microshift-ci:create-bugs
 argument-hint: <source1>[,<source2>,...] [--create]
 description: Create JIRA bugs from analyze-ci failure reports with cross-release deduplication (dry-run by default)
 user-invocable: true
-allowed-tools: Bash, Read, Write, Glob, Grep, Agent, mcp__jira__jira_search, mcp__jira__jira_create_issue, mcp__jira__jira_get_issue, mcp__jira__jira_add_comment
+allowed-tools: Bash, Read, Write, Glob, Grep, Agent, mcp__jira__jira_create_issue, mcp__jira__jira_get_issue, mcp__jira__jira_add_comment
 ---
 
 # microshift-ci:create-bugs
@@ -30,7 +30,7 @@ This command does NOT re-analyze CI jobs. It consumes existing job analysis file
     - **Release version** (e.g., `4.22`, `main`): Looks for files matching `analyze-ci-release-<release>-job-*.txt`
     - **PR number** (e.g., `pr-6396` or `pr6396`): Looks for files matching `analyze-ci-prs-job-*-pr<number>-*.txt`
     - **Rebase PR shorthand** (e.g., `rebase-release-4.22`): Resolves to the corresponding rebase PR by scanning existing `analyze-ci-prs-job-*` files for the matching release version in their content
-  - `--create` (optional): Actually create/update JIRA issues. Without this flag, only a dry-run report is produced. See Step 3 for the auto-decision policy.
+  - `--create` (optional): Actually create/update JIRA issues. Without this flag, only a dry-run report is produced. Auto-decisions (create/update/skip) are pre-computed by `search-bugs.py --merge`.
 
 ## Prerequisites
 
@@ -95,91 +95,27 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 - No arguments: show usage and stop
 - Script exits with error if no job files found — relay its error message to the user
 
-### Step 1a: Check for Cached Jira Results
-
-After loading per-source candidates (Step 1), check whether bug mapping files already exist for ALL sources. These files are written by Step 2 on every run and contain the Jira search results (`duplicates[]`, `regressions[]`). If they exist and cover all per-source candidates, Step 2 can be skipped entirely.
-
-**Actions**:
-
-1. For each source in `SOURCES`, check if `<WORKDIR>/analyze-ci-bugs-<source>.json` exists
-2. If **ALL** files exist:
-   a. Read each file and build a lookup map: `error_signature` → `{duplicates, regressions}` (aggregate across all source files)
-   b. For each per-source candidate across all sources, look up its `error_signature` in the map
-   c. If **ALL** candidates have a match: display a notice and **skip Step 2**, proceed directly to Step 2a:
-
-      ```text
-      Using cached Jira search results from prior run.
-      To force fresh Jira searches, delete the bug mapping files:
-        rm <WORKDIR>/analyze-ci-bugs-*.json
-      ```
-
-   d. If **ANY** candidate has no match in the cache: discard all cached data and proceed to Step 2 (full Jira search for all candidates — do not mix cached and fresh results)
-3. If **ANY** source file is missing: proceed to Step 2 (full Jira search)
-
 ### Step 2: Search Jira for Existing Bugs and Write Bug Mapping Files
 
-For each **per-source** bug candidate (iterate over each source's candidate list separately — do NOT merge first), run ALL of the following searches. The `keywords` and `test_ids` fields are pre-computed by the script — use them directly.
-
-**Search A — Keyword search (multiple focused queries)**:
-
-1. Use the pre-computed `keywords` array from the candidate (already filtered for stop words and ranked by specificity)
-2. Run **2-3 separate searches in parallel**, each using 1-2 keywords from the array. Do NOT put all keywords into a single `text ~` query — Jira requires all terms to match, so queries with 3+ keywords are fragile and miss issues that use slightly different wording.
-
-   ```python
-   # Example: candidate.keywords = ["invalidclienttokenid", "cloudformation", "createstack", "aws-2"]
-   # Search A1: most distinctive keyword
-   mcp__jira__jira_search(jql='... AND issuetype = Bug AND text ~ "invalidclienttokenid" ...', limit=5)
-   # Search A2: second keyword
-   mcp__jira__jira_search(jql='... AND issuetype = Bug AND text ~ "cloudformation" ...', limit=5)
-   ```
-
-3. Merge and deduplicate results from all A-series queries before proceeding
-
-**Search B — Test case ID search (MANDATORY when `test_ids` is non-empty)**:
-Use the pre-computed `test_ids` array from the candidate. For EACH ID, run TWO separate searches:
+Run the query script to search JIRA for duplicates, regressions, and open AI-generated bugs. The script reads credentials from `JIRA_URL`, `JIRA_USERNAME`, and `JIRA_API_TOKEN` environment variables.
 
 ```text
-# Search B1: bare number
-jql: ... AND issuetype = Bug AND text ~ "68256" AND status not in (Closed, Verified) ...
-
-# Search B2: OCP-prefixed form (OpenShift Polarion convention)
-jql: ... AND issuetype = Bug AND text ~ "OCP-68256" AND status not in (Closed, Verified) ...
+python3 plugins/microshift-ci/scripts/query-bugs.py \
+  <WORKDIR>/analyze-ci-bug-candidates-<source1>.json \
+  [<WORKDIR>/analyze-ci-bug-candidates-<source2>.json ...] \
+  --workdir <WORKDIR>
 ```
 
-**Why both forms are required**: Jira's text indexer treats `OCP-68256` as a single token, so `text ~ "68256"` will NOT match issues containing `OCP-68256`, and vice versa. Skipping either form WILL cause missed duplicates.
+Pass ALL per-source candidate files produced in Step 1. The script:
 
-**After all searches**:
+1. Checks for cached results from a prior run — if output files already exist and cover all candidates, skips JIRA queries and exits. To force fresh queries, delete the bug mapping files: `rm <WORKDIR>/analyze-ci-bugs-*.json`
+2. Searches JIRA for each candidate using keyword queries, test case ID queries (bare + OCP-prefixed), and regression checks against closed/verified issues
+3. Fetches all open bugs with the `microshift-ci-ai-generated` label
+4. Writes one `<WORKDIR>/analyze-ci-bugs-<source>.json` per input file
 
-1. Merge and deduplicate results from all search queries (A, B1, B2)
-2. If potential duplicates are found, fetch their details with `mcp__jira__jira_get_issue` to show summary and status
+**Error handling**: If the script exits non-zero, relay its error message to the user and stop.
 
-**Search C — Regression check (closed/verified issues)**:
-After completing searches A and B, run an additional keyword search against closed/verified issues to detect potential regressions:
-
-```python
-mcp__jira__jira_search(
-  jql='((project = OCPBUGS AND component = MicroShift) OR project = USHIFT) AND issuetype = Bug AND text ~ "<keywords>" AND status in (Closed, Verified) ORDER BY updated DESC',
-  limit=5
-)
-```
-
-If results are found, fetch their details with `mcp__jira__jira_get_issue` and flag them as **"Potential regression of closed bug"** — distinct from open duplicates. These should be shown to the user but do NOT block creation; they serve as a warning that a previously fixed issue may have resurfaced.
-
-**Note**: Run searches in parallel where possible.
-
-**Query for open AI-generated bugs**: After completing all per-candidate searches, run one additional query to fetch all open bugs with the `microshift-ci-ai-generated` label:
-
-```text
-mcp__jira__jira_search(
-  jql="project = USHIFT AND issuetype = Bug AND labels = microshift-ci-ai-generated AND status not in (Closed, Verified) ORDER BY updated DESC",
-  fields="summary,status,priority,assignee,created,updated",
-  limit=50
-)
-```
-
-If more than 50 results, paginate with `start_at` until all issues are fetched. For each issue, extract: `key`, `summary`, status name, priority name, assignee display name, `created` and `updated` truncated to date only (first 10 characters).
-
-**After completing all Jira searches**, write machine-readable bug mapping files per source. For each source in `SOURCES`, write `<WORKDIR>/analyze-ci-bugs-<source>.json` using this JSON format:
+The output files use this JSON format:
 
 ```json
 {
@@ -214,9 +150,7 @@ If more than 50 results, paginate with `start_at` until all issues are fetched. 
 }
 ```
 
-1. **IMPORTANT**: These files must be written in BOTH dry-run and create modes. They enable `create-report.py` to show linked bugs in the HTML report, and are consumed by the merge step (Step 2a) for Jira-based deduplication.
-2. Use empty arrays `[]` for `duplicates` and `regressions` when none are found.
-3. The `failure_type` field must be set from the candidate's computed `failure_type` (via `classify_breakdown`). This field is required for downstream `--merge` to correctly skip infrastructure failures without needing `stack_layer`.
+The script writes these files in both dry-run and create modes. They enable `create-report.py` to show linked bugs in the HTML report, and are consumed by the merge step (Step 2a) for Jira-based deduplication.
 
 ### Step 2a: Merge Candidates
 
@@ -230,78 +164,36 @@ python3 plugins/microshift-ci/scripts/search-bugs.py --merge <WORKDIR>/analyze-c
 
 This writes `<WORKDIR>/analyze-ci-bug-candidates-merged-<SOURCE_TAG>.json`. Read and use this file for all subsequent steps.
 
-### Step 3: Present Bug Candidates to User
+### Step 3: Act on Auto-Decisions
+
+The merged file from Step 2a contains a `results` array with pre-computed auto-decisions for each candidate. Each entry has `error_signature`, `action` (`create`/`update`/`skip`), `jira_key`, `skip_category`, and `reason`.
 
 **Actions**:
 
 1. **In dry-run mode** (`--create` NOT specified):
-   - Apply the Auto-Decision Policy (see below) to each candidate
    - Do NOT display individual candidates to the user — the report in Step 5 handles that
    - Do NOT create any issues. Do NOT proceed to Steps 4/4b
-   - Build the results array (see Results JSON below), write it, and continue to Step 5
+   - Write the results file and continue to Step 5
 
 2. **In create mode** (`--create` specified):
-   - Apply the auto-decision policy and execute actions
-   - For candidates where decision is "create": proceed to Step 4
-   - For candidates where decision is "update": proceed to Step 4b
-   - For candidates where decision is "skip": record the skip reason and move to next
+   - For candidates where action is `"create"`: proceed to Step 4
+   - For candidates where action is `"update"`: proceed to Step 4b
+   - For candidates where action is `"skip"`: move to next
    - Continue to Step 5
-
-#### Auto-Decision Policy
-
-Apply these rules in order for each candidate:
-
-| Condition | Decision | Reason |
-|-----------|----------|--------|
-| `failure_type` is `"infrastructure"` | **Skip** | `"Infrastructure failure — not a product bug"` |
-| Has open duplicates from Jira search | **Update** | `"Will update <JIRA-KEY> with new CI occurrences"` — target is the first entry in the candidate's `duplicates` array. Proceed to Step 4b. |
-| Has closed regressions but no open duplicates — and **all** job `finished` dates are **on or before** the regression's `updated` date | **Skip** | `"Stale failure predating fix for <JIRA-KEY> (updated <YYYY-MM-DD>)"` |
-| Has closed regressions but no open duplicates — and **any** job `finished` date is **after** the regression's `updated` date | **Create** | Add `"Potential regression of <JIRA-KEY>"` to the bug description's Additional Info section |
-| No duplicates, no regressions | **Create** | `"No existing duplicates"` |
 
 #### Results JSON
 
-As you process each candidate (applying auto-decision policy), build a results array. After all candidates are processed (and Steps 4/4b complete for create mode), write the results to `<WORKDIR>/analyze-ci-bug-results-<SOURCE_TAG>.json`:
+Copy the `results` array from the merged file into a new results file at `<WORKDIR>/analyze-ci-bug-results-<SOURCE_TAG>.json`:
 
 ```json
 {
   "mode": "dry-run",
   "date": "YYYY-MM-DD",
-  "results": [
-    {
-      "error_signature": "<matches candidate's error_signature exactly>",
-      "action": "create",
-      "jira_key": "USHIFT-1234",
-      "skip_category": "",
-      "reason": "No existing duplicates"
-    },
-    {
-      "error_signature": "<matches candidate's error_signature exactly>",
-      "action": "update",
-      "jira_key": "USHIFT-6938",
-      "skip_category": "",
-      "reason": "Will update USHIFT-6938 with new CI occurrences"
-    },
-    {
-      "error_signature": "<matches candidate's error_signature exactly>",
-      "action": "skip",
-      "jira_key": "",
-      "skip_category": "infrastructure",
-      "reason": "Infrastructure failure — not a product bug"
-    }
-  ]
+  "results": [...]
 }
 ```
 
-All fields are required on every entry:
-
-- `error_signature`: must match the candidate's `error_signature` exactly
-- `action`: one of `create`, `skip`, `update`, `failed`
-- `jira_key`: the JIRA key for `create`/`update`; empty string `""` for `skip`/`failed`
-- `skip_category`: one of `infrastructure`, `stale_regression`, `up_to_date` for `skip`; empty string `""` for other actions. `up_to_date` occurs when an `update` action is demoted to `skip` during comment deduplication in Step 4b
-- `reason`: human-readable explanation, always non-empty
-
-Set `mode` to `"dry-run"` or `"create"` matching the current run mode. Set `date` to today's date (YYYY-MM-DD).
+Set `mode` to `"dry-run"` or `"create"` matching the current run mode. Set `date` to today's date (YYYY-MM-DD). In create mode, update each result entry's `jira_key` after creating/updating bugs (Steps 4/4b), and change `action` to `"failed"` if a MCP call fails. Step 4b may also demote `"update"` to `"skip"` with `skip_category="up_to_date"` during comment deduplication.
 
 ### Step 4: Create Bug via MCP (create mode only)
 
@@ -362,6 +254,10 @@ For each candidate where the auto-decision is "create":
    </for each>
    </for each>
 
+   {{if the result's reason starts with "Potential regression of"}}
+   **Regression Warning:** {{reason}} — this failure may be a recurrence of a previously fixed issue.
+   {{end if}}
+
    **Source:** Auto-generated by /microshift-ci:create-bugs from CI analysis output.
    `````
 
@@ -388,7 +284,7 @@ For each candidate where the auto-decision is "create":
 
 ### Step 4b: Update Existing Bug with Comment (create mode only)
 
-**Precondition**: The candidate's action is `update` and the JIRA key has been validated (in Step 3).
+**Precondition**: The candidate's action is `update` and `jira_key` is set (from the auto-decision in the merged file).
 
 **Actions**:
 For each candidate where action is "update":
