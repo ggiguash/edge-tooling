@@ -28,7 +28,7 @@ Output:
     ${WORKDIR}/bugs/bug-candidates-<source>.json  (default mode)
     <output>                                                   (--merge mode, via --output)
     ${WORKDIR}/bugs/create-bugs-<source>.txt   (--report mode, per-source)
-    ${WORKDIR}/report-create-bugs-merged.txt               (--report mode, merged)
+    ${WORKDIR}/report-create-bugs.txt                       (--report mode, merged)
 """
 
 import json
@@ -852,7 +852,7 @@ def main_report(report_file, candidates_file, workdir):
     else:
         tag = "merged" if len(sources) > 1 else sources[0]
     if tag == "merged":
-        filename = f"report-create-bugs-{tag}.txt"
+        filename = "report-create-bugs.txt"
         output_path = os.path.join(workdir, filename)
     else:
         filename = f"create-bugs-{tag}.txt"

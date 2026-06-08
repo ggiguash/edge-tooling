@@ -54,7 +54,7 @@ Downloads CI Doctor analysis artifacts (per-job reports, summaries, bug mappings
 
 4. Suggest next actions based on what's available:
 
-   - **View the HTML report**: `open <workdir>/microshift-ci-doctor-report.html`
+   - **View the HTML report**: `open <workdir>/report-microshift-ci-doctor.html`
    - **Re-generate the HTML report** (e.g., after modifying job reports):
 
      ```text

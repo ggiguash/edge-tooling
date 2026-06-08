@@ -68,7 +68,7 @@ Alternatively, list all unresolved AI-generated bugs in JIRA using the
 [JIRA query](https://redhat.atlassian.net/issues?jql=project%20%3D%20USHIFT%20AND%20labels%20%3D%20%22microshift-ci-ai-generated%22%20AND%20resolution%20%3D%20Unresolved%20ORDER%20BY%20created%20DESC).
 
 To review what was created, skipped (duplicate, stale regression, infrastructure),
-or already tracked, check the `report-create-bugs-merged.txt` file in the
+or already tracked, check the `report-create-bugs.txt` file in the
 working directory.
 
 Each bug should be reviewed and either acted on or closed:

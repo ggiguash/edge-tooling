@@ -194,8 +194,8 @@ main() {
 
     # HTML report path
     local html_report="null"
-    if [[ -f "${workdir}/microshift-ci-doctor-report.html" ]]; then
-        html_report="\"${workdir}/microshift-ci-doctor-report.html\""
+    if [[ -f "${workdir}/report-microshift-ci-doctor.html" ]]; then
+        html_report="\"${workdir}/report-microshift-ci-doctor.html\""
     fi
 
     # Final JSON

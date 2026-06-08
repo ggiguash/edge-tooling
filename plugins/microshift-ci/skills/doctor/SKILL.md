@@ -134,7 +134,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 
 4. The agent produces:
    - `<WORKDIR>/bugs/bug-matches-<source>.json` for each source (mapping files with open bugs data for the Bugs tab)
-   - `<WORKDIR>/report-create-bugs-merged.txt` — merged report covering all releases and rebase sources
+   - `<WORKDIR>/report-create-bugs.txt` — merged report covering all releases and rebase sources
 5. When the agent returns, immediately proceed to Step 4 in the same turn. Do NOT stop or end your turn between Step 3 and Step 4.
 
 **Error Handling**:
@@ -157,7 +157,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 
 2. The script deterministically:
    - Runs `aggregate.py` for each release and for PRs → `summary.json` files
-   - Runs `create-report.py` → `microshift-ci-doctor-report.html`
+   - Runs `create-report.py` → `report-microshift-ci-doctor.html`
 3. Report the script's output to the user
 
 ### Step 5: Report Completion
@@ -179,7 +179,7 @@ Summary:
   Pull Requests:
     2 rebase PRs with 5 total failed jobs
 
-HTML report generated: <WORKDIR>/microshift-ci-doctor-report.html
+HTML report generated: <WORKDIR>/report-microshift-ci-doctor.html
 ```
 
 ## Examples

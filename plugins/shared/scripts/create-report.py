@@ -1372,7 +1372,7 @@ def main():
     timestamp = datetime.now(timezone.utc)
     html_content = generate_html(component_title, releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error, bugs_tab_data)
 
-    output_path = os.path.join(workdir, f"{component}-ci-doctor-report.html")
+    output_path = os.path.join(workdir, f"report-{component}-ci-doctor.html")
     with open(output_path, "w") as f:
         f.write(html_content)
 

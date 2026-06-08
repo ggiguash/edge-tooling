@@ -102,7 +102,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 
 2. The script deterministically:
    - Runs `aggregate.py` for each release → `summary.json` files
-   - Runs `create-report.py` → `lvm-operator-ci-doctor-report.html`
+   - Runs `create-report.py` → `report-lvm-operator-ci-doctor.html`
 3. Report the script's output to the user
 
 ### Step 4: Report Completion
@@ -120,7 +120,7 @@ Summary:
     Release main: 3 failed periodic jobs
     Release 4.22: 0 failed periodic jobs
 
-HTML report generated: <WORKDIR>/lvm-operator-ci-doctor-report.html
+HTML report generated: <WORKDIR>/report-lvm-operator-ci-doctor.html
 ```
 
 ## Examples
