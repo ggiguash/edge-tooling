@@ -47,8 +47,8 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 ### Step 2: Verify Bug Mapping Files
 
 1. Parse `<ARGUMENTS>` into a list of release versions.
-2. Check for rebase PR sources in the workdir by looking for `analyze-ci-bug-candidates-rebase-release-*.json` files. Extract the source identifiers (e.g., `rebase-release-4.22`).
-3. Verify that `<WORKDIR>/analyze-ci-bugs-<source>.json` exists for each release version and each rebase PR source.
+2. Check for rebase PR sources in the workdir by looking for `bugs/analyze-ci-bug-candidates-rebase-release-*.json` files. Extract the source identifiers (e.g., `rebase-release-4.22`).
+3. Verify that `<WORKDIR>/bugs/analyze-ci-bugs-<source>.json` exists for each release version and each rebase PR source.
 4. If any mapping files are missing, report which ones are missing and show an error:
 
    ```text

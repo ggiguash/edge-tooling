@@ -43,7 +43,7 @@ Create `<WORKDIR>/fix-test-bugs/` at the start of the skill for intermediate fil
 ## Prerequisites
 
 - An existing workdir from a prior `/microshift-ci:create-bugs` run (today's date)
-- `analyze-ci-bug-candidates-merged-*.json` must exist in the workdir (produced by `/microshift-ci:create-bugs`)
+- `bugs/analyze-ci-bug-candidates-merged-*.json` must exist in the workdir (produced by `/microshift-ci:create-bugs`)
 - `gh` CLI authenticated with PR creation permissions
 - Git user must have a fork of openshift/microshift (for pushing branches)
 
@@ -65,10 +65,10 @@ Evaluated in order per **group** (a group is one merged candidate and all its JI
 
 1. Parse `<ARGUMENTS>` to determine mode (releases vs. explicit keys) and flags (`--fix`)
 2. Validate: if no releases and no keys provided, show error and stop
-3. Read `<WORKDIR>/analyze-ci-bug-candidates-merged-*.json`. If no such file exists, report a **fatal error** and stop:
+3. Read `<WORKDIR>/bugs/analyze-ci-bug-candidates-merged-*.json`. If no such file exists, report a **fatal error** and stop:
 
    ```text
-   Error: no merged candidates file found in <WORKDIR>
+   Error: no merged candidates file found in <WORKDIR>/bugs/
    Run /microshift-ci:create-bugs first to generate the merged candidates.
    ```
 

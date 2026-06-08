@@ -81,14 +81,14 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 2. Split sources on commas to get `SOURCES` list (e.g., `["4.22"]` or `["4.20", "4.21", "4.22", "5.0", "main"]`)
 3. Compute `SOURCE_TAG` — a short identifier used in per-run output filenames (merged candidates, results, report). Use the **first source** in the list (e.g., `4.22`, `main`, `rebase-release-4.22`). Do NOT concatenate all sources.
 4. Determine mode: if `--create` is present, set `MODE=create`; otherwise `MODE=dry-run`
-5. Determine today's WORKDIR path by running `date +%y%m%d` and substituting into `/tmp/microshift-ci-claude-workdir.<YYMMDD>`. Run `mkdir -p` on it.
+5. Determine today's WORKDIR path by running `date +%y%m%d` and substituting into `/tmp/microshift-ci-claude-workdir.<YYMMDD>`. Run `mkdir -p` on it. Run `mkdir -p <WORKDIR>/bugs`.
 6. For **each source** in `SOURCES`, run the preparation script:
 
    ```text
    python3 plugins/microshift-ci/scripts/search-bugs.py <source> --workdir <WORKDIR>
    ```
 
-   Each invocation writes `<WORKDIR>/analyze-ci-bug-candidates-<source>.json` containing parsed and deduplicated bug candidates with pre-computed `keywords`, `test_ids`, `jobs[]`, and `analysis_text`.
+   Each invocation writes `<WORKDIR>/bugs/analyze-ci-bug-candidates-<source>.json` containing parsed and deduplicated bug candidates with pre-computed `keywords`, `test_ids`, `jobs[]`, and `analysis_text`.
 
 **Error Handling**:
 
@@ -101,7 +101,7 @@ After loading per-source candidates (Step 1), check whether bug mapping files al
 
 **Actions**:
 
-1. For each source in `SOURCES`, check if `<WORKDIR>/analyze-ci-bugs-<source>.json` exists
+1. For each source in `SOURCES`, check if `<WORKDIR>/bugs/analyze-ci-bugs-<source>.json` exists
 2. If **ALL** files exist:
    a. Read each file and build a lookup map: `error_signature` → `{duplicates, regressions}` (aggregate across all source files)
    b. For each per-source candidate across all sources, look up its `error_signature` in the map
@@ -110,7 +110,7 @@ After loading per-source candidates (Step 1), check whether bug mapping files al
       ```text
       Using cached Jira search results from prior run.
       To force fresh Jira searches, delete the bug mapping files:
-        rm <WORKDIR>/analyze-ci-bugs-*.json
+        rm <WORKDIR>/bugs/analyze-ci-bugs-*.json
       ```
 
    d. If **ANY** candidate has no match in the cache: discard all cached data and proceed to Step 2 (full Jira search for all candidates — do not mix cached and fresh results)
@@ -190,7 +190,7 @@ mcp__jira__jira_search(
 
 If more than 50 results, paginate with `start_at` until all issues are fetched. For each issue, extract: `key`, `summary`, status name, priority name, assignee display name, `created` and `updated` truncated to date only (first 10 characters).
 
-**After completing all Jira searches**, write machine-readable bug mapping files per source. For each source in `SOURCES`, write `<WORKDIR>/analyze-ci-bugs-<source>.json` using this JSON format:
+**After completing all Jira searches**, write machine-readable bug mapping files per source. For each source in `SOURCES`, write `<WORKDIR>/bugs/analyze-ci-bugs-<source>.json` using this JSON format:
 
 ```json
 {
@@ -234,13 +234,13 @@ If more than 50 results, paginate with `start_at` until all issues are fetched. 
 
 Run the merge script (even for a single source — it produces a unified output with Jira data injected from the bug mapping files written in Step 2).
 
-Before invoking, also check for any `analyze-ci-bug-candidates-rebase-*.json` files in `<WORKDIR>`. If found, include them in the merge so rebase PR failures are deduplicated against release failures.
+Before invoking, also check for any `analyze-ci-bug-candidates-rebase-*.json` files in `<WORKDIR>/bugs`. If found, include them in the merge so rebase PR failures are deduplicated against release failures.
 
 ```text
-python3 plugins/microshift-ci/scripts/search-bugs.py --merge <WORKDIR>/analyze-ci-bug-candidates-<source1>.json [<source2>.json ...] [<WORKDIR>/analyze-ci-bug-candidates-rebase-*.json] --output <WORKDIR>/analyze-ci-bug-candidates-merged-<SOURCE_TAG>.json --workdir <WORKDIR>
+python3 plugins/microshift-ci/scripts/search-bugs.py --merge <WORKDIR>/bugs/analyze-ci-bug-candidates-<source1>.json [<source2>.json ...] [<WORKDIR>/bugs/analyze-ci-bug-candidates-rebase-*.json] --output <WORKDIR>/bugs/analyze-ci-bug-candidates-merged-<SOURCE_TAG>.json --workdir <WORKDIR>
 ```
 
-This writes `<WORKDIR>/analyze-ci-bug-candidates-merged-<SOURCE_TAG>.json`. Read and use this file for all subsequent steps.
+This writes `<WORKDIR>/bugs/analyze-ci-bug-candidates-merged-<SOURCE_TAG>.json`. Read and use this file for all subsequent steps.
 
 ### Step 3: Present Bug Candidates to User
 
@@ -273,7 +273,7 @@ Apply these rules in order for each candidate:
 
 #### Results JSON
 
-As you process each candidate (applying auto-decision policy), build a results array. After all candidates are processed (and Steps 4/4b complete for create mode), write the results to `<WORKDIR>/analyze-ci-bug-results-<SOURCE_TAG>.json`:
+As you process each candidate (applying auto-decision policy), build a results array. After all candidates are processed (and Steps 4/4b complete for create mode), write the results to `<WORKDIR>/bugs/analyze-ci-bug-results-<SOURCE_TAG>.json`:
 
 ```json
 {
@@ -465,13 +465,13 @@ For each candidate where action is "update":
 
 **Precondition**: At least one candidate had action `create` in Step 4. (`update` actions only add a comment and do not require mapping file updates.)
 
-After all bugs are created, update the per-source bug mapping files (`<WORKDIR>/analyze-ci-bugs-<source>.json`) so that newly created bugs are reflected in the JIRA data consumed by the HTML report generator.
+After all bugs are created, update the per-source bug mapping files (`<WORKDIR>/bugs/analyze-ci-bugs-<source>.json`) so that newly created bugs are reflected in the JIRA data consumed by the HTML report generator.
 
 **Actions**:
 
 1. **Collect new bugs**: Gather all candidates where action was `create`. For each, record the `jira_key`, `error_signature`, and the summary used in creation.
 
-2. **Update each mapping file**: For every `<WORKDIR>/analyze-ci-bugs-<source>.json` file (all sources, not just the current one):
+2. **Update each mapping file**: For every `<WORKDIR>/bugs/analyze-ci-bugs-<source>.json` file (all sources, not just the current one):
 
    a. **Add to `open_bugs`**: Append each new bug to the `open_bugs` array (skip if the key already exists):
 
@@ -501,13 +501,13 @@ After all bugs are created, update the per-source bug mapping files (`<WORKDIR>/
 
 **Actions**:
 
-1. Ensure `<WORKDIR>/analyze-ci-bug-results-<SOURCE_TAG>.json` was written in Step 3
+1. Ensure `<WORKDIR>/bugs/analyze-ci-bug-results-<SOURCE_TAG>.json` was written in Step 3
 2. Generate the report:
 
    ```text
    python3 plugins/microshift-ci/scripts/search-bugs.py \
-     --report <WORKDIR>/analyze-ci-bug-results-<SOURCE_TAG>.json \
-     --candidates <WORKDIR>/analyze-ci-bug-candidates-merged-<SOURCE_TAG>.json \
+     --report <WORKDIR>/bugs/analyze-ci-bug-results-<SOURCE_TAG>.json \
+     --candidates <WORKDIR>/bugs/analyze-ci-bug-candidates-merged-<SOURCE_TAG>.json \
      --workdir <WORKDIR>
    ```
 
@@ -581,7 +581,7 @@ Run the analysis first:
 - Bugs are created in USHIFT with component "MicroShift"; duplicate search covers both USHIFT and OCPBUGS
 - All created bugs are labeled with `microshift-ci-ai-generated` for tracking
 - The STRUCTURED SUMMARY block in job files is required — this is a contract with `/microshift-ci:prow-job`
-- Machine-readable bug mapping files (`analyze-ci-bugs-<source>.json`) are written per source in Step 2 (both dry-run and create modes). They serve two purposes: (1) consumed by `create-report.py` to show JIRA bug links in the HTML report, and (2) consumed by `--merge` in Step 2a for Jira-based deduplication across releases
+- Machine-readable bug mapping files (`bugs/analyze-ci-bugs-<source>.json`) are written per source in Step 2 (both dry-run and create modes). They serve two purposes: (1) consumed by `create-report.py` to show JIRA bug links in the HTML report, and (2) consumed by `--merge` in Step 2a for Jira-based deduplication across releases
 
 ## Related Skills
 
