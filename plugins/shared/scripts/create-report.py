@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate an HTML report from analyze-ci JSON files.
+Generate an HTML report from CI analysis JSON files.
 
 Shared across components (MicroShift, LVMS, etc.) via symlinks in each
 plugin's scripts/ directory.
@@ -309,44 +309,43 @@ document.querySelectorAll('.bugs-table').forEach(function(table) {
 # ---------------------------------------------------------------------------
 
 def discover_files(workdir, releases):
-    result = {"releases": {}, "prs": {"summary": None, "status": None, "bugs": [], "error": None}, "open_bugs": None}
+    result = {"releases": {}, "prs": {"summary": None, "status": None, "bugs": [], "error": None}}
+
+    jobs_dir = os.path.join(workdir, "jobs")
+    bugs_dir = os.path.join(workdir, "bugs")
 
     for version in releases:
         entry = {"summary": None, "bugs": None, "jobs": None, "error": None}
-        path = os.path.join(workdir, f"analyze-ci-release-{version}-summary.json")
+        path = os.path.join(jobs_dir, f"release-{version}-summary.json")
         if os.path.exists(path):
             entry["summary"] = path
-        path = os.path.join(workdir, f"analyze-ci-bugs-{version}.json")
+        path = os.path.join(bugs_dir, f"bug-matches-{version}.json")
         if os.path.exists(path):
             entry["bugs"] = path
-        path = os.path.join(workdir, f"analyze-ci-release-{version}-jobs.json")
+        path = os.path.join(jobs_dir, f"release-{version}-jobs.json")
         if os.path.exists(path):
             entry["jobs"] = path
-        path = os.path.join(workdir, f"analyze-ci-release-{version}-error.txt")
+        path = os.path.join(jobs_dir, f"release-{version}-error.txt")
         if os.path.exists(path):
             with open(path) as f:
                 entry["error"] = f.read().strip()
         result["releases"][version] = entry
 
-    path = os.path.join(workdir, "analyze-ci-prs-summary.json")
+    path = os.path.join(jobs_dir, "prs-summary.json")
     if os.path.exists(path):
         result["prs"]["summary"] = path
 
-    path = os.path.join(workdir, "analyze-ci-prs-status.json")
+    path = os.path.join(jobs_dir, "prs-status.json")
     if os.path.exists(path):
         result["prs"]["status"] = path
 
-    for path in glob_mod.glob(os.path.join(workdir, "analyze-ci-bugs-rebase-release-*.json")):
+    for path in glob_mod.glob(os.path.join(bugs_dir, "bug-matches-rebase-release-*.json")):
         result["prs"]["bugs"].append(path)
 
-    path = os.path.join(workdir, "analyze-ci-prs-error.txt")
+    path = os.path.join(jobs_dir, "prs-error.txt")
     if os.path.exists(path):
         with open(path) as f:
             result["prs"]["error"] = f.read().strip()
-
-    path = os.path.join(workdir, "analyze-ci-open-bugs.json")
-    if os.path.exists(path):
-        result["open_bugs"] = path
 
     return result
 
@@ -1291,8 +1290,6 @@ def main():
     else:
         print("  PRs: no data")
 
-    print(f"  Open bugs: {'found' if files['open_bugs'] else 'not available'}")
-
     if not found_any:
         print(f"\nError: no analysis files found in {workdir}", file=sys.stderr)
         sys.exit(1)
@@ -1335,7 +1332,7 @@ def main():
     for path in pr_entry["bugs"]:
         all_bug_candidates.extend(load_bug_candidates(path))
 
-    # Collect open bugs from mapping files (deduplicated), fallback to standalone file
+    # Collect open bugs from mapping files (deduplicated)
     all_open_bugs = []
     seen_open_keys = set()
     bug_file_paths = [files["releases"][v]["bugs"] for v in releases if files["releases"].get(v, {}).get("bugs")]
@@ -1346,10 +1343,7 @@ def main():
                 seen_open_keys.add(bug["key"])
                 all_open_bugs.append(bug)
 
-    if all_open_bugs:
-        open_bugs_data = {"date": datetime.now(timezone.utc).strftime("%Y-%m-%d"), "total": len(all_open_bugs), "issues": all_open_bugs}
-    else:
-        open_bugs_data = load_json(files["open_bugs"])
+    open_bugs_data = {"date": datetime.now(timezone.utc).strftime("%Y-%m-%d"), "total": len(all_open_bugs), "issues": all_open_bugs} if all_open_bugs else None
 
     if ignore_keys:
         print(f"  Ignoring {len(ignore_keys)} closed bug(s): {', '.join(sorted(ignore_keys))}")
@@ -1362,7 +1356,9 @@ def main():
 
     bugs_tab_data = build_bugs_tab_data(open_bugs_data, bug_data, pr_entry["bugs"], releases_data, pr_data, all_bug_candidates, ignore_keys)
 
-    bugs_summary_path = os.path.join(workdir, "analyze-ci-bugs-summary.json")
+    bugs_dir = os.path.join(workdir, "bugs")
+    os.makedirs(bugs_dir, exist_ok=True)
+    bugs_summary_path = os.path.join(bugs_dir, "bug-matches-summary.json")
     with open(bugs_summary_path, "w") as f:
         json.dump(bugs_tab_data, f, indent=2)
 
@@ -1376,7 +1372,7 @@ def main():
     timestamp = datetime.now(timezone.utc)
     html_content = generate_html(component_title, releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error, bugs_tab_data)
 
-    output_path = os.path.join(workdir, f"{component}-ci-doctor-report.html")
+    output_path = os.path.join(workdir, f"report-{component}-ci-doctor.html")
     with open(output_path, "w") as f:
         f.write(html_content)
 

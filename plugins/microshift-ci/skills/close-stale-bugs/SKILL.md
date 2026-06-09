@@ -38,7 +38,7 @@ Operates in **dry-run mode by default** — shows which bugs would be closed wit
 ## Prerequisites
 
 - An existing workdir from a prior `/microshift-ci:doctor` run (today's date)
-- `analyze-ci-bugs-summary.json` must exist in the workdir (produced by the doctor finalize step)
+- `bugs/bug-matches-summary.json` must exist in the workdir (produced by the doctor finalize step)
 - MCP Jira server must be configured and accessible (for `--close` mode)
 
 ## Work Directory
@@ -55,10 +55,10 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 
 1. Parse `<ARGUMENTS>` for the `--close` flag. If present, set MODE to `close`; otherwise MODE is `dry-run`.
 2. Compute today's `<WORKDIR>` by running `date +%y%m%d` and substituting into `/tmp/microshift-ci-claude-workdir.<YYMMDD>`.
-3. Read `<WORKDIR>/analyze-ci-bugs-summary.json`. If the file does not exist, report a **fatal error** and stop:
+3. Read `<WORKDIR>/bugs/bug-matches-summary.json`. If the file does not exist, report a **fatal error** and stop:
 
    ```text
-   Error: analyze-ci-bugs-summary.json not found in <WORKDIR>
+   Error: bugs/bug-matches-summary.json not found in <WORKDIR>
    Run the full doctor workflow first: /microshift-ci:doctor <releases>
    ```
 
@@ -192,7 +192,7 @@ Actually closes all matching bugs in JIRA.
 
 ## Notes
 
-- This skill does NOT re-analyze jobs or re-query JIRA for bug lists — it reads the pre-computed `analyze-ci-bugs-summary.json` from the doctor finalize step
+- This skill does NOT re-analyze jobs or re-query JIRA for bug lists — it reads the pre-computed `bugs/bug-matches-summary.json` from the doctor finalize step
 - The `unlinked[]` array in the summary file contains bugs that are open, AI-generated, and not matched to any current CI failure signature
 - Bugs with an assignee are never closed — someone has picked up the work
 - The 10-day staleness threshold ensures recently-created or recently-commented bugs are not prematurely closed

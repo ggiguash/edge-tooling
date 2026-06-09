@@ -130,18 +130,15 @@ main() {
     [[ -s "${DL_ERR}" ]] && cat "${DL_ERR}" >&2
 
     # gsutil cp -r creates a subdirectory named "artifacts" inside dl_tmp;
-    # move all files up to the workdir root (flat layout)
+    # copy preserving the source directory structure (jobs/, bugs/)
     local src_dir="${dl_tmp}"
     if [[ -d "${dl_tmp}/artifacts" ]]; then
         src_dir="${dl_tmp}/artifacts"
     fi
 
-    local kept=0
-    for f in "${src_dir}"/*; do
-        [[ -f "${f}" ]] || continue
-        mv "${f}" "${workdir}/"
-        kept=$((kept + 1))
-    done
+    local kept
+    kept=$(find "${src_dir}" -type f | wc -l)
+    cp -a "${src_dir}/." "${workdir}/"
     rm -rf "${dl_tmp}"
 
     if [[ "${kept}" -eq 0 ]]; then
@@ -159,20 +156,20 @@ main() {
 
     # Discover releases from jobs JSON files
     local releases_json="[]"
-    for jobs_file in "${workdir}"/analyze-ci-release-*-jobs.json; do
+    for jobs_file in "${workdir}"/jobs/release-*-jobs.json; do
         [[ -f "${jobs_file}" ]] || continue
         local basename_f
         basename_f=$(basename "${jobs_file}")
-        # Extract release from filename: analyze-ci-release-<VERSION>-jobs.json
+        # Extract release from filename: release-<VERSION>-jobs.json
         local release
-        release=$(echo "${basename_f}" | sed 's/analyze-ci-release-//;s/-jobs\.json//')
+        release=$(echo "${basename_f}" | sed 's/release-//;s/-jobs\.json//')
 
         local job_reports
-        job_reports=$(find "${workdir}" -maxdepth 1 -name "analyze-ci-release-${release}-job-*.txt" | wc -l)
+        job_reports=$(find "${workdir}/jobs" -maxdepth 1 -name "release-${release}-job-*.txt" 2>/dev/null | wc -l)
         local has_summary=false
-        [[ -f "${workdir}/analyze-ci-release-${release}-summary.json" ]] && has_summary=true
+        [[ -f "${workdir}/jobs/release-${release}-summary.json" ]] && has_summary=true
         local has_bugs=false
-        [[ -f "${workdir}/analyze-ci-bugs-${release}.json" ]] && has_bugs=true
+        [[ -f "${workdir}/bugs/bug-matches-${release}.json" ]] && has_bugs=true
 
         releases_json=$(echo "${releases_json}" | jq \
             --arg r "${release}" \
@@ -184,11 +181,11 @@ main() {
 
     # PR info
     local prs_json="null"
-    if [[ -f "${workdir}/analyze-ci-prs-jobs.json" ]]; then
+    if [[ -f "${workdir}/jobs/prs-jobs.json" ]]; then
         local pr_reports
-        pr_reports=$(find "${workdir}" -maxdepth 1 -name "analyze-ci-prs-job-*.txt" | wc -l)
+        pr_reports=$(find "${workdir}/jobs" -maxdepth 1 -name "prs-job-*.txt" 2>/dev/null | wc -l)
         local pr_has_summary=false
-        [[ -f "${workdir}/analyze-ci-prs-summary.json" ]] && pr_has_summary=true
+        [[ -f "${workdir}/jobs/prs-summary.json" ]] && pr_has_summary=true
         prs_json=$(jq -n \
             --argjson jr "${pr_reports}" \
             --argjson hs "${pr_has_summary}" \
@@ -197,8 +194,8 @@ main() {
 
     # HTML report path
     local html_report="null"
-    if [[ -f "${workdir}/microshift-ci-doctor-report.html" ]]; then
-        html_report="\"${workdir}/microshift-ci-doctor-report.html\""
+    if [[ -f "${workdir}/report-microshift-ci-doctor.html" ]]; then
+        html_report="\"${workdir}/report-microshift-ci-doctor.html\""
     fi
 
     # Final JSON

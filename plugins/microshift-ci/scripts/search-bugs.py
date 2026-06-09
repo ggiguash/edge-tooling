@@ -16,7 +16,7 @@ Usage:
       - PR number: pr-6396, pr6396
       - Rebase shorthand: rebase-release-4.22
 
-    --merge mode reads multiple analyze-ci-bug-candidates-<source>.json
+    --merge mode reads multiple bug-candidates-<source>.json
     files and merges candidates across sources using fuzzy signature
     matching for cross-release dedup.
 
@@ -25,9 +25,10 @@ Usage:
     text report.
 
 Output:
-    ${WORKDIR}/analyze-ci-bug-candidates-<source>.json       (default mode)
+    ${WORKDIR}/bugs/bug-candidates-<source>.json  (default mode)
     <output>                                                   (--merge mode, via --output)
-    ${WORKDIR}/analyze-ci-create-bugs-{<source>|merged}.txt  (--report mode)
+    ${WORKDIR}/bugs/create-bugs-<source>.txt   (--report mode, per-source)
+    ${WORKDIR}/report-create-bugs.txt                       (--report mode, merged)
 """
 
 import json
@@ -299,10 +300,13 @@ def find_job_files(workdir, source):
     """Find per-job report files for a given source.
 
     Returns (files, source_label) tuple.
+    Job reports live under ${workdir}/jobs/.
     """
+    jobs_dir = os.path.join(workdir, "jobs")
+
     # Release version
     if re.match(r"^(\d+\.\d+|main)$", source):
-        pattern = os.path.join(workdir, f"analyze-ci-release-{source}-job-*.txt")
+        pattern = os.path.join(jobs_dir, f"release-{source}-job-*.txt")
         files = sorted(glob_mod.glob(pattern))
         return files, f"release {source}"
 
@@ -310,7 +314,7 @@ def find_job_files(workdir, source):
     m = re.match(r"^pr-?(\d+)$", source)
     if m:
         pr_num = m.group(1)
-        pattern = os.path.join(workdir, f"analyze-ci-prs-job-*-pr{pr_num}-*.txt")
+        pattern = os.path.join(jobs_dir, f"prs-job-*-pr{pr_num}-*.txt")
         files = sorted(glob_mod.glob(pattern))
         return files, f"PR #{pr_num}"
 
@@ -322,7 +326,7 @@ def find_job_files(workdir, source):
 
         # Find PR numbers for this rebase source from the status file
         rebase_pr_numbers = set()
-        status_file = os.path.join(workdir, "analyze-ci-prs-status.json")
+        status_file = os.path.join(jobs_dir, "prs-status.json")
         if os.path.isfile(status_file):
             with open(status_file, "r") as f:
                 try:
@@ -335,7 +339,7 @@ def find_job_files(workdir, source):
                     if pr_num is not None:
                         rebase_pr_numbers.add(int(pr_num))
 
-        pattern = os.path.join(workdir, "analyze-ci-prs-job-*.txt")
+        pattern = os.path.join(jobs_dir, "prs-job-*.txt")
         all_files = sorted(glob_mod.glob(pattern))
         files = []
         for filepath in all_files:
@@ -425,12 +429,13 @@ def _merge_groups_by_jira(groups):
 
 
 def _load_jira_lookup(workdir):
-    """Load Jira duplicates/regressions from bug mapping files in workdir.
+    """Load Jira duplicates/regressions from bug mapping files.
 
     Returns a dict mapping error_signature to {duplicates, regressions}.
+    Bug mapping files live under ${workdir}/bugs/.
     """
     lookup = {}
-    pattern = os.path.join(workdir, "analyze-ci-bugs-*.json")
+    pattern = os.path.join(workdir, "bugs", "bug-matches-*.json")
     for filepath in sorted(glob_mod.glob(pattern)):
         with open(filepath, "r") as f:
             data = json.load(f)
@@ -460,7 +465,7 @@ def merge_candidate_files(filepaths, workdir=None):
     analysis_text) and post-Jira bug mapping files (duplicates, regressions).
 
     When workdir is provided and contains bug mapping files
-    (analyze-ci-bugs-*.json), their Jira data is injected into candidates
+    (bug-matches-*.json), their Jira data is injected into candidates
     so that _merge_groups_by_jira() can merge groups sharing issue keys.
 
     Returns a dict with sources, total_candidates, and candidates[] where
@@ -846,9 +851,14 @@ def main_report(report_file, candidates_file, workdir):
         tag = release_sources[0]
     else:
         tag = "merged" if len(sources) > 1 else sources[0]
-    filename = f"analyze-ci-create-bugs-{tag}.txt"
-
-    output_path = os.path.join(workdir, filename)
+    if tag == "merged":
+        filename = "report-create-bugs.txt"
+        output_path = os.path.join(workdir, filename)
+    else:
+        filename = f"create-bugs-{tag}.txt"
+        bugs_dir = os.path.join(workdir, "bugs")
+        os.makedirs(bugs_dir, exist_ok=True)
+        output_path = os.path.join(bugs_dir, filename)
     report_with_footer = report + f"\n\nReport saved: {output_path}\n{SEPARATOR}\n"
 
     with open(output_path, "w") as f:
@@ -982,7 +992,9 @@ def main():
         "candidates": candidates,
     }
 
-    output_path = os.path.join(workdir, f"analyze-ci-bug-candidates-{source}.json")
+    bugs_dir = os.path.join(workdir, "bugs")
+    os.makedirs(bugs_dir, exist_ok=True)
+    output_path = os.path.join(bugs_dir, f"bug-candidates-{source}.json")
     with open(output_path, "w") as f:
         json.dump(result, f, indent=2)
 
@@ -1013,6 +1025,8 @@ def main_merge(merge_files, output_file, workdir):
         sys.exit(1)
 
     os.makedirs(workdir, exist_ok=True)
+    bugs_dir = os.path.join(workdir, "bugs")
+    os.makedirs(bugs_dir, exist_ok=True)
 
     print(f"Merging {len(merge_files)} candidate files", file=sys.stderr)
     result = merge_candidate_files(merge_files, workdir=workdir)
