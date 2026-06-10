@@ -11,12 +11,12 @@ Arguments:
   repository   Full repository path (e.g. openshift4/microshift-bootc-rhel9)
 
 Commands:
-  tags      List all tags for all images
+  tags      List all tags (filterable via --tag)
   streams   List content streams (e.g. 4.18, 4.19, 4.20)
   images    List all images with arch, digest, health, and dates (filterable via --tag)
 
 Options:
-  --tag TAG    Filter images to a specific tag
+  --tag TAG    Filter to tags containing TAG (e.g. 4.20, latest)
 EOF
     exit 1
 }
@@ -36,9 +36,12 @@ fetch_api() {
 }
 
 cmd_tags() {
-    local repo=$1
+    local repo=$1 tag=${2:-}
     fetch_api "${repo}/images?page_size=500" \
-        | jq '[.data[].repositories[].tags[].name] | unique'
+        | jq --arg tag "${tag}" '
+            [.data[].repositories[].tags[].name]
+            | unique
+            | if $tag == "" then . else [.[] | select(contains($tag))] end'
 }
 
 cmd_streams() {
@@ -48,17 +51,19 @@ cmd_streams() {
 
 cmd_images() {
     local repo=$1 tag=${2:-}
+    # freshness_grades is a pre-computed degradation schedule (e.g. B→C→D→F),
+    # not a history — select the entry whose date range contains today.
     fetch_api "${repo}/images?page_size=500" | jq --arg tag "${tag}" '
         [.data[]
-         | select($tag == "" or any(.repositories[].tags[]; .name == $tag))
+         | select($tag == "" or any(.repositories[].tags[]; .name | contains($tag)))
          | {
-            tag: ([.repositories[].tags[].name | select(startswith("v"))] | sort_by(length) | first // null),
+            tags: [.repositories[].tags[].name] | sort_by(length),
             architecture: .architecture,
             digest: (.image_id | split(":")[1][:12]),
-            freshness_grade: (.freshness_grades | last | .grade // null),
-            grade_start_date: (.freshness_grades | last | .start_date // null),
+            freshness_grade: ([.freshness_grades[] | select(.start_date <= (now | todate) and ((.end_date // "9999-12-31T00:00:00+00:00") > (now | todate)))] | first | .grade // null),
+            creation_date: .creation_date,
             last_update_date: .last_update_date
-        }] | sort_by(.tag, .architecture)'
+        }] | sort_by(.tags[0], .architecture)'
 }
 
 main() {
@@ -78,7 +83,7 @@ main() {
     done
 
     case ${cmd} in
-        tags)    cmd_tags "${repo}" ;;
+        tags)    cmd_tags "${repo}" "${tag}" ;;
         streams) cmd_streams "${repo}" ;;
         images)  cmd_images "${repo}" "${tag}" ;;
         *)       usage ;;
