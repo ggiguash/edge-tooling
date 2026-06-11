@@ -39,6 +39,7 @@ import glob as glob_mod
 from datetime import datetime, timezone
 
 from classify import classify_breakdown
+from parse import parse_structured_summary as _parse_structured_summary
 
 
 # ---------------------------------------------------------------------------
@@ -67,46 +68,13 @@ SIMILARITY_THRESHOLD = 0.50
 # ---------------------------------------------------------------------------
 
 def parse_structured_summary(filepath):
-    """Extract STRUCTURED SUMMARY block from a per-job report file."""
-    with open(filepath, "r") as f:
-        content = f.read()
+    """Parse structured summary and attach source path."""
+    summaries = _parse_structured_summary(filepath)
 
-    m = re.search(
-        r"--- STRUCTURED SUMMARY ---\n(.+?)\n--- END STRUCTURED SUMMARY ---",
-        content, re.DOTALL,
-    )
-    if not m:
-        return None
+    for s in summaries:
+        s["source_file"] = filepath
 
-    data = {}
-    for line in m.group(1).strip().split("\n"):
-        if ":" in line:
-            key, val = line.split(":", 1)
-            data[key.strip()] = val.strip()
-
-    try:
-        severity = int(data.get("SEVERITY", "3"))
-    except ValueError:
-        severity = 3
-
-    # Get the analysis text (everything before STRUCTURED SUMMARY)
-    analysis_text = content.split("--- STRUCTURED SUMMARY ---")[0].strip()
-
-    return {
-        "severity": severity,
-        "stack_layer": data.get("STACK_LAYER", ""),
-        "step_name": data.get("STEP_NAME", ""),
-        "error_signature": data.get("ERROR_SIGNATURE", ""),
-        "raw_error": data.get("RAW_ERROR", ""),
-        "root_cause": data.get("ROOT_CAUSE", ""),
-        "infrastructure_failure": data.get("INFRASTRUCTURE_FAILURE", "false").lower() == "true",
-        "job_url": data.get("JOB_URL", ""),
-        "job_name": data.get("JOB_NAME", ""),
-        "release": data.get("RELEASE", ""),
-        "finished": data.get("FINISHED", ""),
-        "analysis_text": analysis_text,
-        "source_file": filepath,
-    }
+    return summaries
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +246,6 @@ def build_candidates(groups):
                 }
                 for j in group
             ],
-            "analysis_text": rep["analysis_text"],
         }
 
         other_sigs = sorted({j["error_signature"] for j in group} - {rep["error_signature"]})
@@ -350,10 +317,11 @@ def find_job_files(workdir, source):
                 continue
 
             # Fallback: match by structured summary fields
-            summary = parse_structured_summary(filepath)
-            if summary and (
-                f"release-{release}" in summary.get("job_name", "")
-                or summary.get("release", "") == release
+            summaries = parse_structured_summary(filepath)
+            if summaries and any(
+                f"release-{release}" in s.get("job_name", "")
+                or s.get("release", "") == release
+                for s in summaries
             ):
                 files.append(filepath)
 
@@ -461,8 +429,8 @@ def _load_jira_lookup(workdir):
 def merge_candidate_files(filepaths, workdir=None):
     """Merge multiple candidate JSON files with fuzzy dedup and Jira-based dedup.
 
-    Handles both pre-Jira candidate files (keywords, test_ids, jobs,
-    analysis_text) and post-Jira bug mapping files (duplicates, regressions).
+    Handles both pre-Jira candidate files (keywords, test_ids, jobs)
+    and post-Jira bug mapping files (duplicates, regressions).
 
     When workdir is provided and contains bug mapping files
     (bug-matches-*.json), their Jira data is injected into candidates
@@ -570,7 +538,6 @@ def merge_candidate_files(filepaths, workdir=None):
             "keywords": sorted(all_keywords),
             "test_ids": sorted(all_test_ids),
             "jobs": all_jobs,
-            "analysis_text": rep.get("analysis_text", ""),
             "releases": releases,
         }
         if other_sigs:
@@ -962,12 +929,12 @@ def main():
     jobs = []
     skipped = 0
     for filepath in files:
-        summary = parse_structured_summary(filepath)
-        if summary is None:
+        summaries = parse_structured_summary(filepath)
+        if not summaries:
             print(f"  WARNING: no STRUCTURED SUMMARY in {os.path.basename(filepath)}", file=sys.stderr)
             skipped += 1
             continue
-        jobs.append(summary)
+        jobs.extend(summaries)
 
     if not jobs:
         print("No valid job reports found", file=sys.stderr)
