@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 from classify import classify_breakdown
 from parse import (
     STOP_WORDS, normalize_step_name, cluster_by_similarity,
-    group_by_signature, parse_structured_summary, tokenize,
+    group_by_signature, grouping_text, parse_structured_summary, tokenize,
 )
 
 # Additional stop words filtered only during keyword extraction for Jira search,
@@ -211,16 +211,6 @@ def find_job_files(workdir, source):
 # Cross-release merge
 # ---------------------------------------------------------------------------
 
-def _merge_by_similarity(candidates):
-    """Group candidates by error_signature + root_cause similarity for cross-release dedup."""
-    def _merge_key(c):
-        base = c.get("error_signature", "")
-        root_cause = c.get("root_cause", "")
-        if root_cause:
-            return base + " " + root_cause
-        return base
-    return cluster_by_similarity(candidates, _merge_key)
-
 
 def _jira_keys(candidate):
     """Extract all Jira issue keys from a candidate's duplicates and regressions."""
@@ -353,7 +343,7 @@ def merge_candidate_files(filepaths, workdir=None):
 
     merged_groups = []
     for step_cands in by_step.values():
-        merged_groups.extend(_merge_by_similarity(step_cands))
+        merged_groups.extend(cluster_by_similarity(step_cands, grouping_text))
 
     n_groups_before_jira = len(merged_groups)
 

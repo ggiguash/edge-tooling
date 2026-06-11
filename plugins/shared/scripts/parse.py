@@ -60,7 +60,7 @@ def parse_structured_summary(filepath):
         if not isinstance(data, dict):
             continue
         try:
-            severity = int(data.get("severity", 3))
+            severity = max(1, min(5, int(data.get("severity", 3))))
         except (ValueError, TypeError):
             severity = 3
 
