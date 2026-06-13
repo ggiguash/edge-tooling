@@ -71,18 +71,14 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 
 **Actions**:
 
-1. Parse the JSON summary from Step 1 to build the workflow arguments. For each release with `jobs > 0`, read its `jobs_file` to get the array of job objects. For each job, create an entry with:
-   - `artifacts_dir`: from the job's `artifacts_dir` field
-   - `output_path`: `<WORKDIR>/jobs/release-<RELEASE>-job-<N>-<BUILD_ID>.txt` where N is the 1-based index within that release
-   - `label`: `<RELEASE>-job-<N>` (e.g., `main-job-3`)
-
+1. Read `<WORKDIR>/workflows/analyze-jobs.json` (written by the prepare script in Step 1). If the array is empty, skip to Step 3.
 2. Invoke the Workflow tool:
 
    ```text
    Workflow(
      scriptPath: "plugins/lvms-ci/scripts/doctor-analyze.js",
      args: {
-       jobs: [ ...entries from action 1... ],
+       jobs: <contents of analyze-jobs.json>,
        prow_job_skill: "/lvms-ci:prow-job"
      }
    )

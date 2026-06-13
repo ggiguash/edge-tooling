@@ -91,30 +91,20 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 
 **Actions**:
 
-1. Parse the JSON summary from Step 1 to build the workflow arguments. For each release with `jobs > 0`, read its `jobs_file` to get the array of job objects. For each job, create an entry with:
-   - `artifacts_dir`: from the job's `artifacts_dir` field
-   - `output_path`: `<WORKDIR>/jobs/release-<RELEASE>-job-<N>-<BUILD_ID>.txt` where N is the 1-based index within that release
-   - `label`: `<RELEASE>-job-<N>` (e.g., `4.22-job-3`)
-
-2. For PR jobs (if the summary has `prs.jobs > 0`), read the PR jobs file. For each PR, iterate **all** its jobs and create an entry with:
-   - `artifacts_dir`: from the job's `artifacts_dir` field
-   - `output_path`: `<WORKDIR>/jobs/prs-job-<N>-pr<PR_NUMBER>-<JOB_NAME_SUFFIX>.txt` where `JOB_NAME_SUFFIX` is the job name's last segment after the release identifier
-   - `label`: `pr<PR_NUMBER>-job-<N>`
-   - `status`: from the job's `status` field (the workflow script filters to FAILURE only)
-
-3. Invoke the Workflow tool:
+1. Read `<WORKDIR>/workflows/analyze-jobs.json` (written by the prepare script in Step 1). If the array is empty, skip to Step 3.
+2. Invoke the Workflow tool:
 
    ```text
    Workflow(
      scriptPath: "plugins/microshift-ci/scripts/doctor-analyze.js",
      args: {
-       jobs: [ ...entries from actions 1-2... ],
+       jobs: <contents of analyze-jobs.json>,
        prow_job_skill: "/microshift-ci:prow-job"
      }
    )
    ```
 
-4. The workflow runs in the background and sends a completion notification when done. Wait for the notification, then proceed to Step 3. Do NOT stop or end your turn between Step 2 and Step 3.
+3. The workflow runs in the background and sends a completion notification when done. Wait for the notification, then proceed to Step 3. Do NOT stop or end your turn between Step 2 and Step 3.
 
 **CRITICAL — no fallback**: If the Workflow tool call fails for any reason (script error, timeout, API error), STOP and report the error to the user. Do NOT fall back to sequential Agent-based spawning — sequential execution risks hitting the turn timeout.
 

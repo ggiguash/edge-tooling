@@ -224,6 +224,41 @@ cmd_prepare() {
     fi
 
     echo "${result}"
+
+    # Build workflow args: map each job to its output path for parallel analysis
+    mkdir -p "${WORKDIR}/workflows"
+    local workflow_jobs="[]"
+
+    # Release jobs: no status field (all are already failures from the prepare filter)
+    for release in "${RELEASES[@]}"; do
+        release=$(echo "${release}" | xargs)
+        local jobs_file="${WORKDIR}/jobs/release-${release}-jobs.json"
+        [[ -f "${jobs_file}" ]] || continue
+
+        workflow_jobs=$(echo "${workflow_jobs}" | jq --arg r "${release}" --arg w "${WORKDIR}" \
+            --slurpfile jobs "${jobs_file}" \
+            '. + [$jobs[0] | to_entries[] | {
+                artifacts_dir: .value.artifacts_dir,
+                output_path:   ($w + "/jobs/release-" + $r + "-job-" + ((.key+1)|tostring) + "-" + .value.build_id + ".txt"),
+                label:         ($r + "-job-" + ((.key+1)|tostring))
+            }]')
+    done
+
+    # PR jobs: includes status so consumers can filter by outcome
+    if [[ -f "${WORKDIR}/jobs/prs-jobs.json" ]]; then
+        workflow_jobs=$(echo "${workflow_jobs}" | jq --arg w "${WORKDIR}" \
+            --slurpfile jobs "${WORKDIR}/jobs/prs-jobs.json" \
+            '. + [$jobs[0] | to_entries[] | {
+                artifacts_dir: .value.artifacts_dir,
+                output_path:   ($w + "/jobs/prs-job-" + ((.key+1)|tostring) + "-pr" + (.value.pr_number|tostring) + "-" + .value.build_id + ".txt"),
+                label:         ("pr" + (.value.pr_number|tostring) + "-job-" + ((.key+1)|tostring)),
+                status:        .value.status
+            }]')
+    fi
+
+    # Write the workflow args file
+    echo "${workflow_jobs}" > "${WORKDIR}/workflows/analyze-jobs.json"
+    echo "Workflow args written to ${WORKDIR}/workflows/analyze-jobs.json" >&2
 }
 
 # ---------------------------------------------------------------------------
