@@ -245,7 +245,7 @@ cmd_prepare() {
     done
 
     # PR jobs: includes status so consumers can filter by outcome
-    if [[ -f "${WORKDIR}/jobs/prs-jobs.json" ]]; then
+    if ${do_rebase} && [[ -f "${WORKDIR}/jobs/prs-jobs.json" ]]; then
         workflow_jobs=$(echo "${workflow_jobs}" | jq --arg w "${WORKDIR}" \
             --slurpfile jobs "${WORKDIR}/jobs/prs-jobs.json" \
             '. + [$jobs[0] | to_entries[] | {

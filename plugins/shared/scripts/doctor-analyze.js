@@ -35,7 +35,7 @@ const results = await parallel(failedJobs.map(function(job) {
   }
 }))
 
-const analyzed = results.filter(function(r) { return r !== null }).length
+const analyzed = results.filter(function(r) { return r != null }).length
 const failed = results.length - analyzed
 if (failed > 0) {
   log('Analysis complete: ' + analyzed + '/' + results.length + ' jobs analyzed, ' + failed + ' failed')
