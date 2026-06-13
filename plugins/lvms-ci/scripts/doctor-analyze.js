@@ -1,0 +1,1 @@
+../../shared/scripts/doctor-analyze.js
