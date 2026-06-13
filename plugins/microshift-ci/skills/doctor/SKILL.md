@@ -123,7 +123,7 @@ The workflow runs all job analyses in parallel — each agent runs the prow-job 
 
 1. Collect all release versions from `<ARGUMENTS>` into a comma-separated list (e.g., `4.19,4.20,4.21,4.22`)
 2. Check for rebase PR source identifiers from the PR jobs JSON (e.g., `rebase-release-4.22`). Append them to the source list.
-3. Launch a **single** `microshift-ci:create-bugs` **foreground** agent:
+3. Launch a **single** `microshift-ci:create-bugs` **foreground** agent in dry-run mode with all sources:
 
    ```text
    Agent: subagent_type=general_purpose, prompt="Run /microshift-ci:create-bugs <all-sources-comma-separated>"
