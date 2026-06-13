@@ -3,7 +3,7 @@ name: microshift-ci:doctor
 argument-hint: <release1,release2,...>
 description: Analyze CI for multiple MicroShift releases and produce an HTML summary
 user-invocable: true
-allowed-tools: Skill, Bash, Read, Write, Glob, Grep, Agent
+allowed-tools: Skill, Bash, Read, Write, Glob, Grep, Agent, Workflow
 ---
 
 # microshift-ci:doctor
@@ -85,38 +85,45 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
    - `4_disk_usage.png` — Disk usage by partition (% fill)
 3. If prerequisites are missing (`pcp2json`, `matplotlib`), the script errors and stops.
 
-### Step 2: Analyze Each Job Using /microshift-ci:prow-job
+### Step 2: Analyze via Workflow
 
-**Goal**: Get detailed root cause analysis for each failed job using pre-downloaded artifacts.
+**Goal**: Run per-job analysis in parallel, orchestrated deterministically by a workflow script.
 
 **Actions**:
 
-1. Use the JSON summary output from Step 1 to build agent prompts. Do NOT read the job JSON files into the main conversation — the prepare script already printed all job details (artifacts_dir, build_id, job name) and agents receive artifacts_dir directly in their prompt.
-2. For **every** failed job across all releases and PRs, launch a separate **Agent** (using the `Agent` tool, NOT the `Skill` tool). For PR jobs, only launch agents for jobs with FAILURE status.
+1. Parse the JSON summary from Step 1 to build the workflow arguments. For each release with `jobs > 0`, read its `jobs_file` to get the array of job objects. For each job, create an entry with:
+   - `artifacts_dir`: from the job's `artifacts_dir` field
+   - `output_path`: `<WORKDIR>/jobs/release-<RELEASE>-job-<N>-<BUILD_ID>.txt` where N is the 1-based index within that release
+   - `label`: `<RELEASE>-job-<N>` (e.g., `4.22-job-3`)
 
-   **For release jobs:**
+2. For PR jobs (if the summary has `prs.jobs > 0`), read the PR jobs file. For each PR, iterate **all** its jobs and create an entry with:
+   - `artifacts_dir`: from the job's `artifacts_dir` field
+   - `output_path`: `<WORKDIR>/jobs/prs-job-<N>-pr<PR_NUMBER>-<JOB_NAME_SUFFIX>.txt` where `JOB_NAME_SUFFIX` is the job name's last segment after the release identifier
+   - `label`: `pr<PR_NUMBER>-job-<N>`
+   - `status`: from the job's `status` field (the workflow script filters to FAILURE only)
 
-   ```text
-   Agent: subagent_type=general_purpose, prompt="Analyze this Prow job and save the report:
-   1. Run /microshift-ci:prow-job <ARTIFACTS_DIR>
-   2. After the analysis completes, save the FULL report output (including the --- STRUCTURED SUMMARY --- block) to:
-      <WORKDIR>/jobs/release-<RELEASE>-job-<N>-<JOB_ID>.txt
-      Use the Write tool to save the file. The file must contain the complete analysis report."
-   ```
-
-   **For PR jobs:**
+3. Invoke the Workflow tool:
 
    ```text
-   Agent: subagent_type=general_purpose, prompt="Analyze this Prow job and save the report:
-   1. Run /microshift-ci:prow-job <ARTIFACTS_DIR>
-   2. After the analysis completes, save the FULL report output (including the --- STRUCTURED SUMMARY --- block) to:
-      <WORKDIR>/jobs/prs-job-<N>-pr<PR>-<JOB_NAME_SUFFIX>.txt
-      Use the Write tool to save the file. The file must contain the complete analysis report."
+   Workflow(
+     scriptPath: "plugins/microshift-ci/scripts/doctor-analyze.js",
+     args: {
+       jobs: [ ...entries from actions 1-2... ],
+       prow_job_skill: "/microshift-ci:prow-job"
+     }
+   )
    ```
 
-3. Launch **ALL** agents (all releases + PRs) in a **single message** as **foreground** agents (do NOT use `run_in_background`). Foreground agents in the same message run concurrently — this is just as fast as background agents but keeps your turn active until all complete.
-4. Say "Analyzing N jobs in parallel..." in your message text alongside the Agent tool calls.
-5. When all agents return, immediately proceed to Step 3 in the same turn. Do NOT stop or end your turn between Step 2 and Step 3.
+4. The workflow runs in the background and sends a completion notification when done. Wait for the notification, then proceed to Step 3. Do NOT stop or end your turn between Step 2 and Step 3.
+
+**CRITICAL — no fallback**: If the Workflow tool call fails for any reason (script error, timeout, API error), STOP and report the error to the user. Do NOT fall back to sequential Agent-based spawning — sequential execution risks hitting the turn timeout.
+
+The workflow runs all job analyses in parallel — each agent runs the prow-job skill and saves the report.
+
+**Error Handling**:
+
+- If individual analysis agents fail, the workflow continues with the remaining jobs
+- The workflow returns `{analyzed, failed, total}` — use these for the summary
 
 ### Step 3: Run Bug Correlation (Dry-Run)
 
@@ -126,7 +133,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 
 1. Collect all release versions from `<ARGUMENTS>` into a comma-separated list (e.g., `4.19,4.20,4.21,4.22`)
 2. Check for rebase PR source identifiers from the PR jobs JSON (e.g., `rebase-release-4.22`). Append them to the source list.
-3. Launch a **single** `microshift-ci:create-bugs` **foreground** agent in dry-run mode with all sources:
+3. Launch a **single** `microshift-ci:create-bugs` **foreground** agent:
 
    ```text
    Agent: subagent_type=general_purpose, prompt="Run /microshift-ci:create-bugs <all-sources-comma-separated>"
@@ -214,16 +221,16 @@ HTML report generated: <WORKDIR>/report-microshift-ci-doctor.html
 
 ## Related Skills
 
-- **microshift-ci:prow-job**: Single job analysis (used by Step 2 agents)
+- **microshift-ci:prow-job**: Single job analysis (used by Step 2 workflow agents)
 - **microshift-ci:create-bugs**: Bug correlation and creation (used in Step 3; can also be run with `--create` after this command)
 - **microshift-ci:doctor-refresh**: Regenerate the HTML report from existing data (e.g., after `/microshift-ci:create-bugs --create`)
 
 ## Notes
 
 - **Deterministic scripts** handle: data collection, artifact download, aggregation, HTML generation
-- **LLM agents** handle: per-job root cause analysis (Step 2), Jira bug search and open bugs query (Step 3)
+- **LLM agents** handle: per-job root cause analysis (Step 2 workflow), Jira bug search and open bugs query (Step 3)
 - `/microshift-ci:doctor-refresh` regenerates the HTML report from existing data. Use it after `/microshift-ci:create-bugs --create` to include newly created bugs
-- Step 2 agents (per-job analysis) are launched in a single parallel wave
+- Step 2 uses a Workflow script (`doctor-analyze.js`) that guarantees parallel agent execution via `parallel()`
 - Step 3 uses a single create-bugs agent with all sources (releases + rebase) comma-separated
 - The `prepare` script downloads all artifacts upfront so prow-job agents use local paths (no redundant downloads)
 - The `finalize` script runs aggregation and HTML generation in one call
