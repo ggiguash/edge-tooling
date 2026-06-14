@@ -244,15 +244,14 @@ cmd_prepare() {
             }]')
     done
 
-    # PR jobs: includes status so consumers can filter by outcome
+    # PR jobs: pre-filter to FAILURE only so the workflow analyzes exactly what's needed
     if ${do_rebase} && [[ -f "${WORKDIR}/jobs/prs-jobs.json" ]]; then
         workflow_jobs=$(echo "${workflow_jobs}" | jq --arg w "${WORKDIR}" \
             --slurpfile jobs "${WORKDIR}/jobs/prs-jobs.json" \
-            '. + [$jobs[0] | to_entries[] | {
+            '. + [$jobs[0] | to_entries[] | select(.value.status == "FAILURE") | {
                 artifacts_dir: .value.artifacts_dir,
                 output_path:   ($w + "/jobs/prs-job-" + ((.key+1)|tostring) + "-pr" + (.value.pr_number|tostring) + "-" + .value.build_id + ".txt"),
-                label:         ("pr" + (.value.pr_number|tostring) + "-job-" + ((.key+1)|tostring)),
-                status:        .value.status
+                label:         ("pr" + (.value.pr_number|tostring) + "-job-" + ((.key+1)|tostring))
             }]')
     fi
 
