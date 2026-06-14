@@ -34,7 +34,7 @@ the SNO threat model.
 | ID | From | To | Protocol | STRIDE |
 |----|------|----|----------|--------|
 | SNO-DF1 | SNO-EE1 (Admin) | SNO-P1 (Installer) | CLI / install-config YAML | T, I |
-| SNO-DF2 | SNO-P7 (aicli) | SNO-P2 (Assisted Service) | HTTPS REST API (console.redhat.com); offline token passed as `AI_OFFLINETOKEN` env var | T, I, D |
+| SNO-DF2 | SNO-EE1 (Admin via aicli) | SNO-P2 (Assisted Service) | HTTPS REST API (console.redhat.com); offline token passed as `AI_OFFLINETOKEN` env var | T, I, D |
 | SNO-DF3 | SNO-P2 (Assisted Service) | SNO-DS2 (Discovery ISO) | ISO generation + download | T, I |
 | SNO-DF4 | SNO-DS2 (Discovery ISO) | SNO-P5 (Bootstrap Agent) | Boot from ISO, discover hardware | T, I |
 | SNO-DF5 | SNO-P5 (Bootstrap Agent) | SNO-P2 (Assisted Service) | HTTPS (host inventory, progress) | T, I |

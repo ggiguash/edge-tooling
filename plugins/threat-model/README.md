@@ -87,14 +87,14 @@ your-workspace/
 
 | File | Purpose |
 |------|---------|
-| `skills/tnf-threat-model/SKILL.md` | TNF threat analysis skill |
-| `skills/tnf-threat-model/dfd-elements-tnf.md` | TNF DFD element catalog |
-| `skills/tna-threat-model/SKILL.md` | TNA threat analysis skill |
-| `skills/tna-threat-model/dfd-elements-tna.md` | TNA DFD element catalog |
-| `skills/sno-threat-model/SKILL.md` | SNO threat analysis skill |
-| `skills/sno-threat-model/dfd-elements-sno.md` | SNO DFD element catalog (SNO-P1–P6, SNO-DS1–DS6, SNO-DF1–DF10, SNO-TB1–TB3) |
-| `skills/lvms-threat-model/SKILL.md` | LVMS threat analysis skill |
-| `skills/lvms-threat-model/dfd-elements-lvms.md` | LVMS DFD element catalog (placeholder) |
+| `skills/tnf/SKILL.md` | TNF threat analysis skill |
+| `skills/tnf/dfd-elements-tnf.md` | TNF DFD element catalog |
+| `skills/tna/SKILL.md` | TNA threat analysis skill |
+| `skills/tna/dfd-elements-tna.md` | TNA DFD element catalog |
+| `skills/sno/SKILL.md` | SNO threat analysis skill |
+| `skills/sno/dfd-elements-sno.md` | SNO DFD element catalog (SNO-P1–P6, SNO-DS1–DS6, SNO-DF1–DF10, SNO-TB1–TB3) |
+| `skills/lvms/SKILL.md` | LVMS threat analysis skill |
+| `skills/lvms/dfd-elements-lvms.md` | LVMS DFD element catalog (placeholder) |
 | `references/mitre-reference.md` | MITRE ATT&CK quick reference |
 | `references/owasp-reference.md` | OWASP Top 10:2025 reference |
 | `references/mitre-findings-template.md` | Cumulative findings tracker template |
