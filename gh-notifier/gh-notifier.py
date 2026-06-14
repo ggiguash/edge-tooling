@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """List open PRs across repos, filter by authors / drafts / labels, flag stale PRs, notify Slack.
 
+On **Fridays (UTC)**, also lists pending team ADRs (``status: proposed``) from
+**openshift-eng/edge-context** in the same Slack message.
+
 GitHub logins to match on PR authors come from expanding Kubernetes-style **OWNERS** (approvers +
 reviewers) using **OWNERS_ALIASES** in the same repository checkout (defaults: repo root adjacent to
 ``gh-notifier/``). Override paths with OWNERS_FILE and OWNERS_ALIASES_FILE.
@@ -60,7 +63,6 @@ SLACK_WEBHOOK_URL = _env("SLACK_WEBHOOK_URL", "")
 PROW_JOB_URL = _env("PROW_JOB_URL", "")
 PROW_HTML_URL = _env("PROW_HTML_URL", "")
 VERBOSE_SLACK_MESSAGE = _truthy_env("VERBOSE_SLACK_MESSAGE")
-
 
 # Comma-separated org/repo pairs
 _REPOS_RAW = _env("GITHUB_REPOS", "openshift-eng/edge-tooling")
@@ -227,6 +229,154 @@ def iter_pulls(org: str, repo: str) -> Iterable[dict]:
         page += 1
 
 
+# -----------------------------------------------------------------------------
+# edge-context pending decisions (Fridays only)
+# -----------------------------------------------------------------------------
+
+_EDGE_CONTEXT_ORG = "openshift-eng"
+_EDGE_CONTEXT_REPO = "edge-context"
+_EDGE_CONTEXT_BRANCH = "main"
+_EDGE_CONTEXT_DECISIONS_PATH = "decisions"
+_EDGE_CONTEXT_DECISIONS_URL = (
+    f"https://github.com/{_EDGE_CONTEXT_ORG}/{_EDGE_CONTEXT_REPO}/blob/{_EDGE_CONTEXT_BRANCH}/{_EDGE_CONTEXT_DECISIONS_PATH}"
+)
+_DECISION_FILE_RE = re.compile(r"^\d{4}-.+\.md$")
+
+
+def gh_get_repo_file(org: str, repo: str, path: str, *, ref: str) -> str:
+    """Fetch a single file from a GitHub repo via the Contents API."""
+    quoted_path = urllib.parse.quote(path, safe="/")
+    data = gh_request(
+        f"/repos/{urllib.parse.quote(org)}/{urllib.parse.quote(repo)}/contents/{quoted_path}",
+        {"ref": ref},
+    )
+    if not isinstance(data, dict):
+        raise ValueError(f"Unexpected response for {org}/{repo}/{path}")
+    content_b64 = data.get("content")
+    if not content_b64:
+        raise ValueError(f"No content in {org}/{repo}/{path}")
+    return base64.b64decode(content_b64).decode("utf-8")
+
+
+def iter_decision_files(org: str, repo: str, decisions_path: str, *, ref: str) -> Iterable[str]:
+    """Yield decision filenames (``NNNN-slug.md``) under ``decisions_path``."""
+    quoted_path = urllib.parse.quote(decisions_path, safe="/")
+    data = gh_request(
+        f"/repos/{urllib.parse.quote(org)}/{urllib.parse.quote(repo)}/contents/{quoted_path}",
+        {"ref": ref},
+    )
+    if not isinstance(data, list):
+        return
+    for item in data:
+        if not isinstance(item, dict) or item.get("type") != "file":
+            continue
+        name = str(item.get("name") or "")
+        if _DECISION_FILE_RE.match(name):
+            yield name
+
+
+def parse_frontmatter(text: str) -> dict[str, str]:
+    """Parse YAML frontmatter between ``---`` fences (MADR-style decisions)."""
+    if not text.startswith("---"):
+        return {}
+    end = text.find("\n---", 3)
+    if end == -1:
+        return {}
+    block = text[3:end]
+    out: dict[str, str] = {}
+    for line in block.splitlines():
+        m = re.match(r"^([\w-]+):\s*(.*)$", line)
+        if m:
+            out[m.group(1)] = m.group(2).strip().strip('"')
+    return out
+
+
+def extract_decision_title(text: str) -> str:
+    """Return the first ``# Title`` heading after frontmatter."""
+    body = text
+    if body.startswith("---"):
+        end = body.find("\n---", 3)
+        if end != -1:
+            body = body[end + 4 :]
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            return stripped[2:].strip()
+    return ""
+
+
+def decision_number_from_filename(filename: str) -> str:
+    return filename[:4] if len(filename) >= 4 and filename[:4].isdigit() else filename
+
+
+@dataclass
+class PendingDecision:
+    number: str
+    title: str
+    decision_makers: str
+    filename: str
+    url: str
+
+
+def load_pending_decisions() -> list[PendingDecision]:
+    """Fetch decision files with ``status: proposed`` from openshift-eng/edge-context."""
+    pending: list[PendingDecision] = []
+    try:
+        filenames = sorted(
+            iter_decision_files(
+                _EDGE_CONTEXT_ORG,
+                _EDGE_CONTEXT_REPO,
+                _EDGE_CONTEXT_DECISIONS_PATH,
+                ref=_EDGE_CONTEXT_BRANCH,
+            )
+        )
+    except urllib.error.HTTPError as e:
+        sys.stderr.write(
+            f"Warning: could not fetch pending decisions from "
+            f"{_EDGE_CONTEXT_ORG}/{_EDGE_CONTEXT_REPO} (HTTP {e.code}); continuing without them.\n"
+        )
+        return []
+    except urllib.error.URLError as e:
+        sys.stderr.write(
+            f"Warning: could not fetch pending decisions from "
+            f"{_EDGE_CONTEXT_ORG}/{_EDGE_CONTEXT_REPO} ({e.reason}); continuing without them.\n"
+        )
+        return []
+    for filename in filenames:
+        path = f"{_EDGE_CONTEXT_DECISIONS_PATH}/{filename}"
+        try:
+            text = gh_get_repo_file(
+                _EDGE_CONTEXT_ORG, _EDGE_CONTEXT_REPO, path, ref=_EDGE_CONTEXT_BRANCH
+            )
+        except (urllib.error.HTTPError, ValueError) as e:
+            sys.stderr.write(f"Warning: {path}: {e}\n")
+            continue
+        frontmatter = parse_frontmatter(text)
+        if frontmatter.get("status", "").lower() != "proposed":
+            continue
+        title = extract_decision_title(text)
+        if not title:
+            slug = filename[5:-3] if filename.endswith(".md") else filename
+            title = slug.replace("-", " ").title()
+        pending.append(
+            PendingDecision(
+                number=decision_number_from_filename(filename),
+                title=title,
+                decision_makers=frontmatter.get("decision-makers", "—"),
+                filename=filename,
+                url=f"{_EDGE_CONTEXT_DECISIONS_URL}/{filename}",
+            )
+        )
+    pending.sort(key=lambda d: d.number)
+    return pending
+
+
+def is_friday_utc(now: datetime | None = None) -> bool:
+    """True on Fridays (UTC). Gates the weekly pending-decisions section."""
+    ts = now or datetime.now(timezone.utc)
+    return ts.weekday() == 4  # Monday=0 … Friday=4
+
+
 def parse_github_ts(ts: str) -> datetime:
     if ts.endswith("Z"):
         ts = ts[:-1] + "+00:00"
@@ -379,7 +529,7 @@ def _divider() -> dict[str, Any]:
     return {"type": "divider"}
 
 
-def build_slack_payload_minimal() -> dict[str, Any]:
+def build_slack_payload_minimal(*, pending_decisions: list[PendingDecision] | None = None) -> dict[str, Any]:
     """Short Slack webhook body: dashboard artifact first, optional Prow job second."""
     blocks: list[dict[str, Any]] = []
     if PROW_HTML_URL:
@@ -398,7 +548,9 @@ def build_slack_payload_minimal() -> dict[str, Any]:
         preview = "PR dashboard · HTML"
     elif PROW_JOB_URL:
         preview = "PR dashboard · Prow"
-    return {"text": preview, "blocks": blocks}
+    payload: dict[str, Any] = {"text": preview, "blocks": blocks}
+    append_pending_decisions_to_payload(payload, pending_decisions or [])
+    return payload
 
 
 def _chunk_section_blocks(blocks: list[dict[str, Any]], text: str) -> None:
@@ -418,6 +570,35 @@ def _chunk_section_blocks(blocks: list[dict[str, Any]], text: str) -> None:
         text = text[len(chunk) :].lstrip("\n")
 
 
+def format_pending_decisions_mrkdwn(pending: list[PendingDecision]) -> str:
+    n = len(pending)
+    if n == 1:
+        intro = "1 decision is pending and needs attention:"
+    else:
+        intro = f"{n} decisions are pending and need attention:"
+    lines = [intro]
+    for d in pending:
+        makers = slack_escape(d.decision_makers)
+        title = slack_escape(d.title)
+        num = slack_escape(d.number)
+        lines.append(f"* <{d.url}|{num}> - {title} - ({makers})")
+    return "\n".join(lines)
+
+
+def append_pending_decisions_to_payload(
+    payload: dict[str, Any], pending: list[PendingDecision]
+) -> None:
+    """Append a pending-decisions section to an existing Slack payload."""
+    if not pending:
+        return
+    blocks = payload.setdefault("blocks", [])
+    blocks.append(_divider())
+    _chunk_section_blocks(blocks, format_pending_decisions_mrkdwn(pending))
+    n = len(pending)
+    suffix = f" · {n} pending decision(s)" if n != 1 else " · 1 pending decision"
+    payload["text"] = str(payload.get("text", "")) + suffix
+
+
 def build_slack_payload(
     *,
     fetched_at: datetime,
@@ -426,6 +607,7 @@ def build_slack_payload(
     fetch_errors: list[str],
     slack_pr_cap: int | None = MAX_PRS_IN_MESSAGE,
     include_prow_job_link: bool = False,
+    pending_decisions: list[PendingDecision] | None = None,
 ) -> dict[str, Any]:
     """Build the same JSON shape as hubhelper's slack.webhookPayload.
 
@@ -496,10 +678,12 @@ def build_slack_payload(
             pr_lines.append(f"\n_…and {rest} more not listed in this Slack message._\n")
         body = "\n".join(pr_lines).rstrip()
         _chunk_section_blocks(blocks, body)
-    return {
+    payload: dict[str, Any] = {
         "text": _fallback_summary(open_pr_count, att_n, fetched_at.astimezone(timezone.utc).isoformat()),
         "blocks": blocks,
     }
+    append_pending_decisions_to_payload(payload, pending_decisions or [])
+    return payload
 
 
 def slack_serialize_payload(payload: dict[str, Any]) -> bytes:
@@ -563,6 +747,7 @@ def write_pr_dashboard_html(
     slack_mrkdwn: str,
     slack_json: str,
     stale_days: int,
+    pending_decisions: list[PendingDecision] | None = None,
 ) -> None:
     """Write a self-contained HTML report with PR cards and Slack copy helpers."""
     repos_label = html.escape(", ".join(f"{o}/{r}" for o, r in repos))
@@ -571,6 +756,8 @@ def write_pr_dashboard_html(
     mrkdwn_b64 = _b64_utf8(slack_mrkdwn)
     json_b64 = _b64_utf8(slack_json)
     att_n = len(attention)
+    pending = pending_decisions or []
+    pending_n = len(pending)
 
     rows: list[str] = []
     for p in attention:
@@ -616,6 +803,41 @@ def write_pr_dashboard_html(
 </table>
 </div>
 <p class="hint">Sorted by <strong>longest open</strong> first (then idle time). Stale / age threshold: <strong>{stale_days}</strong> days · Repos watched: {repos_label}</p>
+</section>"""
+
+    decisions_metric = ""
+    decisions_section = ""
+    if pending:
+        decision_rows: list[str] = []
+        for d in pending:
+            title_e = html.escape(d.title)
+            makers_e = html.escape(d.decision_makers)
+            num_e = html.escape(d.number)
+            url_e = html.escape(d.url, quote=True)
+            decision_rows.append(
+                "<tr>"
+                f'<td class="mono"><a target="_blank" rel="noopener noreferrer" href="{url_e}">{num_e}</a></td>'
+                f'<td class="title"><a target="_blank" rel="noopener noreferrer" href="{url_e}">{title_e}</a></td>'
+                f'<td>{makers_e}</td>'
+                "</tr>"
+            )
+        decisions_metric = (
+            f'<div class="metric"><div class="val">{pending_n}</div>'
+            f'<div class="lbl">Pending decisions</div></div>'
+        )
+        decisions_section = f"""<section class="prs">
+<h2>Pending team decisions <span class="badge">{pending_n}</span></h2>
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>Decision</th><th>Title</th><th>Decision makers</th>
+</tr></thead>
+<tbody>
+{"".join(decision_rows)}
+</tbody>
+</table>
+</div>
+<p class="hint">From <a target="_blank" rel="noopener noreferrer" href="{html.escape(_EDGE_CONTEXT_DECISIONS_URL, quote=True)}">openshift-eng/edge-context</a> · status <code>proposed</code> · Friday weekly digest</p>
 </section>"""
 
     doc = f"""<!DOCTYPE html>
@@ -759,9 +981,11 @@ details summary {{ cursor: pointer; color: var(--text); }}
 <div class="metrics">
   <div class="metric"><div class="val">{open_count}</div><div class="lbl">Open after filters</div></div>
   <div class="metric"><div class="val">{att_n}</div><div class="lbl">Need attention</div></div>
+  {decisions_metric}
 </div>
 {all_clear}
 {table_section}
+{decisions_section}
 <section class="slack-panel">
   <h2>Post to Slack manually</h2>
   <p><strong>Copy text</strong> below uses Slack-style bold/context and CommonMark links <code>[title](url)</code> (converted from Slack <code>&lt;url|title&gt;</code>). Every attention PR is listed. The automatic Slack webhook only includes the first <strong>{MAX_PRS_IN_MESSAGE}</strong> rows. <strong>Webhook JSON</strong> matches that capped payload (replay / debugging).</p>
@@ -871,6 +1095,13 @@ def main() -> int:
     items.sort(key=lambda p: (-p.age_days, -p.inactive_days, p.repo_full.lower(), p.number))
 
     fetch_errors: list[str] = []
+    pending_decisions: list[PendingDecision] = []
+    if is_friday_utc(fetched_at):
+        pending_decisions = load_pending_decisions()
+        if pending_decisions:
+            print(f"{len(pending_decisions)} pending decision(s) found (Friday digest).", flush=True)
+            for d in pending_decisions:
+                print(f"  {d.number} - {d.title} ({d.decision_makers})", flush=True)
 
     payload_full_mrkdwn = build_slack_payload(
         fetched_at=fetched_at,
@@ -879,6 +1110,7 @@ def main() -> int:
         fetch_errors=fetch_errors,
         slack_pr_cap=None,
         include_prow_job_link=True,
+        pending_decisions=pending_decisions,
     )
     if VERBOSE_SLACK_MESSAGE:
         payload_slack = build_slack_payload(
@@ -888,9 +1120,10 @@ def main() -> int:
             fetch_errors=fetch_errors,
             slack_pr_cap=MAX_PRS_IN_MESSAGE,
             include_prow_job_link=True,
+            pending_decisions=pending_decisions,
         )
     else:
-        payload_slack = build_slack_payload_minimal()
+        payload_slack = build_slack_payload_minimal(pending_decisions=pending_decisions)
     mrkdwn = slack_mrkdwn_http_links_to_markdown(slack_blocks_to_mrkdwn_for_paste(payload_full_mrkdwn))
     json_raw = slack_serialize_payload(payload_slack).decode("utf-8")
 
@@ -906,6 +1139,7 @@ def main() -> int:
         slack_mrkdwn=mrkdwn,
         slack_json=json_raw,
         stale_days=STALE_DAYS,
+        pending_decisions=pending_decisions,
     )
 
     if not items:
