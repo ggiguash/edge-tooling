@@ -13,11 +13,26 @@ LVMS (Logical Volume Manager Storage) release, QE, and operational workflows.
 
 | Skill | Description |
 |---|---|
+| `/lvms:analyze` | Troubleshoot LVMS storage issues on live clusters or must-gather data |
 | `/lvms:check-release-readiness` | Verify branches, dependencies, and configuration for an LVMS release |
 | `/lvms:z-stream-report` | Generate z-stream release urgency report for all supported versions |
 | `/lvms:setup-prereq` | Set up prerequisites to test unreleased LVMS operator builds |
 
 ## Usage
+
+### Troubleshooting
+
+```text
+# Analyze a live cluster
+/lvms:analyze --live
+
+# Analyze must-gather data
+/lvms:analyze ./must-gather/registry-ci-openshift-org.../
+
+# Focus on specific components
+/lvms:analyze --live --component storage
+/lvms:analyze ./must-gather/... --component logs
+```
 
 ### Release readiness
 
@@ -45,6 +60,7 @@ LVMS (Logical Volume Manager Storage) release, QE, and operational workflows.
 - `oc-mirror` (for disconnected setup workflow)
 - `skopeo` (for z-stream report registry queries)
 - Jira credentials (`JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`) for z-stream report
+- Python 3 with PyYAML (for must-gather analysis)
 - **Category:** operator
 
 ## Author
