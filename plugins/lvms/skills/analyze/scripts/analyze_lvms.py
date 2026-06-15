@@ -217,7 +217,7 @@ class LVMSAnalyzer:
         # Deduplicate by message, keep earliest
         seen = {}
         for e in raw_entries:
-            key = e['msg']
+            key = (e['pod'], e['msg'])
             if key not in seen or e['ts'] < seen[key]['ts']:
                 seen[key] = e
         self.pod_logs = list(seen.values())
@@ -356,7 +356,8 @@ class LVMSAnalyzer:
                             print(f"  {line}")
                         if len(lines) > 5:
                             print(f"  ... (truncated, {len(lines) - 5} more lines)")
-                        self.issues['critical'].append(f"VG {vg_name} on {node}: {reason[:200]}")
+                        if st != 'Progressing':
+                            self.issues['critical'].append(f"VG {vg_name} on {node}: {reason[:200]}")
 
                     valid = [d for d in devices if d != '[unknown]']
                     if valid:
@@ -511,10 +512,10 @@ class LVMSAnalyzer:
                             print(f"    ... ({len(lines) - 10} more lines)")
                     else:
                         print(f"  Error: {e['error']}")
-                    if e['level'] == 'error':
-                        self.issues['critical'].append(f"Pod {pod}: {e['msg']}")
-                    else:
-                        self.issues['warning'].append(f"Pod {pod}: {e['msg']}")
+                if e['level'] == 'error':
+                    self.issues['critical'].append(f"Pod {pod}: {e['msg']}")
+                else:
+                    self.issues['warning'].append(f"Pod {pod}: {e['msg']}")
                 print()
 
     def summary(self):
