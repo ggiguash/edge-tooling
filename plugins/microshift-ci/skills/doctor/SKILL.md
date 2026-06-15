@@ -42,7 +42,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 2. Run the prepare script:
 
    ```text
-   bash plugins/microshift-ci/scripts/doctor.sh prepare --component microshift --workdir <WORKDIR> <ARGUMENTS> --rebase
+   bash plugins/microshift-ci/scripts/doctor.sh prepare --component microshift --workdir <WORKDIR> <ARGUMENTS> --rebase --repo openshift/microshift
    ```
 
 3. The script deterministically:
@@ -101,6 +101,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
    Job: <JOB_NAME>
    URL: <JOB_URL>
    Performance graphs (if generated): <WORKDIR>/graphs/<JOB_ID>/
+   MicroShift source (if present): <WORKDIR>/src/microshift-release-<RELEASE>/
    1. Run /microshift-ci:prow-job <ARTIFACTS_DIR>
    2. Your goal is the UNDERLYING root cause, not the first error in the log — follow the
       skill's drill-down and causal-chain requirements, consulting the sosreport and the
@@ -119,6 +120,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
    Job: <JOB_NAME> (PR #<PR>)
    URL: <JOB_URL>
    Performance graphs (if generated): <WORKDIR>/graphs/<BUILD_ID>/
+   MicroShift source (if present): <WORKDIR>/src/microshift/
    1. Run /microshift-ci:prow-job <ARTIFACTS_DIR>
    2. Your goal is the UNDERLYING root cause, not the first error in the log — follow the
       skill's drill-down and causal-chain requirements, consulting the sosreport and the
@@ -244,6 +246,7 @@ HTML report generated: <WORKDIR>/report-microshift-ci-doctor.html
 - Step 2 agents (per-job analysis) are launched in a single parallel wave
 - Step 3 uses a single create-bugs agent with all sources (releases + rebase) comma-separated
 - The `prepare` script downloads all artifacts upfront so prow-job agents use local paths (no redundant downloads)
+- The `prepare` script also clones the MicroShift source to `<WORKDIR>/src/microshift` with per-release worktrees (`--repo openshift/microshift`); clone failure is non-fatal — agents record the absence in `analysis_gaps` and proceed
 - The `finalize` script runs aggregation and HTML generation in one call
 - All intermediate files use prescribed filenames in `<WORKDIR>` subdirectories (`jobs/`, `bugs/`) — no improvised names
 - The HTML report is self-contained (no external CSS/JS dependencies)

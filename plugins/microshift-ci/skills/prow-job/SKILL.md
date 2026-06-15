@@ -187,6 +187,7 @@ The user argument is: `<ARGUMENTS>`
    - For conformance steps: extract the failing test names and their failure output from the step's `build-log.txt`.
    - For build/infra steps: extract the failing command and its complete error output from the step log.
    - Record the failure timestamp(s) — they drive the journal and graph correlation in the next phase.
+   - When the MicroShift source checkout is available — check with Glob for `<WORKDIR>/src/microshift-release-<RELEASE>/` (release jobs) or `<WORKDIR>/src/microshift/` (main) — read the failing test's source: Robot Framework suites under `test/suites/`, scenario definitions under `test/scenarios*/`. Its assertions, timeouts, and setup are how you distinguish a test bug from a product bug. If the checkout is absent, note `"source checkout not available"` in `analysis_gaps` and continue.
    - Decide the stack layer: cloud infra, ci-config, hypervisor, or a legitimate test failure — and for test failures, the stage: setup, testing, teardown.
 
 4. **Drill down — iterate hypothesis → evidence until the cause is actionable**:
@@ -209,6 +210,13 @@ The user argument is: `<ARGUMENTS>`
      - **Scenario-based jobs** (~20 scenarios per job): a job-level failure streak does NOT mean *this* scenario failed each time — any failing scenario fails the job. Treat job history as a weak signal and set `flake_likelihood` conservatively.
      - **Presubmit (PR) jobs**: history spans many PRs testing different code — use it only as a flakiness baseline for the job, never to date a regression.
    - Optionally check whether the raw error appears in other jobs with `mcp__openshift-ci__search_ci_logs` (it indexes build logs and junit only — scenario-internal logs like `rf-debug.log` are not searchable). The same error across many jobs or releases points at infrastructure or payload-wide causes.
+   - When `history` yields a last-pass date and the source checkout is available, list the commits in the failure window:
+
+     ```text
+     bash plugins/microshift-ci/scripts/repo-log.sh <SRC_DIR> --since <last_pass> --until <first_fail> --paths test/
+     ```
+
+     (drop `--paths` to see all changes). Name candidate commits in the causal chain when their timing and touched paths match the failure.
    - If multiple scenarios in this job failed, decide cascade vs independent using the **timeline** (which failed first; did the earlier failure poison shared state?), not just error-text similarity.
 
 6. **Produce a report**: Create a concise report of the failure. The report MUST specify:

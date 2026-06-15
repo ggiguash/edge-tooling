@@ -31,12 +31,18 @@ COMPONENT=""
 cmd_prepare() {
     local releases_arg=""
     local do_rebase=false
+    local repo=""
 
     while [[ ${#} -gt 0 ]]; do
         case "${1}" in
             --workdir) WORKDIR="${2}"; shift 2 ;;
             --component) COMPONENT="${2}"; shift 2 ;;
             --rebase) do_rebase=true; shift ;;
+            --repo)
+                if [[ -z "${2:-}" || "${2:-}" == -* ]]; then
+                    echo "Error: --repo requires an org/name argument" >&2; return 1
+                fi
+                repo="${2}"; shift 2 ;;
             -*) echo "Unknown option: ${1}" >&2; return 1 ;;
             *) releases_arg="${1}"; shift ;;
         esac
@@ -178,6 +184,51 @@ cmd_prepare() {
         fi
     fi
 
+    # Optional read-only source checkout for analysis agents.
+    # Deliberately separate from ${WORKDIR}/<name> used by fix-test-bugs.sh
+    # (which sets up fork remotes for pushing). Failures here are non-fatal.
+    local src_error=""
+    local src_dir=""
+    declare -A src_worktrees=()
+    if [[ -n "${repo}" ]]; then
+        local repo_name="${repo##*/}"
+        src_dir="${WORKDIR}/src/${repo_name}"
+        echo "=== Source checkout (${repo}) ===" >&2
+        if [[ -d "${src_dir}/.git" ]]; then
+            echo "  Already cloned: ${src_dir}" >&2
+        else
+            mkdir -p "${WORKDIR}/src"
+            if ! git clone --quiet "https://github.com/${repo}.git" "${src_dir}" >&2; then
+                src_error="git clone failed for ${repo}"
+                echo "  WARNING: ${src_error}" >&2
+                src_dir=""
+            fi
+        fi
+        if [[ -n "${src_dir}" ]]; then
+            local release wt
+            for release in "${RELEASES[@]}"; do
+                release=$(echo "${release}" | xargs)
+                [[ "${release}" == "main" ]] && continue
+                wt="${WORKDIR}/src/${repo_name}-release-${release}"
+                if [[ -d "${wt}" ]]; then
+                    src_worktrees["${release}"]="${wt}"
+                    continue
+                fi
+                if ! git -C "${src_dir}" ls-remote --exit-code --heads origin "release-${release}" >/dev/null 2>&1; then
+                    echo "  No release-${release} branch in ${repo}, skipping worktree" >&2
+                    continue
+                fi
+                if git -C "${src_dir}" fetch --quiet origin "release-${release}" &&
+                   git -C "${src_dir}" worktree add --quiet "${wt}" "origin/release-${release}" >&2; then
+                    src_worktrees["${release}"]="${wt}"
+                    echo "  Worktree: ${wt}" >&2
+                else
+                    echo "  WARNING: worktree add failed for release-${release}" >&2
+                fi
+            done
+        fi
+    fi
+
     echo "" >&2
     echo "Prepare complete: ${total_jobs} total jobs ready for analysis in ${WORKDIR}" >&2
 
@@ -220,6 +271,20 @@ cmd_prepare() {
             result=$(echo "${result}" | jq \
                 --argjson c "${pr_job_count}" --arg f "${prs_file}" \
                 '. + {prs: {jobs: $c, jobs_file: $f}}')
+        fi
+    fi
+
+    if [[ -n "${repo}" ]]; then
+        if [[ -n "${src_error}" ]]; then
+            result=$(echo "${result}" | jq --arg e "${src_error}" '. + {source: {error: $e}}')
+        else
+            local wt_json="{}"
+            local rel
+            for rel in "${!src_worktrees[@]}"; do
+                wt_json=$(echo "${wt_json}" | jq --arg r "${rel}" --arg p "${src_worktrees[${rel}]}" '. + {($r): $p}')
+            done
+            result=$(echo "${result}" | jq --arg d "${src_dir}" --argjson w "${wt_json}" \
+                '. + {source: {repo_dir: $d, worktrees: $w}}')
         fi
     fi
 
@@ -373,7 +438,7 @@ usage() {
     echo "Usage: $(basename "$0") <command> --component <component> [--workdir DIR] [options]" >&2
     echo "" >&2
     echo "Commands:" >&2
-    echo "  prepare  --component C [--workdir DIR] <releases> [--rebase]  Collect jobs and download artifacts" >&2
+    echo "  prepare  --component C [--workdir DIR] <releases> [--rebase] [--repo ORG/NAME]  Collect jobs, download artifacts, optional source checkout" >&2
     echo "  graphs   --component C [--workdir DIR] [--timezone TZ]       Generate PCP performance graphs" >&2
     echo "  finalize --component C [--workdir DIR] <releases>             Aggregate results and generate HTML" >&2
     echo "  refresh  --component C [--workdir DIR] [--ignore KEY1,KEY2,...] <releases>  Regenerate HTML from existing workdir data" >&2

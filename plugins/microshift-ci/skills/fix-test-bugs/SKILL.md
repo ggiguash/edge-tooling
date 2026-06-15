@@ -142,7 +142,7 @@ Process eligible groups **sequentially** (one at a time — the single working t
 
    The branch is named after the primary (first) key.
 
-3. **Apply fix** (LLM step): Read the identified files in `<WORKDIR>/microshift/`, understand the failure from the candidate's `root_cause`, `raw_error`, and `remediation`, and make targeted edits.
+3. **Apply fix** (LLM step): Read the identified files in `<WORKDIR>/microshift/`, understand the failure from the candidate's `root_cause`, `raw_error`, and `remediation`, and make targeted edits. When the candidate has a `causal_chain`, read it first — the evidence quotes tell you what the analysis actually established; base the fix on the chain, not only on the one-line `root_cause`.
 
    **Constraints** (MUST follow):
    - ONLY modify files under `test/`, `scripts/`, `docs/`
