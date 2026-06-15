@@ -55,7 +55,7 @@ def info(msg):
 
 def load_yaml(path):
     try:
-        with open(path) as f:
+        with open(path, encoding='utf-8') as f:
             docs = list(yaml.safe_load_all(f))
             return docs[0] if len(docs) == 1 else docs
     except Exception as e:
@@ -149,28 +149,38 @@ class LVMSAnalyzer:
                 if sc.startswith('lvms-') or sc.startswith('topolvm-'):
                     self.pvcs.append(pvc)
 
-        # PVs — handle both individual files and list files
+        # PVs — handle both individual files and list files, dedup by UID
+        seen_pv_uids = set()
         pv_dir = self.base / "cluster-scoped-resources" / "core" / "persistentvolumes"
         if pv_dir.exists() and pv_dir.is_dir():
             for f in pv_dir.glob("*.yaml"):
                 for pv in extract_items(load_yaml(f)):
-                    if pv.get('spec', {}).get('csi', {}).get('driver') == 'topolvm.io':
+                    uid = pv.get('metadata', {}).get('uid', '')
+                    if pv.get('spec', {}).get('csi', {}).get('driver') == 'topolvm.io' and uid not in seen_pv_uids:
+                        seen_pv_uids.add(uid)
                         self.pvs.append(pv)
         for f in (self.base / "cluster-scoped-resources" / "core").rglob("persistentvolumes.yaml"):
             for pv in extract_items(load_yaml(f)):
-                if pv.get('spec', {}).get('csi', {}).get('driver') == 'topolvm.io':
+                uid = pv.get('metadata', {}).get('uid', '')
+                if pv.get('spec', {}).get('csi', {}).get('driver') == 'topolvm.io' and uid not in seen_pv_uids:
+                    seen_pv_uids.add(uid)
                     self.pvs.append(pv)
 
-        # Storage classes — handle both individual files and list files
+        # Storage classes — handle both individual files and list files, dedup by name
+        seen_sc_names = set()
         sc_dir = self.base / "cluster-scoped-resources" / "storage.k8s.io" / "storageclasses"
         if sc_dir.exists() and sc_dir.is_dir():
             for f in sc_dir.glob("*.yaml"):
                 for sc in extract_items(load_yaml(f)):
-                    if sc.get('provisioner') == 'topolvm.io':
+                    name = sc.get('metadata', {}).get('name', '')
+                    if sc.get('provisioner') == 'topolvm.io' and name not in seen_sc_names:
+                        seen_sc_names.add(name)
                         self.storage_classes.append(sc)
         for f in (self.base / "cluster-scoped-resources" / "storage.k8s.io").rglob("storageclasses.yaml"):
             for sc in extract_items(load_yaml(f)):
-                if sc.get('provisioner') == 'topolvm.io':
+                name = sc.get('metadata', {}).get('name', '')
+                if sc.get('provisioner') == 'topolvm.io' and name not in seen_sc_names:
+                    seen_sc_names.add(name)
                     self.storage_classes.append(sc)
 
         # Deployments and DaemonSets
@@ -213,7 +223,7 @@ class LVMSAnalyzer:
     def _parse_log(self, path, pod_name):
         entries = []
         try:
-            with open(path) as f:
+            with open(path, encoding='utf-8') as f:
                 for line in f:
                     line = line.strip()
                     if not line:
@@ -329,7 +339,7 @@ class LVMSAnalyzer:
                         err(f"  Status: {st}")
                         self.issues['critical'].append(f"VG {vg_name} on {node}: {st}")
 
-                    if reason:
+                    if reason and st != 'Ready':
                         print(f"\n  {BOLD}Reason:{END}")
                         lines = reason.split('\n')
                         for line in lines[:5]:

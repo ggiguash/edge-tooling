@@ -106,7 +106,7 @@ oc get lvmvolumegroup -A -o yaml
 oc get lvmvolumegroupnodestatus -A -o yaml
 ```
 
-Check VG creation per node, device availability, excluded devices and reasons.
+Check VG creation per node, device availability, excluded devices and reasons. Common root causes for VG failures: device has existing filesystem (wipe with `wipefs -a`), duplicate VG names on the system conflicting with LVMS VG name, or device too small.
 
 **PVC/PV status:**
 
@@ -116,7 +116,7 @@ oc get pv -o json | jq '[.items[] | select(.spec.csi.driver == "topolvm.io")]'
 oc get storageclass -o json | jq '[.items[] | select(.provisioner == "topolvm.io")]'
 ```
 
-For each pending PVC, check events: `oc get events -n <ns> --field-selector involvedObject.name=<pvc>`.
+For each pending PVC, check events: `oc get events -n <ns> --field-selector involvedObject.name=<pvc>`. Common causes: insufficient VG free space (thin pool full), VG missing on the node the PVC has affinity to, or node-specific device failure.
 
 **Operator health:**
 
@@ -159,13 +159,6 @@ Structure the output with these sections (include only relevant sections based o
 7. **Recommendations** — prioritized remediation with specific `oc` commands and verification steps
 
 Use visual indicators: `✓` (healthy), `⚠` (warning), `❌` (critical), `ℹ` (info).
-
-### Common Root Cause Patterns
-
-- **Device filesystem conflict**: device has existing filesystem → vg-manager can't create VG → VG missing → PVCs Pending
-- **Insufficient capacity**: thin pool full → no space for new volumes → PVCs Pending
-- **Duplicate VG names**: existing VG on the system conflicts with LVMS VG name → VG extension fails
-- **Node-specific failure**: VG missing on one node → PVCs with node affinity to that node stuck
 
 Always end with actionable next steps including verification commands and a pointer to collect a fresh must-gather if needed:
 
