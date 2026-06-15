@@ -33,6 +33,18 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 
 ## Implementation Steps
 
+### Step 0: Verify Workflow Tool Availability
+
+**CRITICAL — hard requirement**: This skill requires the `Workflow` tool. Before proceeding, confirm that `Workflow` is listed in your available tools. If it is NOT available, STOP IMMEDIATELY and report this error to the user:
+
+```text
+ERROR: The Workflow tool is not available in this Claude Code version.
+The lvms-ci:doctor skill requires Workflow support (Claude Code 2.2+).
+Please upgrade Claude Code and retry.
+```
+
+Do NOT attempt to work around the missing tool by spawning individual agents, using sequential analysis, or any other fallback. The skill cannot produce correct results without deterministic workflow orchestration.
+
 ### Step 1: Prepare — Collect and Download All Artifacts
 
 **Goal**: Deterministically collect all failed jobs and download their artifacts before any LLM analysis.
