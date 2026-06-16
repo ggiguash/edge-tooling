@@ -176,7 +176,9 @@ Append `--fallback-used` if fallback JQL was used.
 Read and check:
 
 - `{WORKDIR}/sprints.json` — if `"error"` key is present or `sprint_map` is empty, warn the user and stop
-- `{WORKDIR}/features.json` — if `feature_keys` is empty, warn the user about scope and stop
+- `{WORKDIR}/features.json` — if `feature_keys` is empty:
+  - **Refinement mode**: Report "All features have progressed past Refinement — nothing to check." and exit cleanly (skip Phases 3–4 and Step 9).
+  - **Standard mode**: Warn the user about scope and stop
 
 ---
 
@@ -278,19 +280,26 @@ This agent reads all four data files, detects misplaced spikes, fetches child is
 
 1. Read `{WORKDIR}/analysis.md`
 2. Parse the `===ANALYSIS_META===` block for header values
-3. Extract the `===SECTION:REFINEMENT_BY_SME===` block from analysis.md
-4. Build the refinement report using the template from `plugins/edge-scrum/references/refinement-report-template.md`
-5. Substitute `{VERSION}`, `{TODAY}`, `{REFINEMENT_SPRINT_NUM}`, meta values, and the `{REFINEMENT_BY_SME}` section
-6. Add Jira links (same rule as standard mode)
-7. Write to `.reports/refinement_{VERSION}_{TODAY}.md`
-8. Clean up: `test -n "{WORKDIR}" && [[ "{WORKDIR}" == /tmp/release-health-* ]] && rm -rf -- "{WORKDIR}"`
+3. Extract the `===SECTION:REFINEMENT_BY_SME===` block from analysis.md. If the section is not found, halt with an error: "Analysis phase did not produce the REFINEMENT_BY_SME section — check sub-agent output."
+4. Extract the `===SECTION:REFINEMENT_BACKLOG===` block from analysis.md
+5. Build the refinement report using the template from `plugins/edge-scrum/references/refinement-report-template.md`
+6. Substitute placeholders in the template:
+   - `{VERSION}`, `{TODAY}`, `{REFINEMENT_SPRINT_NUM}` — from release parameters
+   - `{refinement_state}` — derive from `sprints.json`: `"Closed"` if `refinement_sprint_closed = true`, otherwise `"Open"`
+   - `{total_features}` — from ANALYSIS_META `total_features`
+   - `{refined_count}` — from ANALYSIS_META `refined_count`
+   - `{needs_attention_count}` — from ANALYSIS_META `needs_attention_count`
+   - `{REFINEMENT_BY_SME}` — paste the extracted section content, stripping sentinel lines
+   - `{REFINEMENT_BACKLOG}` — paste the extracted section content, stripping sentinel lines
+7. Add Jira links (same rule as standard mode)
+8. Write to `.reports/refinement_{VERSION}_{TODAY}.md`
+9. Clean up: `test -n "{WORKDIR}" && [[ "{WORKDIR}" == /tmp/release-health-* ]] && rm -rf -- "{WORKDIR}"`
 
 ---
 
 ## Edge Cases
 
-- **Refinement mode — no features in Refinement status**: Report "All features have progressed past Refinement — nothing to check." and exit cleanly.
-- **No Features found**: Try fallback JQL (handled in Phase 2b); warn user to confirm scope; stop if still empty.
+- **No Features found**: Try fallback JQL (handled in Phase 2b); warn user to confirm scope; stop if still empty. In refinement mode, an empty result means all features have progressed past Refinement — handled in Phase 2c.
 - **Feature with no Epics**: Flag as "Unplanned"; epic fetch returns empty list for that feature.
 - **Epic with no Stories**: Flag as "Empty" in analysis.
 - **Version format varies** (`4.19` vs `4.19.0`): Analysis agent tries both in fixVersion queries.

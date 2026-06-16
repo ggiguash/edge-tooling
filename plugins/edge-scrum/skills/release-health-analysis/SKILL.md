@@ -236,9 +236,13 @@ Write to `{WORKDIR}/analysis.md` with this exact sentinel structure:
   "max_sp_capacity": <int>,
   "capacity_risk": <bool>,
   "top_risks": ["<concise description>", ...],
-  "sprint_recommendation": "<one sentence priority for this sprint>"
+  "sprint_recommendation": "<one sentence priority for this sprint>",
+  "refined_count": <int>,
+  "needs_attention_count": <int>
 }
 ===END_META===
+
+When `{REFINEMENT_MODE}` = `true`, compute and include `refined_count` (features with zero gaps at all levels) and `needs_attention_count` (`total_features - refined_count`). When `false`, set both to 0.
 
 ===SECTION:DASHBOARD===
 | Key | Feature/Initiative | Type | Status | SME | QA | Size | Refn Spike | Epics Done | Progress | Risk |
@@ -362,5 +366,5 @@ No SME assigned — PM needs to assign one before refinement can proceed. {Conti
 2. **Group by SME**: Use the SME's `display_name` from `features.json`. Features with no SME go under "Unassigned SME."
 3. **Omit clean features**: If a Feature has zero gaps at any level, do not mention it in the SME's section.
 4. **Natural language**: Do not use tables for the per-feature descriptions. Write conversational, actionable sentences that an SME can read and act on without opening Jira.
-5. **Docs epics excluded**: Skip epics whose summary starts with "Docs" and belong to the OSDOCS project — these are auto-generated and not part of refinement checks.
+5. **Docs epics excluded**: In the REFINEMENT_BY_SME section only, skip epics whose summary starts with "Docs" and belong to the OSDOCS project — these are auto-generated and not part of refinement checks. Other sections (REFINEMENT_BACKLOG, standard report sections) are unaffected.
 6. **All gap types apply**: Use the same checks from sections 5b (staffing), 5c (refinement), and 5d (blocked/stalled). The REFINEMENT_BY_SME section is a reorganized view of these existing findings, not a separate analysis.
