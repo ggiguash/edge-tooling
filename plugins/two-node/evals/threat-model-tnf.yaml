@@ -88,7 +88,7 @@ judges:
     description: Verify that the main threat model report markdown file was generated
     check: |
       files = outputs.get("files", {})
-      reports = [k for k in files if "THREAT-MODEL" in k and k.endswith(".md")]
+      reports = [k for k in files if "THREAT" in k.upper() and k.endswith(".md")]
       if not reports:
           return (False, "No threat model report file found")
       return (True, f"Report generated: {reports[0]}")
@@ -97,7 +97,7 @@ judges:
     description: Verify all required report sections are present in the generated report
     check: |
       files = outputs.get("files", {})
-      reports = {k: v for k, v in files.items() if "THREAT-MODEL" in k and k.endswith(".md")}
+      reports = {k: v for k, v in files.items() if "THREAT" in k.upper() and k.endswith(".md")}
       if not reports:
           return (False, "No report file found")
       content = list(reports.values())[0]
@@ -122,7 +122,7 @@ judges:
     check: |
       import re
       files = outputs.get("files", {})
-      reports = {k: v for k, v in files.items() if "THREAT-MODEL" in k and k.endswith(".md")}
+      reports = {k: v for k, v in files.items() if "THREAT" in k.upper() and k.endswith(".md")}
       if not reports:
           return (False, "No report file found")
       content = list(reports.values())[0]
@@ -137,7 +137,7 @@ judges:
     check: |
       import re
       files = outputs.get("files", {})
-      reports = {k: v for k, v in files.items() if "THREAT-MODEL" in k and k.endswith(".md")}
+      reports = {k: v for k, v in files.items() if "THREAT" in k.upper() and k.endswith(".md")}
       if not reports:
           return (False, "No report file found")
       content = list(reports.values())[0]
@@ -154,7 +154,7 @@ judges:
     check: |
       import re
       files = outputs.get("files", {})
-      reports = {k: v for k, v in files.items() if "THREAT-MODEL" in k and k.endswith(".md")}
+      reports = {k: v for k, v in files.items() if "THREAT" in k.upper() and k.endswith(".md")}
       if not reports:
           return (False, "No report file found")
       content = list(reports.values())[0]

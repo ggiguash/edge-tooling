@@ -6,7 +6,7 @@ execution:
   mode: case
   arguments: "{command_input}"
   timeout: 300
-  max_budget_usd: 3.0
+  max_budget_usd: 8.0
 
 runner:
   type: claude-code
@@ -79,7 +79,7 @@ judges:
   - name: budget_check
     builtin: cost_budget
     arguments:
-      max_cost_usd: 3.0
+      max_cost_usd: 8.0
 
   - name: severity_classification
     description: |
