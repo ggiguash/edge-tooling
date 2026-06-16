@@ -168,7 +168,12 @@ Per scenario, under
   when `true`, no on-failure reports are generated (development
   environments only; CI always collects them).
 - Inside an extracted report:
+  - Full system journal: `sos_commands/logs/journalctl_--no-pager`
+    — contains ALL services (microshift-tuned, greenboot, crio,
+    kubelet, NetworkManager, etc.). Use this when investigating
+    non-MicroShift services or cross-service interactions.
   - MicroShift journal: `sos_commands/microshift/journalctl_--no-pager_--unit_microshift`
+    — filtered to the microshift unit only.
   - Per-namespace pod logs:
     `sos_commands/microshift/namespaces/<ns>/pods/<pod>/<container>/<container>/logs/current.log`
     — and `previous.log` when the container was restarted. **The tail of
