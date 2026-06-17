@@ -42,6 +42,10 @@ COMPONENT_TITLES = {
     "lvm-operator": "LVMS",
 }
 
+
+_GRADE_ORDER = {"A": 0, "B": 1, "C": 2, "D": 3, "F": 4}
+_GRADE_CSS = {"A": "grade-a", "B": "grade-b", "C": "grade-c", "D": "grade-d", "F": "grade-f"}
+
 CSS = """\
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; color: #333; }
         .container { max-width: 1200px; margin: 0 auto; }
@@ -130,16 +134,23 @@ CSS = """\
         .section-anchor { font-size: 0.75em; margin-left: 8px; vertical-align: middle; }
         .copy-toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 8px 16px; border-radius: 6px; font-size: 0.85em; z-index: 1000; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
         .copy-toast.show { opacity: 1; }
-        .bugs-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
-        .bugs-table th { text-align: left; padding: 8px 6px; border-bottom: 2px solid #dee2e6; font-size: 0.85em; color: #6c757d; text-transform: uppercase; cursor: pointer; user-select: none; white-space: nowrap; }
-        .bugs-table th:hover { color: #333; }
-        .bugs-table th:after { content: ' \\25B2\\25BC'; font-size: 0.7em; opacity: 0.35; letter-spacing: -2px; }
-        .bugs-table th.sort-asc:after { content: ' \\25B2'; font-size: 0.8em; opacity: 1; color: #0d6efd; letter-spacing: normal; }
-        .bugs-table th.sort-desc:after { content: ' \\25BC'; font-size: 0.8em; opacity: 1; color: #0d6efd; letter-spacing: normal; }
-        .bugs-table td { padding: 6px; border-bottom: 1px solid #eee; font-size: 0.9em; vertical-align: middle; }
-        .bugs-table tr:hover { background: #f8f9fa; }
+        .data-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        .data-table th { text-align: left; padding: 8px 6px; border-bottom: 2px solid #dee2e6; font-size: 0.85em; color: #6c757d; text-transform: uppercase; cursor: pointer; user-select: none; white-space: nowrap; }
+        .data-table th:hover { color: #333; }
+        .data-table th:after { content: ' \\25B2\\25BC'; font-size: 0.7em; opacity: 0.35; letter-spacing: -2px; }
+        .data-table th.sort-asc:after { content: ' \\25B2'; font-size: 0.8em; opacity: 1; color: #0d6efd; letter-spacing: normal; }
+        .data-table th.sort-desc:after { content: ' \\25BC'; font-size: 0.8em; opacity: 1; color: #0d6efd; letter-spacing: normal; }
+        .data-table td { padding: 6px; border-bottom: 1px solid #eee; font-size: 0.9em; vertical-align: middle; }
+        .data-table tr:hover { background: #f8f9fa; }
         .link-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; font-weight: 700; text-transform: uppercase; }
-        .link-badge-unlinked { background: #fff3cd; color: #856404; }"""
+        .link-badge-unlinked { background: #fff3cd; color: #856404; }
+        .grade-badge { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 0.85em; font-weight: 700; min-width: 24px; text-align: center; }
+        .grade-a { background: #d4edda; color: #155724; }
+        .grade-b { background: #cce5ff; color: #004085; }
+        .grade-c { background: #fff3cd; color: #856404; }
+        .grade-d { background: #f8d7da; color: #721c24; }
+        .grade-f { background: #721c24; color: #fff; }
+        .grade-na { background: #e2e3e5; color: #383d41; }"""
 
 JS = """\
 function showTab(e, name) {
@@ -208,6 +219,11 @@ function filterToday(on) {
         if (bdb) bdb.textContent = bd.build;
         if (bdt) bdt.textContent = bd.test;
         if (bdi) bdi.textContent = bd.infra;
+    });
+}
+function filterLatestImages(on) {
+    document.querySelectorAll('#tab-images .data-table tbody tr').forEach(function(row) {
+        row.style.display = (!on || row.hasAttribute('data-latest')) ? '' : 'none';
     });
 }
 function showGraphTab(btn, paneId) {
@@ -280,7 +296,7 @@ document.querySelector('.container').style.display='';
     openAnchor();
     window.addEventListener('hashchange', openAnchor);
 })();
-document.querySelectorAll('.bugs-table').forEach(function(table) {
+document.querySelectorAll('.data-table').forEach(function(table) {
     var headers = table.querySelectorAll('th');
     function sortBy(colIdx, asc) {
         headers.forEach(function(h) { h.classList.remove('sort-asc', 'sort-desc'); });
@@ -585,7 +601,7 @@ def _bug_sort_key(bug):
 
 def _render_bugs_table(bugs, show_releases=True):
     lines = []
-    lines.append('            <table class="bugs-table">')
+    lines.append('            <table class="data-table">')
     lines.append("            <thead><tr>")
     cols = '<th>JIRA</th><th>Status</th><th>Assignee</th><th>Summary</th>'
     if show_releases:
@@ -679,6 +695,271 @@ def render_bugs_section(bugs_data):
 
     lines.append("        </div>")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Images (Image Health) tab
+# ---------------------------------------------------------------------------
+
+def _load_catalog_id(images_dir, repo_slug):
+    """Load cached catalog repository ID from a text file."""
+    path = os.path.join(images_dir, f"{repo_slug}-id.txt")
+    if os.path.exists(path):
+        with open(path) as f:
+            return f.read().strip()
+    return None
+
+
+def load_images_data(workdir, component, releases):
+    """Load cached image JSON files from ${WORKDIR}/images/.
+
+    Repos are discovered from filenames ({repo_slug}-{release}.json)
+    rather than a hardcoded mapping — doctor.sh is the single source
+    of truth for the component-to-repo list.
+    """
+    images_dir = os.path.join(workdir, "images")
+    if not os.path.isdir(images_dir):
+        return None
+
+    release_suffixes = {f"-{r}.json" for r in releases}
+    repo_slugs = set()
+    for fname in os.listdir(images_dir):
+        for suffix in release_suffixes:
+            if fname.endswith(suffix):
+                repo_slugs.add(fname[: -len(suffix)])
+                break
+
+    result = {}
+    for repo_slug in sorted(repo_slugs):
+        repo = repo_slug.replace("_", "/", 1)
+        repo_data = {}
+        for release in releases:
+            path = os.path.join(images_dir, f"{repo_slug}-{release}.json")
+            data = load_json(path)
+            if data is not None:
+                repo_data[release] = data
+        if repo_data:
+            catalog_id = _load_catalog_id(images_dir, repo_slug)
+            result[repo] = {"releases": repo_data, "catalog_id": catalog_id}
+
+    return result if result else None
+
+
+_ZSTREAM_RE = re.compile(r'^v?\d+\.\d+\.\d+$')
+_ASSEMBLY_RE = re.compile(r'assembly\.(\d+\.\d+\.\d+)\.')
+
+
+def _pick_zstream_tag(tags, release):
+    """Pick the z-stream version tag (e.g. v4.18.42) for display."""
+    if not tags:
+        return ""
+    matching = [t for t in tags if release in t and _ZSTREAM_RE.match(t)]
+    if matching:
+        return max(matching, key=len).lstrip("v")
+    # Extract z-stream from assembly tag (e.g. "assembly.4.19.7.el9" → "4.19.7")
+    for t in tags:
+        m = _ASSEMBLY_RE.search(t)
+        if m:
+            return m.group(1)
+    matching = [t for t in tags if release in t]
+    tag = min(matching, key=len) if matching else min(tags, key=len)
+    return tag.lstrip("v")
+
+
+def _worst_grade(images):
+    """Return the worst freshness grade from a list of image objects."""
+    worst = -1
+    worst_label = None
+    for img in images:
+        grade = img.get("freshness_grade")
+        if grade and _GRADE_ORDER.get(grade, -1) > worst:
+            worst = _GRADE_ORDER[grade]
+            worst_label = grade
+    return worst_label
+
+
+def _group_repo_images(images, release):
+    """Group raw images by z-stream version, merging architectures."""
+    groups = {}
+    for img in images:
+        tag = _pick_zstream_tag(img.get("tags", []), release)
+        if tag not in groups:
+            groups[tag] = {
+                "tag": tag,
+                "archs": [],
+                "creation_date": (img.get("creation_date") or "")[:10],
+                "last_update_date": (img.get("last_update_date") or "")[:10],
+                "_grades": [],
+            }
+        arch = img.get("architecture", "")
+        image_id = img.get("_id", "")
+        grade = img.get("freshness_grade")
+        if arch not in [a["arch"] for a in groups[tag]["archs"]]:
+            groups[tag]["archs"].append({
+                "arch": arch,
+                "image_id": image_id,
+                "grade": grade or "N/A",
+                "grade_css": _GRADE_CSS.get(grade, "grade-na"),
+            })
+        groups[tag]["_grades"].append(grade)
+
+    versions = []
+    for g in groups.values():
+        worst = _worst_grade([{"freshness_grade": gr} for gr in g["_grades"]])
+        versions.append({
+            "tag": g["tag"],
+            "archs": sorted(g["archs"], key=lambda a: a["arch"]),
+            "freshness_grade": worst or "N/A",
+            "grade_css": _GRADE_CSS.get(worst, "grade-na"),
+            "creation_date": g["creation_date"],
+            "last_update_date": g["last_update_date"],
+        })
+    def _version_key(v):
+        parts = v["tag"].split(".")
+        try:
+            return tuple(int(p) for p in parts)
+        except ValueError:
+            return (0,)
+    versions.sort(key=_version_key, reverse=True)
+    return versions
+
+
+def build_images_tab_data(images_data, releases):
+    """Structure raw image data for rendering.
+
+    Top-level grouping is by release (like the Periodics tab), with each
+    release containing per-repository tables of z-stream versions.
+    """
+    if not images_data:
+        return {"has_data": False, "releases": {}}
+
+    releases_out = {}
+    for release in releases:
+        repos = []
+        for repo, repo_info in images_data.items():
+            release_map = repo_info["releases"]
+            catalog_id = repo_info.get("catalog_id") or ""
+            images = release_map.get(release, [])
+            if not images:
+                continue
+            versions = _group_repo_images(images, release)
+            latest_grade = versions[0]["freshness_grade"] if versions else None
+            if latest_grade == "N/A":
+                latest_grade = None
+            repos.append({
+                "name": repo,
+                "display_name": repo.split("/")[-1],
+                "catalog_id": catalog_id,
+                "versions": versions,
+                "latest_grade": latest_grade,
+            })
+        if repos:
+            all_grades = [r["latest_grade"] for r in repos if r["latest_grade"]]
+            worst = max(all_grades, key=lambda g: _GRADE_ORDER.get(g, -1)) if all_grades else None
+            releases_out[release] = {"repos": repos, "latest_grade": worst}
+
+    return {"has_data": bool(releases_out), "releases": releases_out}
+
+
+def render_images_section(images_tab_data):
+    """Render the Image Health (Images) tab HTML.
+
+    Mirrors the Periodics tab layout: a Table of Contents at the top
+    followed by one release-section card per release, each containing
+    a table per repository.
+    """
+    if not images_tab_data or not images_tab_data.get("has_data"):
+        return (
+            '        <div class="release-section">\n'
+            "            <p>No container image data available. "
+            "Run the full doctor workflow to populate image health data.</p>\n"
+            "        </div>"
+        )
+
+    releases_data = images_tab_data["releases"]
+
+    # Table of Contents
+    toc = []
+    toc.append('        <div class="toc">')
+    toc.append('            <div class="toc-header">')
+    toc.append('                <h3>Table of Contents</h3>')
+    toc.append('                <label class="filter-toggle"><input type="checkbox" id="filter-latest-images" onchange="filterLatestImages(this.checked)"> Latest only</label>')
+    toc.append('            </div>')
+    toc.append('            <ul>')
+    for release in sorted(releases_data.keys(), reverse=True):
+        rel = releases_data[release]
+        repo_parts = []
+        for r in rel["repos"]:
+            grade = r.get("latest_grade")
+            if grade:
+                css = _GRADE_CSS.get(grade, "grade-na")
+                repo_parts.append(
+                    f'{_e(r["display_name"])} '
+                    f'<span class="grade-badge {css}" style="font-size:0.8em" '
+                    f'title="Freshness grade of the latest published image">{_e(grade)}</span>'
+                )
+            else:
+                repo_parts.append(_e(r["display_name"]))
+        toc.append(
+            f'                <li><a href="#images-{_e(release)}">Release {_e(release)}</a>'
+            f' <span style="color:#6c757d;font-size:0.85em">({" &nbsp; ".join(repo_parts)})</span></li>'
+        )
+    toc.append('            </ul>')
+    toc.append('        </div>')
+
+    # Per-release sections
+    sections = []
+    for release in sorted(releases_data.keys(), reverse=True):
+        rel = releases_data[release]
+        lines = []
+        lines.append(f'        <div class="release-section" id="images-{_e(release)}">')
+        lines.append('            <div class="release-header">')
+        lines.append(
+            f'                <h2>Release {_e(release)}'
+            f'<a href="#images-{_e(release)}" class="section-anchor" title="Copy link to this section">&#128279;</a></h2>'
+        )
+        lines.append('            </div>')
+
+        for repo in rel["repos"]:
+            catalog_id = repo.get("catalog_id", "")
+            if catalog_id:
+                repo_url = f'https://catalog.redhat.com/en/software/containers/{repo["name"]}/{catalog_id}'
+                lines.append(f'            <h3><a href="{repo_url}" target="_blank">{_e(repo["display_name"])}</a></h3>')
+            else:
+                repo_url = ""
+                lines.append(f'            <h3>{_e(repo["display_name"])}</h3>')
+
+            lines.append('            <table class="data-table">')
+            lines.append('            <thead><tr>')
+            lines.append('                <th>Version</th><th>Architectures</th><th>Image Created</th><th>Grade Updated</th>')
+            lines.append('            </tr></thead>')
+            lines.append('            <tbody>')
+
+            for vi, ver in enumerate(repo["versions"]):
+                latest_attr = ' data-latest="1"' if vi == 0 else ''
+                lines.append(f"            <tr{latest_attr}>")
+                lines.append(f'                <td>{_e(ver["tag"])}</td>')
+                arch_parts = []
+                for a in ver["archs"]:
+                    gcss = a["grade_css"]
+                    badge = f'<span class="grade-badge {gcss}">{_e(a["grade"])}</span>'
+                    if repo_url and a["image_id"]:
+                        href = f'{repo_url}?image={a["image_id"]}&architecture={a["arch"]}'
+                        arch_parts.append(f'<a href="{href}" target="_blank">{_e(a["arch"])}</a>&nbsp;{badge}')
+                    else:
+                        arch_parts.append(f'{_e(a["arch"])}&nbsp;{badge}')
+                lines.append(f'                <td>{"&nbsp; ".join(arch_parts)}</td>')
+                lines.append(f'                <td>{_e(ver["creation_date"])}</td>')
+                lines.append(f'                <td>{_e(ver["last_update_date"])}</td>')
+                lines.append("            </tr>")
+
+            lines.append('            </tbody>')
+            lines.append('            </table>')
+
+        lines.append('        </div>')
+        sections.append("\n".join(lines))
+
+    return "\n".join(toc) + "\n\n" + "\n\n".join(sections)
 
 
 # ---------------------------------------------------------------------------
@@ -1074,7 +1355,7 @@ def render_pr_section(pr_data, bug_candidates, pr_status, pr_error=None):
     return "\n".join(toc_lines) + "\n\n" + "\n".join(lines)
 
 
-def generate_html(component_title, releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error=None, bugs_tab_data=None):
+def generate_html(component_title, releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error=None, bugs_tab_data=None, images_tab_data=None):
     date_str = timestamp.strftime("%Y-%m-%d")
     time_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1138,6 +1419,7 @@ def generate_html(component_title, releases_data, all_bug_candidates, pr_data, p
 
     pr_section = render_pr_section(pr_data, all_bug_candidates, pr_status, pr_error)
     bugs_section = render_bugs_section(bugs_tab_data) if bugs_tab_data else ""
+    images_section = render_images_section(images_tab_data) if images_tab_data else ""
 
     return f"""\
 <!DOCTYPE html>
@@ -1163,6 +1445,7 @@ def generate_html(component_title, releases_data, all_bug_candidates, pr_data, p
         <button class="tab-btn active" onclick="showTab(event, 'periodics')">Periodics</button>
         <button class="tab-btn" onclick="showTab(event, 'pull-requests')">Pull Requests</button>
         <button class="tab-btn" onclick="showTab(event, 'bugs')">Bugs</button>
+        <button class="tab-btn" onclick="showTab(event, 'images')">Image Health</button>
     </div>
 
     <div id="tab-periodics" class="tab-content active">
@@ -1185,6 +1468,10 @@ def generate_html(component_title, releases_data, all_bug_candidates, pr_data, p
 
     <div id="tab-bugs" class="tab-content">
 {bugs_section}
+    </div>
+
+    <div id="tab-images" class="tab-content">
+{images_section}
     </div>
 
     <p>&nbsp;</p><p>&nbsp;</p><p>&nbsp;</p><p>&nbsp;</p>
@@ -1362,6 +1649,10 @@ def main():
     with open(bugs_summary_path, "w") as f:
         json.dump(bugs_tab_data, f, indent=2)
 
+    # Load container image health data
+    images_data = load_images_data(workdir, component, releases)
+    images_tab_data = build_images_tab_data(images_data, releases) if images_data else None
+
     # Set graphs directory for rendering
     global _GRAPHS_DIR
     graphs_dir = os.path.join(workdir, "graphs")
@@ -1370,7 +1661,7 @@ def main():
 
     # Generate HTML
     timestamp = datetime.now(timezone.utc)
-    html_content = generate_html(component_title, releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error, bugs_tab_data)
+    html_content = generate_html(component_title, releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error, bugs_tab_data, images_tab_data)
 
     output_path = os.path.join(workdir, f"report-{component}-ci-doctor.html")
     with open(output_path, "w") as f:
@@ -1409,6 +1700,15 @@ def main():
         print(f"    {len(bugs_tab_data['linked'])} linked bugs (JIRA query not available)")
     else:
         print("    No bug data")
+    print("  Image Health:")
+    if images_tab_data and images_tab_data.get("has_data"):
+        for release, rel in sorted(images_tab_data["releases"].items()):
+            worst = rel["latest_grade"]
+            grade_str = f" (grade {worst})" if worst else ""
+            repo_names = ", ".join(r["display_name"] for r in rel["repos"])
+            print(f"    Release {release}: {repo_names}{grade_str}")
+    else:
+        print("    No container image data")
     print(f"\nHTML report generated: {output_path}")
 
 
