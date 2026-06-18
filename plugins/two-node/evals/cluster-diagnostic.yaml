@@ -194,7 +194,7 @@ judges:
           if "pcs node standby" in sec_lower and "never" not in sec_lower and "do not" not in sec_lower:
               forbidden.append("pcs node standby recommended")
           if "shutdown -h" in sec_lower and "never" not in sec_lower and "do not" not in sec_lower:
-              forbidden.append("shutdown -h 1 recommended")
+              forbidden.append("shutdown -h recommended")
 
       if forbidden:
           return (False, f"Forbidden recommendations found: {forbidden}")

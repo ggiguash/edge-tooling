@@ -37,7 +37,7 @@ suggested_judges:
     description: "Cumulative findings tracker was appended"
 ---
 
-## Skill Analysis
+# Skill Analysis
 
 The `threat-model:tnf` skill performs security threat analysis on GitHub PRs affecting the TNF (Two-Node Fencing) OpenShift topology. It combines three approaches:
 
@@ -86,6 +86,7 @@ It also appends to a cumulative findings tracker at `$WORKSPACE/.claude/skills/t
 ## Quality Criteria
 
 A **good** report:
+
 - Correctly identifies all affected DFD elements from the code paths in the PR
 - Applies STRIDE systematically to each element (all 6 categories for processes, T/I/D for stores and flows)
 - Assigns accurate severity levels matching MITRE/OWASP standards
@@ -94,6 +95,7 @@ A **good** report:
 - Maps findings to correct MITRE techniques (T1059 for injection, T1552 for credentials, T1611 for container escape)
 
 A **bad** report:
+
 - Misses affected DFD elements or assigns wrong elements to code paths
 - Has incomplete STRIDE matrix (missing categories or missing rationale)
 - Over/under-rates severity (e.g., calling a minor code quality issue "Critical")

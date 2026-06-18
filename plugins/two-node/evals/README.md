@@ -36,7 +36,7 @@ The CI workflow is defined in
 
 ## Directory Structure
 
-```
+```text
 evals/
 ├── <skill-name>.yaml           # Eval config (judges, thresholds, schema)
 ├── <skill-name>.md             # Cached skill analysis
@@ -50,27 +50,32 @@ evals/
 ## Adding a New Eval
 
 1. **Analyze the skill** — reads SKILL.md, designs judges, writes the eval config
-   ```
+
+   ```bash
    /eval-analyze --skill <name> --config evals/<name>.yaml
    ```
 
 2. **Generate scenarios** — creates `input.yaml` + `annotations.yaml` per case
-   ```
+
+   ```bash
    /eval-dataset --config evals/<name>.yaml
    ```
 
 3. **Run the eval** — executes the skill against each case, scores with judges, generates HTML report
-   ```
+
+   ```bash
    /eval-run --model claude-opus-4-6 --config evals/<name>.yaml
    ```
 
 4. **Review results** — walk through cases, collect human feedback
-   ```
+
+   ```bash
    /eval-review --run-id <run-id> --config evals/<name>.yaml
    ```
 
 5. **(Optional) Optimize** — auto-fix SKILL.md based on judge failures, re-run to verify
-   ```
+
+   ```bash
    /eval-optimize --config evals/<name>.yaml
    ```
 

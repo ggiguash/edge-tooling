@@ -44,11 +44,13 @@ adds complexity.
 ## Inputs
 
 Each test case has `input.yaml` with:
+
 - `command_input`: Full argument string (e.g., `validate "cordon, drain, shutdown"`,
   `recovery-guide full-shutdown`)
 - `mode`: Which mode is being tested (`validate`, `recovery-guide`, `game`)
 
 And `annotations.yaml` with expected outcomes:
+
 - `expected_blockers`: List of BLOCKER findings expected (validate mode)
 - `expected_warnings`: List of WARNING findings expected
 - `expected_scenario`: Scenario name (recovery-guide mode)
@@ -73,11 +75,13 @@ All output is conversational — the skill writes nothing to disk. Judges use
 ## Quality Criteria
 
 **Deterministic** (code-checkable):
+
 - Severity classification matches knowledge base table
 - Never recommends pcs standby, sequential shutdown, or shutdown -h
 - Recovery procedures include bash commands and verification steps
 
 **LLM judgment** (requires reasoning):
+
 - Response accurately reflects TNF architecture facts
 - Failure mode explanations reference correct root causes
 - Recovery procedures match validated bare metal test results
