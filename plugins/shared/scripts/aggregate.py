@@ -21,7 +21,7 @@ import re
 import glob as glob_mod
 from datetime import datetime, timezone
 
-from classify import classify_breakdown, combine_infrastructure_flags
+from classify import classify_breakdown
 from parse import parse_structured_summary, group_by_signature
 
 
@@ -67,7 +67,7 @@ def _build_issues_from_jobs(jobs):
             job["stack_layer"],
             job.get("step_name", ""),
             job.get("error_signature", ""),
-            job.get("infrastructure_failure"),
+            job.get("infrastructure_failure", False),
         )] += 1
 
     issues = []
@@ -77,7 +77,7 @@ def _build_issues_from_jobs(jobs):
             rep["stack_layer"],
             rep.get("step_name", ""),
             rep.get("error_signature", ""),
-            combine_infrastructure_flags(group),
+            any(j.get("infrastructure_failure") for j in group),
         )
         issues.append({
             "number": i,

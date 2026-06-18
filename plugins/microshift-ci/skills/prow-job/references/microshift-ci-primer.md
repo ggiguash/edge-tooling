@@ -161,7 +161,7 @@ Per scenario, under
      workloads.
   Match report to failure by comparing the sosreport's capture timestamp
   with the failure timestamp from `rf-debug.log`.
-- Extract with `bash plugins/microshift-ci/scripts/extract-sosreport.sh <dir>`
+- Extract with `bash plugins/microshift-ci/scripts/extract-sosreport.sh <dir> <dir>/sos-extracted`
   and read its JSON index (journals, namespace pod logs, pre-grepped
   highlights).
 - The on-failure listener respects the `SKIP_SOS` environment variable —

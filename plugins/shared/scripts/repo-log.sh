@@ -3,11 +3,6 @@ set -euo pipefail
 
 # git log wrapper for analysis agents.
 #
-# Agents in CI cannot run git directly (the permission allowlist only
-# permits bash/python3 on plugin scripts) — this script is the permitted
-# mechanism for listing commits in a failure window, e.g. between the
-# last passing and first failing run of a job.
-#
 # Shared across components via symlinks in each plugin's scripts/ directory.
 #
 # Usage:

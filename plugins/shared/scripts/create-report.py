@@ -941,13 +941,14 @@ def render_release_section(version, rdata, bug_candidates):
         lines.append(f'            <tr class="issue-row" id="{anchor_id}"{dates_attr}>')
         lines.append(f'                <td class="col-sev"><span class="severity-badge {sev_css}">{sev}</span></td>')
         lines.append(f'                <td class="col-ftype"><span class="ftype-badge {ftype_css}">{ftype_label}</span></td>')
-        lines.append(f'                <td class="col-title">{_e(issue["title"])}{_render_confidence_badge(issue)}</td>')
+        lines.append(f'                <td class="col-title">{_e(issue["title"])}</td>')
         lines.append(f'                <td class="col-jobs">{jobs_label}</td>')
         lines.append(f'                <td class="col-link"><a href="#{anchor_id}" class="anchor-link" title="Copy link to this issue">&#128279;</a></td>')
         lines.append('            </tr>')
         lines.append('            <tr class="detail-row"><td colspan="5">')
         if issue.get("root_cause"):
-            lines.append(f'                <div class="root-cause"><strong>Root Cause:</strong> {_e(issue["root_cause"])}</div>')
+            conf_badge = _render_confidence_badge(issue)
+            lines.append(f'                <div class="root-cause"><strong>Root Cause:</strong> {conf_badge} {_e(issue["root_cause"])}</div>')
         lines.extend(_render_investigation(issue))
         lines.append(f'                <div class="bug-links">{_render_bug_links(bug_match)}</div>')
         if issue.get("affected_jobs"):
@@ -1103,13 +1104,14 @@ def render_pr_section(pr_data, bug_candidates, pr_status, pr_error=None):
                 lines.append(f'            <tr class="issue-row" id="{anchor_id}">')
                 lines.append(f'                <td class="col-sev"><span class="severity-badge {sev_css}">{sev}</span></td>')
                 lines.append(f'                <td class="col-ftype"><span class="ftype-badge {ftype_css}">{ftype_label}</span></td>')
-                lines.append(f'                <td class="col-title">{_e(issue["title"])}{_render_confidence_badge(issue)}</td>')
+                lines.append(f'                <td class="col-title">{_e(issue["title"])}</td>')
                 lines.append(f'                <td class="col-jobs">{jobs_label}</td>')
                 lines.append(f'                <td class="col-link"><a href="#{anchor_id}" class="anchor-link" title="Copy link to this issue">&#128279;</a></td>')
                 lines.append('            </tr>')
                 lines.append('            <tr class="detail-row"><td colspan="5">')
                 if issue.get("root_cause"):
-                    lines.append(f'                <div class="root-cause"><strong>Root Cause:</strong> {_e(issue["root_cause"])}</div>')
+                    conf_badge = _render_confidence_badge(issue)
+                    lines.append(f'                <div class="root-cause"><strong>Root Cause:</strong> {conf_badge} {_e(issue["root_cause"])}</div>')
                 lines.extend(_render_investigation(issue))
                 lines.append(f'                <div class="bug-links">{_render_bug_links(bug_match)}</div>')
                 if issue.get("affected_jobs"):

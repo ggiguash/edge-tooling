@@ -38,7 +38,7 @@ import re
 import glob as glob_mod
 from datetime import datetime, timezone
 
-from classify import classify_breakdown, combine_infrastructure_flags
+from classify import classify_breakdown
 from parse import (
     STOP_WORDS, normalize_step_name, cluster_by_similarity,
     group_by_signature, grouping_text, parse_structured_summary, tokenize,
@@ -109,7 +109,7 @@ def build_candidates(groups):
                 rep["stack_layer"],
                 rep.get("step_name", ""),
                 rep.get("error_signature", ""),
-                combine_infrastructure_flags(group),
+                any(j.get("infrastructure_failure") for j in group),
             ),
             "step_name": ", ".join(step_names),
             "affected_jobs": len(group),

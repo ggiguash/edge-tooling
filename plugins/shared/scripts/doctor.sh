@@ -192,7 +192,7 @@ cmd_prepare() {
             echo "=== Extracting sosreports ===" >&2
             local sos_count=0
             while IFS= read -r d; do
-                bash "${SCRIPT_DIR}/extract-sosreport.sh" "${d}" 2>/dev/null && ((sos_count++)) || true
+                bash "${SCRIPT_DIR}/extract-sosreport.sh" "${d}" "${d}/sos-extracted" && ((sos_count++)) || true
             done <<< "${sos_dirs}"
             echo "  Extracted sosreports in ${sos_count} directory(ies)" >&2
         fi
@@ -288,6 +288,7 @@ cmd_prepare() {
         fi
     fi
 
+    # Serialize source checkout results (repo_dir + per-release worktrees, or error) into JSON.
     if [[ -n "${repo}" ]]; then
         if [[ -n "${src_error}" ]]; then
             result=$(echo "${result}" | jq --arg e "${src_error}" '. + {source: {error: $e}}')

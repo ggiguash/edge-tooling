@@ -10,11 +10,11 @@ set -euo pipefail
 # permitted mechanism for sosreport extraction.
 #
 # Usage:
-#   extract-sosreport.sh <artifacts-dir> [--dest DIR]
+#   extract-sosreport.sh <artifacts-dir> <dest>
 #
 #   <artifacts-dir>: local job artifacts directory (searched recursively
 #                    for sosreport-*.tar.xz)
-#   --dest DIR:      extraction destination (default: <artifacts-dir>/sos-extracted)
+#   <dest>:          extraction destination directory
 #
 # Output: writes <dest>/index.json:
 #   {"sosreports": [{
@@ -25,8 +25,8 @@ set -euo pipefail
 #      "highlights": [{"file": "...", "line": N, "text": "..."}]
 #   }]}
 #
-# Extraction is idempotent: a .extracted marker file in the destination
-# directory causes the (slow) tar step to be skipped on re-runs.
+# Extraction is idempotent: if <dest>/index.json already exists the
+# script exits immediately.
 #
 # Progress/errors: stderr. Absence of sosreports is NOT an error — the
 # caller records it as an analysis gap.
@@ -35,33 +35,26 @@ HIGHLIGHT_RE='panic|OOM|oom-kill|segfault|Failed to start|level=error|FATAL|lead
 MAX_HIGHLIGHTS=100
 
 usage() {
-    echo "Usage: $(basename "$0") <artifacts-dir> [--dest DIR]" >&2
+    echo "Usage: $(basename "$0") <artifacts-dir> <dest>" >&2
     exit 1
 }
 
 main() {
-    local artifacts_dir=""
-    local dest=""
+    [[ ${#} -ne 2 ]] && usage
+    local artifacts_dir="${1}"
+    local dest="${2}"
 
-    while [[ ${#} -gt 0 ]]; do
-        case "${1}" in
-            --dest)
-                [[ ${#} -ge 2 ]] || { echo "Error: --dest requires a directory" >&2; usage; }
-                dest="${2}"; shift 2 ;;
-            -h|--help) usage ;;
-            -*) echo "Unknown option: ${1}" >&2; usage ;;
-            *) artifacts_dir="${1}"; shift ;;
-        esac
-    done
-
-    [[ -z "${artifacts_dir}" ]] && usage
     [[ -d "${artifacts_dir}" ]] || { echo "Error: not a directory: ${artifacts_dir}" >&2; exit 1; }
-    dest="${dest:-${artifacts_dir}/sos-extracted}"
 
     local -a tarballs=()
     while IFS= read -r t; do
         tarballs+=("${t}")
     done < <(find "${artifacts_dir}" -name 'sosreport-*.tar.xz' | sort)
+
+    if [[ -f "${dest}/index.json" ]]; then
+        echo "Cached: ${dest}/index.json" >&2
+        return 0
+    fi
 
     if [[ ${#tarballs[@]} -eq 0 ]]; then
         echo "No sosreports found in ${artifacts_dir}" >&2
@@ -79,16 +72,11 @@ main() {
         name="$(basename "${tarball}" .tar.xz)"
         local outdir="${dest}/${name}"
 
-        if [[ -f "${outdir}/.extracted" ]]; then
-            echo "  cached: ${name}" >&2
-        else
-            echo "  extracting: ${name}" >&2
-            mkdir -p "${outdir}"
-            # Sosreport tarballs contain a single top-level directory named
-            # after the archive — strip it so files land directly in outdir.
-            tar --no-same-owner --strip-components=1 -xf "${tarball}" -C "${outdir}"
-            touch "${outdir}/.extracted"
-        fi
+        echo "  extracting: ${name}" >&2
+        mkdir -p "${outdir}"
+        # Sosreport tarballs contain a single top-level directory named
+        # after the archive — strip it so files land directly in outdir.
+        tar --no-same-owner --strip-components=1 -xf "${tarball}" -C "${outdir}"
 
         # Index high-signal locations. Journal command output lands under
         # per-plugin dirs (sos_commands/logs/, sos_commands/microshift/, ...).
@@ -112,8 +100,8 @@ main() {
 
         local highlights_json="[]"
         if [[ ${#scan_targets[@]} -gt 0 ]]; then
-            # grep exits 1 on no matches and the journals may contain binary
-            # data (-I skips it) — neither should fail the pipeline.
+            # Grep high-signal patterns and parse each match into a
+            # {file, line, text} JSON object for the index.
             highlights_json=$({ grep -nHIE "${HIGHLIGHT_RE}" "${scan_targets[@]}" 2>/dev/null || true; } \
                 | head -${MAX_HIGHLIGHTS} \
                 | jq -R 'capture("^(?<file>[^:]+):(?<line>[0-9]+):(?<text>.*)$")

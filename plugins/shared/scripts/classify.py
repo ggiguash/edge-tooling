@@ -18,15 +18,13 @@ BUILD_SIGNATURE_PATTERNS = ("update-origin", "build-image")
 
 
 def classify_breakdown(stack_layer, step_name="", error_signature="",
-                       infrastructure_failure=None):
+                       infrastructure_failure=False):
     """Classify a CI failure as build, test, or infrastructure.
 
-    The INFRASTRUCTURE_FAILURE flag from the LLM analysis is tri-state:
-    True forces "infrastructure"; explicit False means the analysis
-    ruled infrastructure out, so the step-name patterns are skipped
-    (a product bug surfacing in an infra-* step would otherwise be
-    silently dropped by the bug-creation policy); None (older reports
-    without the field) keeps the pattern-based behavior.
+    The INFRASTRUCTURE_FAILURE flag from the LLM analysis overrides
+    pattern-based classification when set.  Otherwise uses deterministic
+    step-name and error-signature pattern matching, falling back to the
+    LLM's STACK_LAYER when no pattern matches.
     """
     if infrastructure_failure:
         return "infrastructure"
@@ -34,7 +32,7 @@ def classify_breakdown(stack_layer, step_name="", error_signature="",
     lower_step = step_name.lower()
     lower_sig = error_signature.lower()
 
-    if infrastructure_failure is None and any(k in lower_step for k in INFRA_STEP_PATTERNS):
+    if any(k in lower_step for k in INFRA_STEP_PATTERNS):
         return "infrastructure"
     if any(k in lower_step for k in BUILD_STEP_PATTERNS):
         return "build"
@@ -42,23 +40,8 @@ def classify_breakdown(stack_layer, step_name="", error_signature="",
         return "build"
 
     lower = stack_layer.lower()
-    if infrastructure_failure is None and lower in INFRA_LAYERS:
+    if lower in INFRA_LAYERS:
         return "infrastructure"
     if lower in BUILD_LAYERS:
         return "build"
     return "test"
-
-
-def combine_infrastructure_flags(entries):
-    """Combine tri-state infrastructure_failure flags across a group.
-
-    Any explicit True wins, otherwise any explicit False wins (the
-    analysis ruled infrastructure out), otherwise None (no entry in the
-    group carried the field — legacy reports).
-    """
-    flags = [e.get("infrastructure_failure") for e in entries]
-    if any(f is True for f in flags):
-        return True
-    if any(f is False for f in flags):
-        return False
-    return None

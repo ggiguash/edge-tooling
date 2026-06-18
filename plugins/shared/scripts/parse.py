@@ -24,8 +24,6 @@ SIMILARITY_THRESHOLD = 0.50
 
 
 def _parse_bool(value):
-    if value is None:
-        return None
     if isinstance(value, str):
         return value.lower() == "true"
     return bool(value)
@@ -73,19 +71,12 @@ def parse_structured_summary(filepath):
             "error_signature": data.get("error_signature", ""),
             "raw_error": data.get("raw_error", ""),
             "root_cause": data.get("root_cause", ""),
-            # Tri-state: True/False when the report states it, None when the
-            # field is absent (older reports) — classify.py treats explicit
-            # False as "the analysis ruled out infrastructure".
-            "infrastructure_failure": (
-                _parse_bool(data["infrastructure_failure"])
-                if "infrastructure_failure" in data else None
-            ),
+            "infrastructure_failure": _parse_bool(data.get("infrastructure_failure", False)),
             "job_url": data.get("job_url", ""),
             "job_name": data.get("job_name", ""),
             "release": data.get("release", ""),
             "finished": data.get("finished", ""),
             "remediation": data.get("remediation", ""),
-            # Investigation fields (absent in older reports — default empty)
             "confidence": data.get("confidence", ""),
             "causal_chain": [
                 link for link in (data.get("causal_chain") or [])
