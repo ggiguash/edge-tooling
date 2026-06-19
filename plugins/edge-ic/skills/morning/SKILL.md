@@ -258,6 +258,58 @@ Store results as:
 - `count`: number of tickets found
 - `tickets`: list of key + summary
 
+## Step 8: Deduplicate
+
+Before rendering, remove duplicate tickets across sections. A ticket that appears in multiple data sources is shown only in the highest-priority section.
+
+**Priority order** (highest first):
+1. QA Ready (Step 2)
+2. Sprint Backlog (Step 3)
+3. Carry-over (Step 4)
+4. RHEL Queue (Step 7)
+
+For each ticket key found in a higher-priority section, remove it from all lower-priority sections. Carry-over items are matched by JIRA key if they contain one (e.g., a line like `OCPEDGE-2700: some task` matches key `OCPEDGE-2700`).
+
+## Step 9: Render Output
+
+Read the output format reference from `$PLUGIN_DIR/references/MORNING_OUTPUT_FORMAT.md`.
+
+**Render the sprint header** (always shown if sprint data is available):
+- Sprint name, days remaining of total days
+- Story points completed vs total with percentage
+- Progress bar: 20 chars, filled proportionally with `█` and `░`
+
+**Render the summary line:**
+- Count items in each non-empty section
+- Join with ` · ` separator
+- Append `⚠ quarterly reminder` if quarterly reminder is active
+- Append `⚠ sprint ending soon` if sprint is urgent (days_remaining <= 3)
+
+**Render each section** in order: QA Ready, Sprint Backlog, Carry-over, Open PRs, RHEL Queue, Reminders.
+- Skip any section that has zero items
+- Use the exact formatting from the output format reference
+- All JIRA links: `https://redhat.atlassian.net/browse/{KEY}`
+
+**Reminders section** collects:
+- Sprint urgency reminder (if days_remaining <= 3): "⚠ {sprint_name} ends in {N} days — prepare tasks for next sprint" (or "🔴 {sprint_name} ends today — finalize work and groom next sprint")
+- Quarterly reminder (if within 14 days of quarter end)
+
+**If all sections are empty** (no QA tasks, no sprint items, no carry-over, no PRs, no RHEL tickets, no reminders), output:
+
+```
+☀ Morning Briefing — {date}
+
+  Nothing on your plate — enjoy the quiet morning
+```
+
+**Error notes:** If any data source failed during gathering, append a note at the bottom:
+
+```
+──────────────────────────────────────────────────────────
+⚠ Could not reach JIRA — QA tasks, sprint backlog, and RHEL queue skipped
+⚠ Could not fetch PR dashboard — open PRs section skipped
+```
+
 ## Usage
 
 ```text
