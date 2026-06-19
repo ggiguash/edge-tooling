@@ -83,6 +83,8 @@ mkdir -p "$HOME/.config/edge-ic"
 
 Write the YAML config to `$HOME/.config/edge-ic/morning.yaml` using the collected values. Then proceed to Step 2.
 
+Steps 2-7 are independent and can be run in parallel. Skip any step whose corresponding section is disabled in config.
+
 ## Step 2: Gather QA/Watch-Status Tasks
 
 Skip if `sections.qa_tasks` is `false` in config.
@@ -200,7 +202,7 @@ Use WebFetch on:
 https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/periodic-ci-openshift-eng-edge-tooling-main-pr-notifier/{run_id}/artifacts/pr-notifier/openshift-edge-tooling-gh-notifier/artifacts/edge-tooling-pr-summary.html
 ```
 
-With prompt: "Extract all PRs where the Author column matches '{github_username}'. For each PR return: repo (e.g. openshift/origin), PR number, title, days open, days idle, missing labels."
+With prompt: "Extract all PRs where the Author column matches '{config.github.username}'. For each PR return: repo (e.g. openshift/origin), PR number, title, days open, days idle, missing labels."
 
 Store results as a list of:
 - `repo`: e.g., `openshift/origin`
