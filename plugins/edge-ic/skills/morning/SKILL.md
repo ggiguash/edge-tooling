@@ -45,13 +45,7 @@ If the file does not exist OR `--setup` was passed, run the setup wizard:
 - Yes → ask follow-up: "Where are they stored?" (default: `$HOME/.daily/{YYYY}/{MM}/{YYYY-MM-DD}.md`)
 - No → set `daily_notes.enabled: false`
 
-**Question 2:** Ask the user:
-> "Which JIRA statuses should surface as 'ready for you'? These are tasks that need your attention."
-- Present options: `ON_QE`, `Code Review`, `In Progress`, `POST`
-- Allow multi-select
-- QA engineers typically pick `ON_QE`; developers might pick `Code Review` or `In Progress`
-
-**Question 3:** Infer GitHub username:
+**Question 2:** Infer GitHub username:
 
 ```bash
 gh api user --jq '.login' 2>/dev/null || git config user.name 2>/dev/null
@@ -59,7 +53,7 @@ gh api user --jq '.login' 2>/dev/null || git config user.name 2>/dev/null
 
 Ask user to confirm or correct: "Your GitHub username appears to be `{inferred}`. Is that correct?"
 
-**Question 4:** Infer JIRA email from the MCP config environment:
+**Question 3:** Infer JIRA email from the MCP config environment:
 
 ```bash
 echo "${JIRA_USERNAME:-}" 2>/dev/null
@@ -67,11 +61,11 @@ echo "${JIRA_USERNAME:-}" 2>/dev/null
 
 Ask user to confirm: "Your JIRA email appears to be `{inferred}`. Is that correct?"
 
-**Question 5:** Auto-discover the board ID. Query boards for the user's projects:
+**Question 4:** Auto-discover the board ID. Query boards for the user's projects:
 
 Use `jira_get_agile_boards` to search boards. Present the results and ask the user to pick their primary board. Store the `board_id`.
 
-**Question 6:** Ask the user:
+**Question 5:** Ask the user:
 > "Do you track RHEL bug verification? (e.g., TNF resource-agents tickets)"
 - Yes → ask for project key (default: `RHEL`), summary filter (default: `[TNF]`), component (default: `resource-agents`)
 - No → set `rhel_verification.enabled: false`
@@ -86,21 +80,21 @@ Write the YAML config to `$HOME/.config/edge-ic/morning.yaml` using the collecte
 
 Steps 2-7 are independent and can be run in parallel. Skip any step whose corresponding section is disabled in config.
 
-## Step 2: Gather QA/Watch-Status Tasks
+## Step 2: Gather QA Tasks
 
 Skip if `sections.qa_tasks` is `false` in config.
 
-Query JIRA for tickets in watch statuses assigned to the current user:
+Query JIRA for tickets where the current user is the **QA Contact** and status indicates QA is needed:
 
 ```
-jira_search with JQL: assignee = currentUser() AND status in ("{status1}", "{status2}") ORDER BY priority DESC
+jira_search with JQL: "QA Contact" = currentUser() AND status = "ON_QE" ORDER BY priority DESC
 ```
-
-Replace `{status1}`, `{status2}` etc. with values from `jira.watch_statuses` in config.
 
 Use `fields: "status,assignee,issuetype,summary,priority"` and `limit: 50`.
 
-For each result with watch status, fetch its details using `jira_get_issue` with `comment_limit: 2` to scan the last 2 comments for QA request keywords: "ready for QA", "please test", "QA needed", "please verify". If found, note the comment author as the requester.
+**Note:** The QA Contact field is `customfield_10470` (user picker). The JQL clause name is `"QA Contact"`. This is separate from the `assignee` field — a ticket's assignee is the developer; the QA Contact is the person responsible for testing.
+
+For each result, fetch its details using `jira_get_issue` with `comment_limit: 2` to scan the last 2 comments for QA request keywords: "ready for QA", "please test", "QA needed", "please verify". If found, note the comment author as the requester.
 
 Store results as a list of:
 - `key`: ticket key (e.g., `OCPEDGE-2710`)
@@ -126,14 +120,17 @@ Use `jira_get_sprints_from_board` with `board_id` from config and `state: "activ
 - Total sprint days = sprint end date minus sprint start date
 - Sprint is urgent if days remaining <= 3
 
-**Fetch sprint issues:**
+**Fetch the user's sprint issues via JQL** (avoids pagination issues with large boards):
 
-Use `jira_get_sprint_issues` with the sprint ID. Set `limit: 50` and `fields: "status,assignee,issuetype,summary,priority,story_points,customfield_10016"`.
+```
+jira_search with JQL: assignee = currentUser() AND sprint = {sprint_id} ORDER BY status ASC, priority DESC
+```
 
-**Note:** Story points may be in `customfield_10016` (story_points) — check which field contains the numeric value.
+Use `fields: "status,assignee,issuetype,summary,priority,customfield_10028,customfield_10016"` and `limit: 50`.
 
-**Filter and compute:**
-- Filter to issues where assignee matches `jira.username` from config
+**Note:** Story points are typically in `customfield_10028` ("Story Points"). Fall back to `customfield_10016` ("Story point estimate") if `customfield_10028` is null. If neither has data, show "Story Points: N/A".
+
+**Compute:**
 - Separate into: completed (status category = Done) and not-done (everything else)
 - Sum story points: completed points vs total points
 - Group not-done issues by status in workflow order: In Progress, Code Review, POST, To Do, New
@@ -320,7 +317,7 @@ Read the output format reference from `$PLUGIN_DIR/references/MORNING_OUTPUT_FOR
 - **No daily notes file:** Skip carry-over silently — no warning, no empty section.
 - **Monday carry-over:** Look back to Friday (3 days) for carry-over, not Saturday/Sunday.
 - **Config file exists but is malformed:** If YAML parsing fails, warn user and offer to re-run setup (`/morning --setup`).
-- **Story points field varies:** Try `customfield_10016` first, then `story_points`. If neither has data, show "Story Points: N/A" in sprint header.
+- **Story points field varies:** Try `customfield_10028` ("Story Points") first, then `customfield_10016` ("Story point estimate"). If neither has data, show "Story Points: N/A" in sprint header.
 - **Board ID not set in config:** If `board_id` is missing, attempt auto-discovery via `jira_get_agile_boards`. If that fails, skip sprint section.
 
 ## Gotchas

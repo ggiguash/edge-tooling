@@ -41,7 +41,7 @@ sections:
 | `daily_notes.path` | if enabled | `$HOME/.daily/{YYYY}/{MM}/{YYYY-MM-DD}.md` | Path template with date placeholders |
 | `daily_notes.format` | no | `auto` | `auto` detects format; `todo` for checkbox-based; `freeform` for keyword-based |
 | `jira.username` | yes | inferred from MCP config | JIRA email for assignee queries |
-| `jira.watch_statuses` | yes | `["ON_QE"]` | Statuses that surface as "ready for you" |
+| `jira.watch_statuses` | no | `["ON_QE"]` | Statuses for QA Contact section (advanced — most users keep default) |
 | `jira.board_id` | yes | auto-discovered | Agile board ID for sprint queries |
 | `github.username` | yes | inferred from git/gh | GitHub username for PR matching |
 | `rhel_verification.enabled` | yes | `false` | Whether to check RHEL verification queue |
