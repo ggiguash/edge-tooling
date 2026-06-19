@@ -720,12 +720,13 @@ def _render_investigation(issue):
     if scenarios:
         chips = "".join(f'<span class="scenario-chip">{_e(s)}</span>' for s in scenarios)
         lines.append(f'                <div class="scenarios"><strong>Scenarios:</strong> {chips}</div>')
-    chain = issue.get("causal_chain") or []
+    chain = [
+        link for link in (issue.get("causal_chain") or [])
+        if isinstance(link, dict) and link.get("cause")
+    ]
     if chain:
         lines.append('                <div class="causal-chain"><strong>Causal chain:</strong><ol>')
         for link in chain:
-            if not isinstance(link, dict):
-                continue
             item = _e(link.get("cause"))
             if link.get("evidence"):
                 item += f' — <span class="evidence">{_e(link["evidence"])}</span>'
