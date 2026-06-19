@@ -3,6 +3,7 @@ name: edge-ic:morning
 description: Surface your daily task list — QA-ready tickets, sprint backlog, carry-over items, open PRs, RHEL verification queue, and quarterly reminders. Use at the start of your day to see what needs attention.
 allowed-tools:
   - Read
+  - Write
   - Bash
   - WebFetch
   - AskUserQuestion
@@ -17,7 +18,7 @@ argument-hint: "[--setup]"
 
 # IC: Morning Briefing
 
-Aggregate your daily task surface from JIRA, daily notes, PR dashboards, and calendar into a single prioritized morning briefing.
+Aggregate your daily task surface from JIRA, daily notes, PR dashboards, and date-based reminders into a single prioritized morning briefing.
 
 ## Step 0: Parse Arguments
 
@@ -97,13 +98,14 @@ jira_search with JQL: assignee = currentUser() AND status in ("{status1}", "{sta
 
 Replace `{status1}`, `{status2}` etc. with values from `jira.watch_statuses` in config.
 
-Use `fields: "status,assignee,issuetype,summary,priority,comment"` and `comment_limit: 2`.
+Use `fields: "status,assignee,issuetype,summary,priority"` and `limit: 50`.
 
-For each result, scan the last 2 comments for QA request keywords: "ready for QA", "please test", "QA needed", "please verify". If found, note the comment author as the requester.
+For each result with watch status, fetch its details using `jira_get_issue` with `comment_limit: 2` to scan the last 2 comments for QA request keywords: "ready for QA", "please test", "QA needed", "please verify". If found, note the comment author as the requester.
 
 Store results as a list of:
 - `key`: ticket key (e.g., `OCPEDGE-2710`)
 - `summary`: ticket summary
+- `status`: ticket status
 - `requester`: comment author who requested QA (or null)
 - `link`: `https://redhat.atlassian.net/browse/{key}`
 
