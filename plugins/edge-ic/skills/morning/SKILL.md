@@ -310,6 +310,34 @@ Read the output format reference from `$PLUGIN_DIR/references/MORNING_OUTPUT_FOR
 ⚠ Could not fetch PR dashboard — open PRs section skipped
 ```
 
+## Edge Cases
+
+- **No active sprint:** If `jira_get_sprints_from_board` returns no active sprint, skip the sprint header and sprint backlog section entirely. Show a note in the output: "No active sprint found."
+- **JIRA MCP unavailable:** If any JIRA MCP call fails, skip all JIRA-dependent sections (QA tasks, sprint backlog, RHEL queue). Append error note at bottom.
+- **PR dashboard unavailable:** If `latest-build.txt` fetch or the HTML fetch fails, skip the open PRs section. Append error note.
+- **No daily notes file:** Skip carry-over silently — no warning, no empty section.
+- **Monday carry-over:** Look back to Friday (3 days) for carry-over, not Saturday/Sunday.
+- **Config file exists but is malformed:** If YAML parsing fails, warn user and offer to re-run setup (`/morning --setup`).
+- **Story points field varies:** Try `customfield_10016` first, then `story_points`. If neither has data, show "Story Points: N/A" in sprint header.
+- **Board ID not set in config:** If `board_id` is missing, attempt auto-discovery via `jira_get_agile_boards`. If that fails, skip sprint section.
+
+## Gotchas
+
+- **`currentUser()` in JQL:** Works only when authenticated via MCP. If the MCP config uses a different email than expected, queries return nothing. Verify during setup (Question 4).
+- **PR dashboard run ID:** The `latest-build.txt` file contains just the numeric run ID with no trailing newline. Strip whitespace before constructing the URL.
+- **RHEL "Preliminary Testing" field:** This is a custom field. The JQL syntax `"Preliminary Testing" = Requested` works on Jira Cloud but the field ID may vary by project. If the query fails, log the error and skip.
+- **macOS vs Linux date commands:** The `date -v-3d` syntax is macOS-specific. For portability, use: `date -d "3 days ago"` on Linux. Detect platform first:
+
+```bash
+if date -v-1d +%Y-%m-%d 2>/dev/null; then
+  # macOS
+  yesterday=$(date -v-1d +%Y-%m-%d)
+else
+  # Linux
+  yesterday=$(date -d "yesterday" +%Y-%m-%d)
+fi
+```
+
 ## Usage
 
 ```text
