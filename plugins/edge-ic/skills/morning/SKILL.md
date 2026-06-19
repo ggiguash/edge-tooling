@@ -58,7 +58,13 @@ gh api user --jq '.login' 2>/dev/null || git config user.name 2>/dev/null
 
 Ask user to confirm or correct: "Your GitHub username appears to be `{inferred}`. Is that correct?"
 
-**Question 4:** Infer JIRA email from the MCP config environment. Ask user to confirm: "Your JIRA email appears to be `{inferred}`. Is that correct?"
+**Question 4:** Infer JIRA email from the MCP config environment:
+
+```bash
+echo "${JIRA_USERNAME:-}" 2>/dev/null
+```
+
+Ask user to confirm: "Your JIRA email appears to be `{inferred}`. Is that correct?"
 
 **Question 5:** Auto-discover the board ID. Query boards for the user's projects:
 

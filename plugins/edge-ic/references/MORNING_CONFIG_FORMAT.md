@@ -48,7 +48,7 @@ sections:
 | `rhel_verification.project` | if enabled | `RHEL` | JIRA project key |
 | `rhel_verification.summary_filter` | if enabled | `[TNF]` | Summary search string |
 | `rhel_verification.component` | if enabled | `resource-agents` | Component filter |
-| `sections.*` | no | all `true` | Toggle individual sections on/off |
+| `sections.*` | no | `true` (except `rhel_queue`: `false` when RHEL verification is disabled) | Toggle individual sections on/off |
 
 ## Date Placeholders
 
