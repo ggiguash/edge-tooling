@@ -54,7 +54,19 @@ The user may provide arguments: `$ARGUMENTS`
 - Version number (e.g., `4.19`, `5.0`) → release version
 - Sprint range (e.g., `281-285`) → first through last sprint
 - Branch cut (e.g., `bc:285` or `branch-cut 285`) → last sprint before feature freeze
+- `--refinement` → refinement-only mode (see below)
 - No arguments → ask for all inputs
+
+### Refinement Mode (`--refinement`)
+
+When the `--refinement` flag is present, the skill runs a narrower analysis focused on whether Features are fully refined to the story level:
+
+1. **Scope**: Only Features/Initiatives in **Refinement** status are analyzed. Features already in Backlog, In Progress, or later states are excluded — they are past the refinement gate.
+2. **Data collection**: Phases 2–3 run identically (sprints, features, epics, spikes are all fetched).
+3. **Analysis**: Phase 4 spawns the analysis sub-agent with the `REFINEMENT_MODE` parameter set to `true`. The sub-agent runs all standard checks but adds a `REFINEMENT_BY_SME` output section that groups gaps by SME with natural language summaries.
+4. **Report**: Step 9 uses a condensed refinement report instead of the full release-health template. It outputs the SME-grouped refinement view plus a summary. Sections irrelevant to refinement (Sprint Forecast, Schedule Risk) are excluded.
+
+Set `REFINEMENT_MODE = true` when parsing arguments if `--refinement` is present; otherwise `REFINEMENT_MODE = false`.
 
 ---
 
@@ -136,9 +148,12 @@ python3 plugins/edge-scrum/bin/transform-sprints.py \
 
 Call `jira_search` with:
 
-- **JQL:** `project = OCPSTRAT AND issuetype in (Feature, Initiative) AND labels in ("ocpedge-plan", "microshift") AND "Target Version" = "openshift-{VERSION}" AND (resolution is EMPTY OR resolution not in (Duplicate, Obsolete)) ORDER BY Rank ASC`
+- **JQL (standard mode):** `project = OCPSTRAT AND issuetype in (Feature, Initiative) AND labels in ("ocpedge-plan", "microshift") AND "Target Version" = "openshift-{VERSION}" AND (resolution is EMPTY OR resolution not in (Duplicate, Obsolete)) ORDER BY Rank ASC`
+- **JQL (refinement mode):** `project = OCPSTRAT AND issuetype in (Feature, Initiative) AND labels in ("ocpedge-plan", "microshift") AND "Target Version" = "openshift-{VERSION}" AND status = "Refinement" AND (resolution is EMPTY OR resolution not in (Duplicate, Obsolete)) ORDER BY Rank ASC`
 - **Fields:** `key, summary, status, issuetype, priority, assignee, fixVersions, labels, description, issuelinks, customfield_10795, customfield_10470, customfield_10473, customfield_10475`
 - **limit:** `50`
+
+Use the refinement-mode JQL when `REFINEMENT_MODE = true`.
 
 Paginate using `page_token`. If zero results, use fallback JQL (set `fallback_used`):
 
@@ -161,7 +176,9 @@ Append `--fallback-used` if fallback JQL was used.
 Read and check:
 
 - `{WORKDIR}/sprints.json` — if `"error"` key is present or `sprint_map` is empty, warn the user and stop
-- `{WORKDIR}/features.json` — if `feature_keys` is empty, warn the user about scope and stop
+- `{WORKDIR}/features.json` — if `feature_keys` is empty:
+  - **Refinement mode**: Report "All features have progressed past Refinement — nothing to check." and exit cleanly (skip Phases 3–4 and Step 9).
+  - **Standard mode**: Warn the user about scope and stop
 
 ---
 
@@ -236,7 +253,7 @@ For `jira_get_sprints_from_board`: closed sprints may require multiple pages. Ac
 
 ### Phase 4: Full Analysis (sub-agent)
 
-Read `plugins/edge-scrum/skills/release-health-analysis/SKILL.md`. Substitute `{WORKDIR}`, `{VERSION}`, `{TODAY}`, `{REFINEMENT_SPRINT_NUM}`, then spawn as a sub-agent:
+Read `plugins/edge-scrum/skills/release-health-analysis/SKILL.md`. Substitute `{WORKDIR}`, `{VERSION}`, `{TODAY}`, `{REFINEMENT_SPRINT_NUM}`, `{REFINEMENT_MODE}`, then spawn as a sub-agent:
 
 - **Agent 4** — prompt: analysis content with all placeholders substituted
 
@@ -245,6 +262,8 @@ This agent reads all four data files, detects misplaced spikes, fetches child is
 ---
 
 ### Step 9: Generate Report (main context)
+
+#### Standard mode (`REFINEMENT_MODE = false`)
 
 1. Read the report template from `plugins/edge-scrum/references/release-health-report-template.md`
 2. Read `{WORKDIR}/analysis.md`
@@ -257,11 +276,30 @@ This agent reads all four data files, detects misplaced spikes, fetches child is
 6. Write to `.reports/release_health_{VERSION}_{TODAY}.md`
 7. Clean up: `test -n "{WORKDIR}" && [[ "{WORKDIR}" == /tmp/release-health-* ]] && rm -rf -- "{WORKDIR}"`
 
+#### Refinement mode (`REFINEMENT_MODE = true`)
+
+1. Read `{WORKDIR}/analysis.md`
+2. Parse the `===ANALYSIS_META===` block for header values
+3. Extract the `===SECTION:REFINEMENT_BY_SME===` block from analysis.md. If the section is not found, halt with an error: "Analysis phase did not produce the REFINEMENT_BY_SME section — check sub-agent output."
+4. Extract the `===SECTION:REFINEMENT_BACKLOG===` block from analysis.md
+5. Build the refinement report using the template from `plugins/edge-scrum/references/refinement-report-template.md`
+6. Substitute placeholders in the template:
+   - `{VERSION}`, `{TODAY}`, `{REFINEMENT_SPRINT_NUM}` — from release parameters
+   - `{refinement_state}` — derive from `sprints.json`: `"Closed"` if `refinement_sprint_closed = true`, otherwise `"Open"`
+   - `{total_features}` — from ANALYSIS_META `total_features`
+   - `{refined_count}` — from ANALYSIS_META `refined_count`
+   - `{needs_attention_count}` — from ANALYSIS_META `needs_attention_count`
+   - `{REFINEMENT_BY_SME}` — paste the extracted section content, stripping sentinel lines
+   - `{REFINEMENT_BACKLOG}` — paste the extracted section content, stripping sentinel lines
+7. Add Jira links (same rule as standard mode)
+8. Write to `.reports/refinement_{VERSION}_{TODAY}.md`
+9. Clean up: `test -n "{WORKDIR}" && [[ "{WORKDIR}" == /tmp/release-health-* ]] && rm -rf -- "{WORKDIR}"`
+
 ---
 
 ## Edge Cases
 
-- **No Features found**: Try fallback JQL (handled in Phase 2b); warn user to confirm scope; stop if still empty.
+- **No Features found**: Try fallback JQL (handled in Phase 2b); warn user to confirm scope; stop if still empty. In refinement mode, an empty result means all features have progressed past Refinement — handled in Phase 2c.
 - **Feature with no Epics**: Flag as "Unplanned"; epic fetch returns empty list for that feature.
 - **Epic with no Stories**: Flag as "Empty" in analysis.
 - **Version format varies** (`4.19` vs `4.19.0`): Analysis agent tries both in fixVersion queries.

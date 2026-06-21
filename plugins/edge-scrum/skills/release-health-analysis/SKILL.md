@@ -33,6 +33,7 @@ Substituted by the parent before spawning:
 | `{VERSION}` | OCP release version (e.g., `4.19`, `5.0`) |
 | `{TODAY}` | Today's date in `YYYY-MM-DD` format |
 | `{REFINEMENT_SPRINT_NUM}` | Sprint number of the refinement sprint |
+| `{REFINEMENT_MODE}` | `true` or `false` — when true, produce additional `REFINEMENT_BY_SME` output section |
 
 ## Instructions
 
@@ -235,9 +236,13 @@ Write to `{WORKDIR}/analysis.md` with this exact sentinel structure:
   "max_sp_capacity": <int>,
   "capacity_risk": <bool>,
   "top_risks": ["<concise description>", ...],
-  "sprint_recommendation": "<one sentence priority for this sprint>"
+  "sprint_recommendation": "<one sentence priority for this sprint>",
+  "refined_count": <int>,
+  "needs_attention_count": <int>
 }
 ===END_META===
+
+When `{REFINEMENT_MODE}` = `true`, compute and include `refined_count` (features with zero gaps at all levels) and `needs_attention_count` (`total_features - refined_count`). When `false`, set both to 0.
 
 ===SECTION:DASHBOARD===
 | Key | Feature/Initiative | Type | Status | SME | QA | Size | Refn Spike | Epics Done | Progress | Risk |
@@ -324,3 +329,42 @@ Flag if projected completion at branch cut < 85% → add ⚠️ in Notes.
 1. {Action} — Target: Sprint {N} grooming
 ===END_SECTION===
 ```
+
+#### Refinement-by-SME Section (only when `{REFINEMENT_MODE}` = `true`)
+
+After writing all standard sections above, append this additional section. It reorganizes the refinement gaps from the existing analysis into an SME-centric view with natural language summaries.
+
+```text
+===SECTION:REFINEMENT_BY_SME===
+## Refinement Status: OCP {VERSION}
+
+**{refined_count} of {total_features} features are fully refined. {needs_attention_count} need attention.**
+
+(For each SME that has at least one feature with gaps, produce a section. Omit SMEs whose features have zero gaps.)
+
+### {SME display name} ({feature_count} features, {gaps_count} need attention)
+
+**{OCPSTRAT-XXX} — {Feature Summary}**
+{Natural language description of ALL gaps found at every level for this feature. Cover Feature-level gaps, then Epic-level, then Story-level. Be specific and actionable. Reference epic names and story counts.}
+
+Example tone and format:
+"No size set on the feature. Epic 'CLI Monitoring' (OCPEDGE-1234) has no stories underneath. Epic 'Staging Mechanism' (OCPEDGE-1235) looks good — 5 stories, all sized. 2 stories under 'Data Pipeline' (OCPEDGE-1236) are missing story points."
+
+(Repeat for each feature under this SME that has gaps.)
+
+### Unassigned SME (PM action needed)
+
+**{OCPSTRAT-XXX} — {Feature Summary}**
+No SME assigned — PM needs to assign one before refinement can proceed. {Continue listing any other gaps found at Epic/Story level below this feature — do not stop at the missing SME.}
+
+===END_SECTION===
+```
+
+**Rules for the REFINEMENT_BY_SME section:**
+
+1. **No early stopping**: Even if a Feature has no SME or no Epics, continue checking ALL levels and report everything found. A Feature with no SME may still have Epic and Story-level gaps worth reporting.
+2. **Group by SME**: Use the SME's `display_name` from `features.json`. Features with no SME go under "Unassigned SME."
+3. **Omit clean features**: If a Feature has zero gaps at any level, do not mention it in the SME's section.
+4. **Natural language**: Do not use tables for the per-feature descriptions. Write conversational, actionable sentences that an SME can read and act on without opening Jira.
+5. **Docs epics excluded**: In the REFINEMENT_BY_SME section only, skip epics whose summary starts with "Docs" and belong to the OSDOCS project — these are auto-generated and not part of refinement checks. Other sections (REFINEMENT_BACKLOG, standard report sections) are unaffected.
+6. **All gap types apply**: Use the same checks from sections 5b (staffing), 5c (refinement), and 5d (blocked/stalled). The REFINEMENT_BY_SME section is a reorganized view of these existing findings, not a separate analysis.
