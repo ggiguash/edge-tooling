@@ -262,7 +262,7 @@ Skip if `sections.open_prs` is `false` in config.
 curl -sf "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/periodic-ci-openshift-eng-edge-tooling-main-pr-notifier/latest-build.txt"
 ```
 
-If this fails, skip this section with a note: "Could not fetch PR dashboard — skipping open PRs section." The file contains just the numeric run ID with no trailing newline — strip whitespace before constructing the URL.
+If this fails, skip the dashboard and rely solely on the `gh` fallback below. The file contains just the numeric run ID with no trailing newline — strip whitespace before constructing the URL.
 
 **Fetch the PR summary page:**
 
@@ -273,6 +273,14 @@ https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/lo
 ```
 
 With prompt: "Extract all PRs where the Author column matches '{config.github.username}'. For each PR return: repo (e.g. openshift/origin), PR number, title, days open, days idle, missing labels, and unresolved conversations count if available."
+
+**Also fetch open PRs directly via `gh`** (catches recent PRs not yet in the dashboard):
+
+```bash
+gh search prs --author=@me --state=open --json repository,number,title,createdAt,url --limit 50
+```
+
+Merge the two sources, deduplicating by `repo + pr_number`. For PRs found only in the `gh` results (not in the dashboard), compute `days_open` from `createdAt`, set `days_idle` to "?", and set `missing_labels` to "?" — the dashboard has richer metadata. PRs found in the dashboard take precedence for those fields.
 
 For each PR found, also fetch unresolved review thread count via GraphQL (the REST API does not expose thread resolution state):
 
@@ -422,7 +430,7 @@ Use the **panel layout** from the output format reference (`$PLUGIN_DIR/referenc
 
 - Title line: `☀  Morning Briefing — {date}`
 - Sprint info: **bold** sprint name, days remaining, story points
-- Progress bar: 10 colored squares wide with bracket borders `▐...▌`, gradient fill (positions 1-3 🟥, 4-5 🟠, 6-7 🟡, 8-10 🟢, unfilled `░`)
+- Progress bar: represents **story points completion** (`points_completed / points_total`). 10 colored squares wide, gradient fill (positions 1-3 🟥, 4-5 🟠, 6-7 🟡, 8-10 🟢, unfilled `░`). If story points are N/A, omit the bar entirely. Do NOT use sprint days elapsed — use story points only.
 - Summary line: count items per non-empty section, join with ` · `, prefix with `>`
 
 **Section panels** — render in order: QA Ready, Sprint Backlog, Carry-over, Open PRs, Review Queue, RHEL Queue, Reminders.

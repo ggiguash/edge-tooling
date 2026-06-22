@@ -120,7 +120,7 @@ All sections use `»` as a prefix in the top border. The `⚠` symbol is reserve
 
 ## Progress Bar
 
-10 colored squares wide with bracket borders `▐...▌`, gradient fill from red to green:
+Represents **story points completion** (`points_completed / points_total`). Do NOT use sprint days elapsed. 10 colored squares wide with bracket borders `▐...▌`, gradient fill from red to green:
 
 - Positions 1-3: 🟥 (red)
 - Positions 4-5: 🟠 (orange)
