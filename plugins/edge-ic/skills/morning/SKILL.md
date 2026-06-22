@@ -189,7 +189,7 @@ Skip if `sections.carry_over` is `false` in config or `daily_notes.enabled` is `
 **Determine yesterday's workday:**
 
 ```bash
-if date -v-1d +%Y-%m-%d 2>/dev/null; then
+if date -v-1d +%Y-%m-%d >/dev/null 2>&1; then
   # macOS/BSD
   if [ "$(date +%u)" -eq 1 ]; then
     yesterday=$(date -v-3d +%Y-%m-%d)
@@ -331,7 +331,7 @@ elif [ "$month" -le 9 ]; then
 else
   quarter_end="${year}-12-31"
 fi
-if date -j -f "%Y-%m-%d" "$quarter_end" +%s 2>/dev/null; then
+if date -j -f "%Y-%m-%d" "$quarter_end" +%s >/dev/null 2>&1; then
   # macOS/BSD
   days_left=$(( ( $(date -j -f "%Y-%m-%d" "$quarter_end" +%s) - $(date +%s) ) / 86400 ))
 else
