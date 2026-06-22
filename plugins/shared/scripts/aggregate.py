@@ -87,6 +87,10 @@ def _build_issues_from_jobs(jobs):
             "failure_type": failure_type,
             "root_cause": rep.get("root_cause", ""),
             "next_steps": rep.get("remediation", ""),
+            "confidence": rep.get("confidence", ""),
+            "causal_chain": rep.get("causal_chain", []),
+            "analysis_gaps": rep.get("analysis_gaps", []),
+            "scenarios": sorted({s for j in group for s in j.get("scenarios", [])}),
             "affected_jobs": [
                 {"name": j["job_name"], "date": j["finished"], "url": j["job_url"]}
                 for j in group

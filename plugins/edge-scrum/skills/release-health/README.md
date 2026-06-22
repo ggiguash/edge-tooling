@@ -5,7 +5,7 @@ Release cycle health analysis for the OpenShift Edge team. Traverses the full Ji
 ## Usage
 
 ```text
-/release-health [version] [sprint-range] [bc:branch-cut-sprint]
+/release-health [version] [sprint-range] [bc:branch-cut-sprint] [--refinement]
 ```
 
 **Examples:**
@@ -28,6 +28,12 @@ Analyzes OCP 4.19, Sprints 281–285, branch cut at Sprint 285.
 
 Asks for sprint range interactively after auto-detecting the version.
 
+```text
+/release-health 5.0 --refinement
+```
+
+Refinement-only mode — checks whether Features in Refinement status are fully broken down to the story level with all fields populated.
+
 ## What It Analyzes
 
 **Hierarchy traversal**: Features/Initiatives (OCPSTRAT) → Epics (OCPEDGE, USHIFT) → Stories/Tasks/Bugs (OCPEDGE, USHIFT, OCPBUGS)
@@ -49,6 +55,8 @@ Asks for sprint range interactively after auto-detecting the version.
 
 ## Output
 
+### Standard mode
+
 Saves a report to `.reports/release_health_{version}_{YYYY-MM-DD}.md` and prints to terminal.
 
 Report sections:
@@ -61,6 +69,16 @@ Report sections:
 6. **Refinement Backlog** — what needs grooming and at what level
 7. **Sprint Forecast** — velocity-based projection through branch cut
 8. **Recommended Actions** — prioritized, owner-assigned action list
+
+### Refinement mode (`--refinement`)
+
+Saves a condensed report to `.reports/refinement_{version}_{YYYY-MM-DD}.md`.
+
+Checks whether Features in Refinement status are fully broken down (Feature → Epics → Stories) with all required fields populated. Output is grouped by SME with natural language summaries:
+
+> Alice, OCPSTRAT-2607 Bandwidth Reduction has 2 issues: no size set on the feature, and Epic 'CLI Monitoring' has no stories underneath. The 'Staging Mechanism' epic is fine — 5 stories, all sized.
+
+Features with zero gaps are omitted. Features without an SME are grouped under "Unassigned SME" with a PM action callout. All levels are checked regardless of gaps found above — a feature missing an SME still gets its Epics and Stories checked.
 
 ## Configuration
 
