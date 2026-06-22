@@ -24,16 +24,7 @@ EOF
 
 fetch_api() {
     local url="${API_BASE}/$1"
-    local attempt result
-    for attempt in 1 2 3; do
-        if result=$(curl -s --fail "${url}"); then
-            echo "${result}"
-            return 0
-        fi
-        sleep "${attempt}"
-    done
-    echo "Error: failed to fetch ${url} after 3 attempts" >&2
-    return 1
+    curl -s --fail --max-time 60 --retry 3 --retry-delay 5 "${url}"
 }
 
 cmd_tags() {
