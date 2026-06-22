@@ -104,7 +104,7 @@ mkdir -p "$HOME/.config/edge-ic"
 
 Write the YAML config to `$HOME/.config/edge-ic/morning.yaml` using the collected values. Then proceed to Step 2.
 
-Steps 2-8 are independent and can be run in parallel. Skip any step whose corresponding section is disabled in config.
+Steps 2-8 are fully independent. **Issue all their tool calls in a single response turn so they execute in parallel** — do not wait for one step to finish before starting the next. In Claude Code this means batching all MCP and Bash calls together. Only render output (Step 10) after all steps complete. Skip any step whose corresponding section is disabled in config.
 
 ## Step 2: Gather QA Tasks
 
@@ -130,7 +130,7 @@ Use `fields: "status,assignee,issuetype,summary,priority,components"` and `limit
 
 **Note:** The QA Contact field is `customfield_10470` (user picker). The JQL clause name is `"QA Contact"`. This is separate from the `assignee` field — a ticket's assignee is the developer; the QA Contact is the person responsible for testing. The `ON_QA` status exists on projects like OCPBUGS and CNV but not on OCPEDGE/USHIFT, so this query searches cross-project.
 
-For each result, fetch its details using `jira_get_issue` with `comment_limit: 2` to scan the last 2 comments for QA request keywords: "ready for QA", "please test", "QA needed", "please verify". If found, note the comment author as the requester.
+Skip the per-ticket comment scan by default — set `requester: null` for all results. Only scan comments if there are 3 or fewer QA tickets (to avoid serial roundtrips slowing the briefing). When scanning, fetch all tickets in parallel using `jira_get_issue` with `comment_limit: 2`, checking for keywords: "ready for QA", "please test", "QA needed", "please verify".
 
 Store results as a list of:
 
@@ -256,33 +256,15 @@ Store results as a list of raw text strings.
 
 Skip if `sections.open_prs` is `false` in config.
 
-**Fetch the latest run ID:**
-
-```bash
-curl -sf "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/periodic-ci-openshift-eng-edge-tooling-main-pr-notifier/latest-build.txt"
-```
-
-If this fails, skip the dashboard and rely solely on the `gh` fallback below. The file contains just the numeric run ID with no trailing newline — strip whitespace before constructing the URL.
-
-**Fetch the PR summary page:**
-
-Use WebFetch on:
-
-```text
-https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/periodic-ci-openshift-eng-edge-tooling-main-pr-notifier/{run_id}/artifacts/pr-notifier/openshift-edge-tooling-gh-notifier/artifacts/edge-tooling-pr-summary.html
-```
-
-With prompt: "Extract all PRs where the Author column matches '{config.github.username}'. For each PR return: repo (e.g. openshift/origin), PR number, title, days open, days idle, missing labels, and unresolved conversations count if available."
-
-**Also fetch open PRs directly via `gh`** (catches recent PRs not yet in the dashboard):
+**Fetch open PRs directly via `gh`** (primary source — always up to date):
 
 ```bash
 gh search prs --author=@me --state=open --json repository,number,title,createdAt,url --limit 50
 ```
 
-Merge the two sources, deduplicating by `repo + pr_number`. For PRs found only in the `gh` results (not in the dashboard), compute `days_open` from `createdAt`, set `days_idle` to "?", and set `missing_labels` to "?" — the dashboard has richer metadata. PRs found in the dashboard take precedence for those fields.
+Compute `days_open` from `createdAt`. Set `days_idle` and `missing_labels` to "?" (the CI dashboard is no longer fetched — it added latency for marginal benefit). If `gh` is not available, skip this section with a note.
 
-For each PR found, also fetch unresolved review thread count via GraphQL (the REST API does not expose thread resolution state):
+For each PR, fetch unresolved review thread count via GraphQL in parallel (the REST API does not expose thread resolution state):
 
 ```bash
 gh api graphql \
