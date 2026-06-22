@@ -58,6 +58,7 @@ Evaluated in order per **group** (a group is one merged candidate and all its JI
 | 1. Existing PR | Checked in batch via `fix-test-bugs.sh check` (see Step 1). Run with ALL keys from the group. If ANY key's array is non-empty (open or merged PR), skip the **entire group**. CLOSED (unmerged) PRs do not block. | PR already \<state\>: \<url\> (e.g., "PR already merged: https://...") |
 | 2. In-scope files | Scan the candidate's `error_signature`, `raw_error`, `root_cause`, and `remediation` for file paths in `test/`, `scripts/`, `docs/`. Also resolve bare filenames to their directory (e.g., `el98@rpm-standard1.sh` -> `test/scenarios/`, `configure-pri.sh` -> `scripts/multinode/`). Skip if ALL referenced files are outside the allowed directories. | Fix target outside allowed dirs |
 | 3. Root cause is code-fixable | Use the candidate's `failure_type` and `root_cause`. Skip if `failure_type` is `infrastructure`. Skip if root cause indicates: product bug in MicroShift core (not test/script issue), transient environmental issue, or upstream dependency problem with no local workaround. Pass if root cause points to: test logic, timeout, configuration, assertion, variable resolution, checksum, script error handling, or documentation. | Not code-fixable |
+| 4. Analysis confidence | Skip if the candidate's `confidence` is `low` — the root cause was not established with enough evidence to fix safely. Missing/empty confidence passes (legacy candidates). | Root cause confidence too low for automated fix |
 
 ## Implementation Steps
 
@@ -90,10 +91,11 @@ Evaluated in order per **group** (a group is one merged candidate and all its JI
 
    Returns JSON: `{"KEY1": [{"url": "...", "state": "open|merged"}, ...], "KEY2": []}`. If ANY key in a group has a non-empty array, skip the entire group. Use the url and state from the result in the skip reason (e.g., "PR already merged: https://...").
 
-Apply Gates 2–3 to remaining groups and record status: `eligible` or `skipped` (with gate and reason).
+Apply Gates 2–4 to remaining groups and record status: `eligible` or `skipped` (with gate and reason).
 
 - **Gate 2**: Scan the candidate's `error_signature`, `raw_error`, `root_cause`, and `remediation` for file paths. Use the union of all referenced files across the group.
 - **Gate 3**: Use `failure_type` and `root_cause` from the candidate.
+- **Gate 4**: Use `confidence` from the candidate (missing/empty passes).
 
 ### Step 2: Present Dry-Run Report
 
@@ -117,7 +119,7 @@ Summary counters:
 ```text
 SUMMARY
   Total groups: N (M bugs) | Eligible: N (M bugs) | Skipped: N (M bugs)
-  Skip breakdown: PR exists=N, outside allowed dirs=N, not code-fixable=N
+  Skip breakdown: PR exists=N, outside allowed dirs=N, not code-fixable=N, low confidence=N
 ```
 
 Save the report to `<WORKDIR>/report-fix-test-bugs.txt`.
@@ -142,7 +144,7 @@ Process eligible groups **sequentially** (one at a time — the single working t
 
    The branch is named after the primary (first) key.
 
-3. **Apply fix** (LLM step): Read the identified files in `<WORKDIR>/microshift/`, understand the failure from the candidate's `root_cause`, `raw_error`, and `remediation`, and make targeted edits.
+3. **Apply fix** (LLM step): Read the identified files in `<WORKDIR>/microshift/`, understand the failure from the candidate's `root_cause`, `raw_error`, and `remediation`, and make targeted edits. When the candidate has a `causal_chain`, read it first — the evidence quotes tell you what the analysis actually established; base the fix on the chain, not only on the one-line `root_cause`.
 
    **Constraints** (MUST follow):
    - ONLY modify files under `test/`, `scripts/`, `docs/`

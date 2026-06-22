@@ -114,6 +114,17 @@ CSS = """\
         .ftype-test { background: #cce5ff; color: #004085; }
         .ftype-build { background: #e2d5f1; color: #4a235a; }
         .ftype-infra { background: #fde2cc; color: #7d4e24; }
+        .confidence-badge { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 0.7em; font-weight: 700; text-transform: uppercase; margin-left: 6px; vertical-align: middle; }
+        .confidence-high { background: #d4edda; color: #155724; }
+        .confidence-medium { background: #fff3cd; color: #856404; }
+        .confidence-low { background: #f8d7da; color: #721c24; }
+        .causal-chain { margin: 6px 0; }
+        .causal-chain ol { margin: 4px 0 4px 20px; padding: 0; }
+        .causal-chain li { margin: 2px 0; font-size: 0.9em; }
+        .causal-chain .evidence { color: #6c757d; font-family: monospace; font-size: 0.9em; }
+        .causal-chain code { background: #f8f9fa; padding: 1px 4px; border-radius: 3px; font-size: 0.85em; }
+        .analysis-gaps { color: #6c757d; font-style: italic; font-size: 0.85em; margin: 4px 0; }
+        .scenario-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.78em; background: #e9ecef; color: #495057; margin: 0 3px 2px 0; font-family: monospace; }
         .graph-source { font-size: 0.8em; color: #6c757d; font-style: italic; margin-bottom: 4px; }
         .graph-toggle { cursor: pointer; text-decoration: none; font-size: 1em; margin-left: 4px; }
         .graph-toggle:hover { opacity: 0.7; }
@@ -689,6 +700,46 @@ def _e(text):
     return html_mod.escape(str(text)) if text else ""
 
 
+def _render_confidence_badge(issue):
+    """Confidence badge for the issue title; empty string when unset."""
+    conf = (issue.get("confidence") or "").lower()
+    if conf not in ("high", "medium", "low"):
+        return ""
+    return (f'<span class="confidence-badge confidence-{conf}"'
+            f' title="Root cause analysis confidence">{conf}</span>')
+
+
+def _render_investigation(issue):
+    """Render scenario chips, causal chain, and analysis gaps for an issue.
+
+    Returns a list of HTML lines; empty when the issue (old summary files)
+    has none of the investigation fields.
+    """
+    lines = []
+    scenarios = issue.get("scenarios") or []
+    if scenarios:
+        chips = "".join(f'<span class="scenario-chip">{_e(s)}</span>' for s in scenarios)
+        lines.append(f'                <div class="scenarios"><strong>Scenarios:</strong> {chips}</div>')
+    chain = [
+        link for link in (issue.get("causal_chain") or [])
+        if isinstance(link, dict) and link.get("cause")
+    ]
+    if chain:
+        lines.append('                <div class="causal-chain"><strong>Causal chain:</strong><ol>')
+        for link in chain:
+            item = _e(link.get("cause"))
+            if link.get("evidence"):
+                item += f' — <span class="evidence">{_e(link["evidence"])}</span>'
+            if link.get("quote"):
+                item += f' <code>{_e(link["quote"])}</code>'
+            lines.append(f'                    <li>{item}</li>')
+        lines.append('                </ol></div>')
+    gaps = [g for g in (issue.get("analysis_gaps") or []) if g]
+    if gaps:
+        lines.append(f'                <div class="analysis-gaps">Evidence gaps: {_e(", ".join(gaps))}</div>')
+    return lines
+
+
 # Graph workdir — set by main() before rendering
 _GRAPHS_DIR = None
 
@@ -897,7 +948,9 @@ def render_release_section(version, rdata, bug_candidates):
         lines.append('            </tr>')
         lines.append('            <tr class="detail-row"><td colspan="5">')
         if issue.get("root_cause"):
-            lines.append(f'                <div class="root-cause"><strong>Root Cause:</strong> {_e(issue["root_cause"])}</div>')
+            conf_badge = _render_confidence_badge(issue)
+            lines.append(f'                <div class="root-cause"><strong>Root Cause:</strong> {conf_badge} {_e(issue["root_cause"])}</div>')
+        lines.extend(_render_investigation(issue))
         lines.append(f'                <div class="bug-links">{_render_bug_links(bug_match)}</div>')
         if issue.get("affected_jobs"):
             lines.append("                <p><strong>Affected Jobs:</strong></p><ul>")
@@ -1058,7 +1111,9 @@ def render_pr_section(pr_data, bug_candidates, pr_status, pr_error=None):
                 lines.append('            </tr>')
                 lines.append('            <tr class="detail-row"><td colspan="5">')
                 if issue.get("root_cause"):
-                    lines.append(f'                <div class="root-cause"><strong>Root Cause:</strong> {_e(issue["root_cause"])}</div>')
+                    conf_badge = _render_confidence_badge(issue)
+                    lines.append(f'                <div class="root-cause"><strong>Root Cause:</strong> {conf_badge} {_e(issue["root_cause"])}</div>')
+                lines.extend(_render_investigation(issue))
                 lines.append(f'                <div class="bug-links">{_render_bug_links(bug_match)}</div>')
                 if issue.get("affected_jobs"):
                     lines.append("                <p><strong>Affected Jobs:</strong></p><ul>")

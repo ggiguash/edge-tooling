@@ -28,7 +28,12 @@ Analyzes a single Prow CI test job by scanning artifacts for errors and producin
 
 ## Goal
 
-Reduce noise for developers by processing large logs from a CI test pipeline and correctly classifying fatal errors with a false-positive rate of 0.01% and false-negative rate of 0.5%.
+Reduce noise for developers by processing large logs from a CI test pipeline and producing a verified root cause analysis, not just the first error found. A report is acceptable when:
+
+- The failing step and (for test failures) the failing test/scenario are named
+- The causal chain bottoms out in an actionable cause (a specific code, configuration, test, or infrastructure problem someone can act on) — or in an explicitly recorded evidence gap
+- Every causal-chain link cites evidence from the artifacts (file path and line where applicable)
+- The analysis determines whether the **product** or the **test** is at fault. The purpose of this analysis is to surface product defects — NOT to make tests green. "Make the test wait/retry/tolerate" is not a root cause unless the product behavior has been shown to be correct.
 
 ## Audience
 
@@ -74,6 +79,7 @@ To determine the GCS path from any job URL, strip the web prefix and replace wit
 ## Important Files
 
 > These files are available after artifacts are downloaded (via the download script or workflow step 0).
+> For a map of which artifact answers which question (scenario naming, journal patterns, sosreport layout, timeout cascades), read `references/microshift-ci-primer.md` next to this skill.
 
 - `<TMP>/build-log.txt`: Log containing prow job output and most likely place to identify AWS infra related or hypervisor related errors.
 - `<STEP>/build-log.txt`: Each step in the CI job is individually logged in a build-log.txt file.
@@ -90,19 +96,48 @@ https://steps.ci.openshift.org/job?org=openshift&repo=microshift&branch=release-
 
 This link provides a diagram of the steps that make up the test. Think about reading this diagram when identifying step failures because not all fatal errors cause the current step to fail but may cause the next step to fail.
 
-**SOS Report** (contains a cross-section of the test host's filesystem, including the microshift journal and container logs)
+**SOS Report** (contains pod/container logs and cluster-scoped resources)
 
-After downloading artifacts locally, find the SOS report at:
+**Journals:** use the plain-text `journal_*.log` files next to the sosreport tarballs (e.g., `scenario-info/<scenario>/vms/host1/sos/journal_*.log`). These are readable directly with Read/Grep and contain the journal evidence you need (service failures, x509 errors, OOM kills, microshift unit logs).
 
-```text
-<TMP>/artifacts/<TEST_NAME>/openshift-microshift-infra-sos-aws/artifacts/sosreport-*.tar.xz
+**Pod logs, cluster state, inspect outputs:** extract a specific sosreport tarball when you need pod logs (container crashes, restarts, probe failures). The extraction script pulls pod logs, inspect outputs, and cluster-scoped resources.
+
+**When to extract a sosreport:** when the journal shows `CrashLoopBackOff`, `Back-off restarting`, repeated `Created container` events, or probe failures after readiness. Pod and container logs — in particular `previous.log`, the only record of WHY a dead container exited — exist exclusively inside the sosreport tarball.
+
+**How to extract:** find the tarball for the scenario, then run the extraction script on that single tarball:
+
+```bash
+# Find sosreport tarballs for the scenario
+find <scenario-dir>/.. -name 'sosreport-*.tar.xz'
+
+# Extract only pod logs, inspect outputs, and cluster-scoped resources
+bash plugins/shared/scripts/extract-sosreport.sh <tarball-path>
 ```
 
-Where `<TEST_NAME>` is the test name directory (e.g., `e2e-aws-tests`, `e2e-aws-ovn-ocp-conformance-serial`). Use `find <TMP>/artifacts -name 'sosreport-*.tar.xz'` to locate it. When extracting, always use `--no-same-owner` so files are owned by the current user:
+The script prints the extraction directory to stdout. Extracted files land in `<tarball-parent>/sos-extracted/<sosreport-name>/`. The extraction is idempotent — running it again on the same tarball is a no-op. Inside the extracted tree:
+
+- `sos_commands/microshift/namespaces/<namespace>/pods/<pod>/<container>/<container>/logs/{current,previous}.log` — container logs
+- `sos_commands/microshift/namespaces/<namespace>/core/{pods.yaml,events.yaml}` — pod status and events
+- `sos_commands/microshift/cluster-scoped-resources/` — nodes, CRDs, webhooks
+- `sos_commands/*/inspect_*` — component command outputs
+
+**There may be several sosreports for a single scenario**: the test framework's sos-on-failure listener (`test/resources/sos-on-failure-listener.py` in openshift/microshift) captures a sosreport at the moment of each test failure, in addition to the one collected at the end of the scenario. **Prefer the on-failure sosreport when investigating a specific test failure**: it contains the pods and container logs of the namespaces created specifically for that test (suite), which are absent from the end-of-scenario sosreport because they have already been cleaned up by then. Match a sosreport to its test failure by capture time.
+
+Correlate journal entries with the failure timestamp recorded during the Characterize phase.
+
+## Performance Graphs
+
+When the input is a local artifacts directory of the form `<WORKDIR>/artifacts/<BUILD_ID>` (the doctor workflow), pre-generated PCP performance graphs may exist in the sibling directory:
 
 ```text
-tar --no-same-owner -xf <sosreport>.tar.xz -C <destination>
+<WORKDIR>/graphs/<BUILD_ID>/
+  1_cpu_usage.png    — CPU usage (user, system, I/O wait)
+  2_mem_usage.png    — Memory usage (used, cached)
+  3_disk_io.png      — Disk I/O (read/write OPS, await)
+  4_disk_usage.png   — Disk usage by partition (% fill)
 ```
+
+Use the Read tool to view these PNGs during the drill-down phase whenever the failure involves a timeout, slowness, readiness/health-check expiry, eviction, OOM, or any resource-related error. Look for CPU saturation, memory exhaustion, or disk I/O stalls overlapping the failure window. If the directory does not exist (e.g., standalone URL invocation), skip graph correlation — do not attempt to generate graphs.
 
 ## Work Directory
 
@@ -146,23 +181,55 @@ The user argument is: `<ARGUMENTS>`
    This works for both periodic (`logs/...`) and presubmit PR (`pr-logs/pull/...`) job URLs, and for both Prow and GCS web URL formats.
    This makes all build logs, step logs, and SOS reports available locally for analysis.
 
-2. **Scan for errors**: Start by scanning the top level `build-log.txt` file for errors and determine the step where the error occurred. Record each error with the filepath and line number for later reference.
+2. **Localize — identify the failed step and the anchor error**:
+   - Scan the top level `build-log.txt` to determine the step where the failure occurred (the last `Running step ...` line before the container logs is a quick anchor — see Tips), then open that step's own `build-log.txt`.
+   - Record each candidate error with its filepath, line number, and timestamp. Read 50 lines before and 50 lines after each to separate the fatal error from setup/teardown noise.
+   - Select the **anchor error**: the first fatal error that caused the step to fail. This becomes `raw_error` in the report.
+   - **The anchor identifies the failure for deduplication — it is NOT the conclusion of the investigation. The first error found is rarely the root cause.**
 
-3. **Read context**: Iterate over each recorded error, locate the log file and line number, then read 50 lines before and 50 lines after the error. Use this information to characterize the error. Think about whether this error is transient and think about where in the stack the error occurs. Does it occur in the cloud infra, the openshift or prow ci-config, the hypervisor, or is it a legitimate test failure? If it is a legitimate test failure, determine what stage of the test failed: setup, testing, teardown.
+3. **Characterize — establish exactly WHAT failed before asking why**:
+   - For test steps with scenarios: enumerate the failing tests from `scenario-info/<scenario>/junit.xml` under the step's artifacts, then read the failing scenario's `rf-debug.log` and `phase_*/` logs (Robot Framework marks failures with `| FAIL |`). Record the failing scenario name(s) — the top-level `testsuite name` in each junit.xml — they populate the `scenarios` field in the report.
+   - For each failing scenario, check the plain-text `journal_*.log` files (next to the sosreport tarballs) for fatal patterns (panics, OOM kills, `leader election lost`, container exits). If the journal shows container crashes or restarts, extract the specific sosreport tarball with `bash plugins/shared/scripts/extract-sosreport.sh <tarball>` and read the pod logs (see SOS Report section).
+   - For conformance steps: extract the failing test names and their failure output from the step's `build-log.txt`.
+   - For build/infra steps: extract the failing command and its complete error output from the step log.
+   - Record the failure timestamp(s) — they drive the journal and graph correlation in the next phase.
+   - When the MicroShift source checkout is available — check with Glob for `<WORKDIR>/src/microshift-release-<RELEASE>/` (release jobs) or `<WORKDIR>/src/microshift/` (main) — read the failing test's source: Robot Framework suites under `test/suites/`, scenario definitions under `test/scenarios*/`. Its assertions, timeouts, and setup are how you distinguish a test bug from a product bug. If the checkout is absent, note `"source checkout not available"` in `analysis_gaps` and continue.
+   - Decide the stack layer: cloud infra, ci-config, hypervisor, or a legitimate test failure — and for test failures, the stage: setup, testing, teardown.
 
-4. **Analyze the error**: Based on the context of the error, think hard about whether this error caused the test to fail, is a transient error, or is a red herring.
+4. **Drill down — iterate hypothesis → evidence until the cause is actionable**:
+   Repeat this loop until you reach a cause that is **actionable** (a specific code, configuration, test, or infrastructure problem someone can act on) or until the available evidence is exhausted:
+   - State a hypothesis for WHY the error in hand occurred.
+   - Seek confirming or refuting evidence ONE LAYER DEEPER than the current log:
+     - **Journal** — ALWAYS check the plain-text `journal_*.log` files for the scenario (see SOS Report section). Correlate with the failure timestamp (entries within ±5 minutes) and scan for OOM kills, segfaults, service restarts, and disk pressure.
+     - **Sosreport** — when the journal shows container crashes or restarts, extract the specific sosreport tarball with `bash plugins/shared/scripts/extract-sosreport.sh <tarball>` (see SOS Report section for how to pick the right one when several exist). Read the pod/container logs of the failing workload.
+     - **Performance graphs** — when the failure involves a timeout, slowness, readiness/health-check expiry, eviction, or any resource error, Read the PNGs (see Performance Graphs section) and look for saturation overlapping the failure window.
+   - Treat restating errors as symptoms: an error like "timed out waiting for X" is NOT a root cause — explain why X was slow or absent, or explicitly record that the evidence ran out.
+   - **A test-layer fix is never the bottom when a product component misbehaved.** When the failure involves a product component that was unavailable, not ready, crashed, or slow ("no endpoints available", "connection refused", "not ready", "CrashLoopBackOff", probe failures), you MUST reconstruct that component's story from the journal and its pod logs before concluding. Build an exact timestamped timeline: when was the pod created, when did each container start, when did it become ready, did probes fail afterwards, did it restart, and why. Only then attribute the failure:
+     - **Product defect** — the component became ready and later flapped, crashed, or stopped serving (e.g., readiness flips back to not-ready, liveness probe connection refused after startup, container exits and restarts). Report the product mechanism as the root cause even if a test-side wait would also "fix" the symptom.
+     - **Test defect** — the component was still starting up normally and the test simply ran too early against a documented startup sequence.
+   - **Always check for container restarts.** Grep the journal for repeated `Created container`/`Started container` (crio) and `RemoveContainer`/PLEG events (kubelet) for the same pod. Two container instances for one pod means the first one DIED — a single startup story is the wrong narrative. Extract the sosreport (`bash plugins/shared/scripts/extract-sosreport.sh <tarball>`) and read the dead container's log at `sos_commands/microshift/namespaces/<namespace>/pods/<pod>/<container>/<container>/logs/previous.log` (`current.log` is the running instance). The last ~20 lines of `previous.log` usually state the exit reason (fatal error, leader election lost, panic, OOM).
+   - Record every accepted hop as a causal-chain link with its evidence file and line — these become `causal_chain` in the report. Discarded hypotheses do not go into the chain.
 
-    4.1 If it is a legitimate test error, analyze the test logs to determine the source of the error.
-    4.2 If the source of the error appears to be due to microshift or a workload running on microshift, analyze the sos report's microshift journal and pod logs.
+5. **Corroborate — cross-check the explanation**:
+   - When the source checkout is available, list commits from the last month that could be related:
 
-5. **Produce a report**: Create a concise report of the error. The report MUST specify:
+     ```text
+     bash plugins/microshift-ci/scripts/repo-log.sh <SRC_DIR> --since <1_MONTH_BEFORE_FINISHED> --until <FINISHED_DATE> --paths test/
+     ```
+
+     Derive `FINISHED_DATE` from the job's `finished.json` timestamp. Drop `--paths` to see all changes. Name candidate commits in the causal chain when their timing and touched paths match the failure.
+   - If multiple scenarios in this job failed, decide cascade vs independent using the **timeline** (which failed first; did the earlier failure poison shared state?), not just error-text similarity.
+
+6. **Produce a report**: Create a concise report of the failure. The report MUST specify:
    - Where in the pipeline the error occurred
    - The specific step the error occurred in
    - Whether the test failure was legitimate (i.e., a test failed) or due to an infrastructure failure (i.e., build image was not found, AWS infra failed due to quota, hypervisor failed to create test host VM, etc.)
+   - The causal chain from the observed symptom to the root cause, each link backed by evidence (file and line)
+   - A confidence rating for the root cause (see the field rules below)
 
 ## Prerequisites
 
-- `gsutil` CLI must be installed for GCS access (uses anonymous access on public buckets)
+- `gsutil` CLI must be installed for GCS access (uses anonymous access on public buckets; only needed for URL input — pre-downloaded artifacts skip it)
 - Internet access to fetch job data from Prow/GCS
 - Bash shell
 
@@ -176,12 +243,24 @@ The user argument is: `<ARGUMENTS>`
 Use this template for your error analysis reports:
 
 ```text
-Error Severity: {1-5}
+Error Severity: {1-5, per the rubric below}
 Stack Layer: {AWS Infra, External Infrastructure, build phase, deploy phase, test setup phase, Test Configuration, test, teardown}
 Step Name: {The specific step where the error occurred}
 Error: {The exact error, including additional log context if it relates to the failure}
+Causal Chain: {numbered list from observed symptom to root cause; each link cites its evidence as file:line}
+Confidence: {high | medium | low — see CONFIDENCE rules below}
 Suggested Remediation: {Based on where the error occurs, think hard about how to correct the error ONLY if it requires fixing. Infrastructure failures may not require code changes.}
 ```
+
+### Severity rubric
+
+| Severity | Meaning |
+|---|---|
+| 5 | Release-blocking product regression — product broken, no workaround |
+| 4 | Persistent product or test failure with no workaround |
+| 3 | Persistent failure with a workaround, or scoped to a single scenario/architecture |
+| 2 | Intermittent failure / likely flake |
+| 1 | Infrastructure noise or self-healing condition |
 
 After the human-readable report above, append a machine-readable JSON block for downstream automation. This block MUST appear at the very end of the report, after all prose and analysis. The block is a JSON array with one object per failure:
 
@@ -200,7 +279,18 @@ After the human-readable report above, append a machine-readable JSON block for 
     "job_name": "periodic-ci-openshift-microshift-release-4.22-periodics-e2e-aws-tests-arm-nightly",
     "release": "4.22",
     "remediation": "investigate greenboot timeout configuration for ARM deployments",
-    "finished": "2026-06-01"
+    "finished": "2026-06-01",
+    "causal_chain": [
+      {"cause": "cert-manager webhook pod not Ready before greenboot deadline",
+       "evidence": "artifacts/e2e-aws-tests-arm-nightly/openshift-microshift-e2e-metal-tests/artifacts/scenario-info/el96-lrel@standard1/rf-debug.log:2241",
+       "quote": "cert-manager webhook not ready after 600s"},
+      {"cause": "image pulls saturated disk I/O, delaying all service startups",
+       "evidence": "graphs/123456/3_disk_io.png",
+       "quote": "write await >800ms during 06:18-06:24 startup window"}
+    ],
+    "confidence": "medium",
+    "analysis_gaps": [],
+    "scenarios": ["el96-lrel@standard1", "el94-y2@el96-lrel@standard1"]
   }
 ]
 --- END STRUCTURED SUMMARY ---
@@ -218,12 +308,26 @@ After the human-readable report above, append a machine-readable JSON block for 
 - `job_url`: the full prow job URL — when given a URL as input, use it directly; when given a local artifacts dir, reconstruct from the build-log.txt "Link to job on registry info site" line or from the directory path structure
 - `job_name`: the full job name — extract from the job_url path, or from the build-log.txt "Running step" lines, or from the artifacts directory structure
 - `release`: the release branch — extract from job_name (e.g. 4.22 from release-4.22), or from finished.json metadata repos field, or default to "main"
-- `remediation`: suggested fix or next step — what should be done to address this failure (~120 chars max). For infrastructure failures, state the infra action (e.g. "retry the job", "rotate AWS credentials"). For product bugs, state the code-level fix direction
+- `remediation`: suggested fix or next step — what should be done to address this failure (~120 chars max). For infrastructure failures, state the infra action (e.g. "retry the job", "rotate AWS credentials"). For product bugs, state the code-level fix direction. Do NOT propose making the test more tolerant (waits, retries, longer timeouts) unless the causal chain shows the product behaved correctly — masking a product flake with a test change hides the defect
 - `finished`: the job finish date in YYYY-MM-DD format, extracted from finished.json timestamp field or build log timestamps
+- `causal_chain`: array of links from the observed symptom toward the root cause, in order, built during the drill-down phase. Each link is `{"cause": ..., "evidence": ..., "quote": ...}` where `evidence` is the artifact file path (relative to the artifacts dir, with `:line` where applicable) and `quote` is a short verbatim excerpt supporting the link — copied exactly, with NO prepended labels, summaries, or commentary. The evidence path MUST be a file that actually exists — cite the path you read, not a description of it. **Before finalizing the report, re-read every cited `file:line` and confirm the quote is actually there** — a wrong citation destroys trust in the whole analysis and is worse than an honest gap. A single-link chain is valid when the anchor error IS the actionable cause
+- `confidence`: one of `high`, `medium`, `low` (see CONFIDENCE rules below)
+- `analysis_gaps`: array of strings naming evidence that was missing or could not be checked (e.g. `"no sosreport in artifacts"`, `"source checkout not available"`). Empty array when nothing was skipped
+- `scenarios`: array of scenario names in which this failure occurred, taken from the `scenario-info/<scenario>/` directory names or the junit `testsuite name` (e.g. `["el96-lrel@standard2"]`). Empty array `[]` for non-scenario-based jobs and for build/infra failures that happen before scenarios run
+
+### CONFIDENCE rules
+
+- `high`: every causal-chain link, including the final (root) one, is directly evidenced by a quoted artifact line or graph
+- `medium`: the mechanism is inferred but consistent with all available evidence; no link is contradicted
+- `low`: the analysis is symptom-level only — the chain stops before an actionable cause because the evidence ran out (`analysis_gaps` MUST be populated in this case)
+
+Do NOT inflate confidence: downstream automation uses it to decide whether to act on the analysis. A `low` confidence report with honest gaps is more useful than a `high` confidence guess.
 
 ### RAW_ERROR rules
 
 The `RAW_ERROR` field is used by downstream scripts for deterministic grouping. Two runs analyzing the same job MUST produce the same RAW_ERROR. Keep it simple — fewer rules mean less room for variation.
+
+RAW_ERROR is the **deduplication anchor**, not the investigation result: picking the first fatal error here does NOT mean the analysis stops there — the drill-down phase and `causal_chain` capture the actual root cause investigation.
 
 1. **Copy-paste the exact error text** from the log — do NOT paraphrase, summarize, or reword
 2. **Pick only ONE error** — the primary error that caused the step to fail. If multiple errors exist, pick the first fatal one.

@@ -84,6 +84,35 @@ def extract_test_ids(error_signature):
     return re.findall(r"\b(\d{4,6})\b", error_signature)
 
 
+_CONFIDENCE_RANK = {"high": 3, "medium": 2, "low": 1, "": 0}
+
+
+def _best_confidence(group):
+    """Return the highest confidence value from any item in the group."""
+    return max(
+        (c.get("confidence", "") for c in group),
+        key=lambda v: _CONFIDENCE_RANK.get(v, 0),
+    )
+
+
+def _best_causal_chain(group):
+    """Return the longest causal_chain from a high/medium-confidence item.
+
+    Falls back to the longest chain from any item if none have
+    high/medium confidence.
+    """
+    best = []
+    best_fallback = []
+    for c in group:
+        chain = c.get("causal_chain", [])
+        conf = c.get("confidence", "")
+        if conf in ("high", "medium") and len(chain) > len(best):
+            best = chain
+        if len(chain) > len(best_fallback):
+            best_fallback = chain
+    return best if best else best_fallback
+
+
 # ---------------------------------------------------------------------------
 # Candidate building
 # ---------------------------------------------------------------------------
@@ -113,6 +142,10 @@ def build_candidates(groups):
             ),
             "step_name": ", ".join(step_names),
             "affected_jobs": len(group),
+            "confidence": _best_confidence(group),
+            "causal_chain": _best_causal_chain(group),
+            "analysis_gaps": rep.get("analysis_gaps", []),
+            "scenarios": sorted({s for j in group for s in j.get("scenarios", [])}),
             "keywords": keywords,
             "test_ids": test_ids,
             "jobs": [
@@ -404,6 +437,10 @@ def merge_candidate_files(filepaths, workdir=None):
             "failure_type": rep.get("failure_type", "test"),
             "step_name": ", ".join(step_names) if step_names else rep.get("step_name", ""),
             "affected_jobs": sum(c["affected_jobs"] for c in group),
+            "confidence": _best_confidence(group),
+            "causal_chain": _best_causal_chain(group),
+            "analysis_gaps": rep.get("analysis_gaps", []),
+            "scenarios": sorted({s for c in group for s in c.get("scenarios", [])}),
             "keywords": sorted(all_keywords),
             "test_ids": sorted(all_test_ids),
             "jobs": all_jobs,
