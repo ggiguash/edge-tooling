@@ -370,15 +370,12 @@ cmd_finalize() {
 
             for release in "${RELEASES[@]}"; do
                 release=$(echo "${release}" | xargs)
+                # Skip non-version releases (e.g. "main") — catalog only has numbered tags
+                [[ "${release}" =~ ^[0-9]+\.[0-9]+ ]] || continue
                 local outfile="${images_dir}/${repo_slug}-${release}.json"
 
-                local tag_args=()
-                if [[ "${release}" != "main" ]]; then
-                    tag_args=(--tag "${release}")
-                fi
-
                 echo "  Fetching ${repo} images for ${release}..." >&2
-                if bash "${SCRIPT_DIR}/rh-catalog.sh" "${repo}" images "${tag_args[@]}" > "${outfile}" 2>/dev/null; then
+                if bash "${SCRIPT_DIR}/rh-catalog.sh" "${repo}" images --tag "${release}" > "${outfile}" 2>/dev/null; then
                     local img_count
                     img_count=$(jq 'length' "${outfile}" 2>/dev/null || echo 0)
                     echo "    ${img_count} images" >&2

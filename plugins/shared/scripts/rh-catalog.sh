@@ -42,6 +42,7 @@ cmd_tags() {
         | jq --arg tag "${tag}" '
             [.data[].repositories[].tags[].name]
             | unique
+            # Substring filter: --tag 5.0 matches "v5.0.1" and "4.15.0"
             | if $tag == "" then . else [.[] | select(contains($tag))] end'
 }
 
@@ -57,11 +58,13 @@ cmd_streams() {
 
 cmd_images() {
     local repo=$1 tag=${2:-}
+    [[ -n "${tag}" ]] || { echo "Error: --tag is required for images" >&2; return 1; }
     # freshness_grades is a pre-computed degradation schedule (e.g. B→C→D→F),
     # not a history — select the entry whose date range contains today.
     fetch_api "${repo}/images?page_size=500" | jq --arg tag "${tag}" '
         [.data[]
-         | select($tag == "" or any(.repositories[].tags[]; .name | contains($tag)))
+         # Version-aware filter: --tag 5.0 matches "v5.0.1" but NOT "4.15.0"
+         | select(any(.repositories[].tags[]; .name | test("(^|[^0-9])" + ($tag | gsub("\\."; "\\.")))))
          | {
             _id,
             tags: [.repositories[].tags[].name] | sort_by(length),
