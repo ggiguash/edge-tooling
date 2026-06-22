@@ -262,7 +262,7 @@ Skip if `sections.open_prs` is `false` in config.
 gh search prs --author=@me --state=open --json repository,number,title,createdAt,url --limit 50
 ```
 
-Compute `days_open` from `createdAt`. Set `days_idle` and `missing_labels` to "?" (the CI dashboard is no longer fetched — it added latency for marginal benefit). If `gh` is not available, skip this section with a note.
+Compute `days_open` from `createdAt` (today's date minus `createdAt` in days — be precise, do not eyeball). **Discard any PR where `days_open` > 200** — these are stale/abandoned PRs that add noise. Set `days_idle` and `missing_labels` to "?" (the CI dashboard is no longer fetched). If `gh` is not available, skip this section with a note.
 
 For each PR, fetch unresolved review thread count via GraphQL in parallel (the REST API does not expose thread resolution state):
 
