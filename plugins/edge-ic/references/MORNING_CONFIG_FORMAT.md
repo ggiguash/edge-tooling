@@ -59,6 +59,7 @@ sections:
 ## Date Placeholders
 
 In `daily_notes.path`, these are replaced at runtime:
+
 - `{YYYY}` — 4-digit year
 - `{MM}` — 2-digit month (zero-padded)
 - `{DD}` — 2-digit day (zero-padded)

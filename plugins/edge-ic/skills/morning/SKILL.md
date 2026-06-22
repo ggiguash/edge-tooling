@@ -23,6 +23,7 @@ Aggregate your daily task surface from JIRA, daily notes, PR dashboards, and dat
 ## Step 0: Parse Arguments
 
 Check `$ARGUMENTS`:
+
 - `--setup` → jump to Step 1 (force re-run setup even if config exists)
 - Empty → proceed to config check
 
@@ -42,6 +43,7 @@ If the file does not exist OR `--setup` was passed, run the setup wizard:
 
 **Question 1:** Ask the user:
 > "Do you use daily TODO or standup note files?"
+
 - Yes → ask follow-up: "Where are they stored?" (default: `$HOME/.daily/{YYYY}/{MM}/{YYYY-MM-DD}.md`)
   - **Validate immediately:** resolve the path template for today and yesterday, then check if either file (or the parent directory) exists. If nothing is found, warn the user: "No files found at that path — double-check and try again?" Allow them to correct or confirm.
 - No → set `daily_notes.enabled: false`
@@ -70,6 +72,7 @@ Follow-up: "Do you want to add boards from other projects?" If yes, ask for the 
 
 **Question 5:** Ask the user:
 > "Do you want to track QA tasks (tickets where you are the QA Contact)?"
+
 - Yes → ask two follow-ups:
   - "Which statuses mean a ticket is ready for your QA work? (comma-separated)" — default: `ON_QA`. This is a free-text field since different projects use different workflows (e.g., OCPBUGS uses `ON_QA`, other projects may use `Code Review` or `Review`).
   - "Filter by specific components? Enter component names comma-separated, or leave blank for all." (e.g., `Two Node Fencing, LVMS`; default: empty = no filter)
@@ -77,16 +80,19 @@ Follow-up: "Do you want to add boards from other projects?" If yes, ask for the 
 
 **Question 6:** Ask the user:
 > "Do you want to see PRs assigned to you for review? (useful for cherrypick PRs and code reviews)"
+
 - Yes → set `sections.review_queue: true`
 - No → set `sections.review_queue: false`
 
 **Question 7:** Ask the user:
 > "Do you track RHEL bug verification? (e.g., TNF resource-agents tickets)"
+
 - Yes → ask for project key (default: `RHEL`), summary filter (default: `[TNF]`), component (default: `resource-agents`)
 - No → set `rhel_verification.enabled: false`
 
 **Question 8:** Ask the user:
 > "What title do you want in the banner? (default: `Morning Edge`)"
+
 - Accept a custom title (any text, 1-3 words recommended)
 - Default: `Morning Edge`
 
@@ -108,14 +114,15 @@ Skip if `sections.qa_tasks` is `false` in config.
 
 Query JIRA for tickets where the current user is the **QA Contact** and status matches the configured watch statuses. This searches across all projects, not just the sprint board:
 
-```
+```text
 jira_search with JQL: "QA Contact" = currentUser() AND status in ("{status1}", "{status2}") ORDER BY priority DESC
 ```
 
 Replace `{status1}`, `{status2}` etc. with values from `jira.qa_statuses` in config (default: `["ON_QA"]`). Before interpolating any config value into JQL, escape backslashes as `\\` and double-quotes as `\"` to prevent query breakage.
 
 If `jira.qa_components` is set in config, append a component filter:
-```
+
+```text
 AND component in ("{comp1}", "{comp2}")
 ```
 
@@ -126,6 +133,7 @@ Use `fields: "status,assignee,issuetype,summary,priority,components"` and `limit
 For each result, fetch its details using `jira_get_issue` with `comment_limit: 2` to scan the last 2 comments for QA request keywords: "ready for QA", "please test", "QA needed", "please verify". If found, note the comment author as the requester.
 
 Store results as a list of:
+
 - `key`: ticket key (e.g., `OCPEDGE-2710`)
 - `summary`: ticket summary
 - `status`: ticket status
@@ -145,19 +153,21 @@ Skip if `sections.sprint_backlog` is `false` in config.
 **Discover active sprint:**
 
 Use `jira_get_sprints_from_board` with each board ID and `state: "active"`. If no active sprint is found, skip this board's sprint header and backlog silently. Extract per sprint:
+
 - Sprint name
 - Sprint start date
 - Sprint end date
 - Sprint ID
 
 **Calculate sprint metadata** (per sprint):
+
 - Days remaining = sprint end date minus today
 - Total sprint days = sprint end date minus sprint start date
 - Sprint is urgent if days remaining <= 3
 
 **Fetch the user's sprint issues via JQL** (avoids pagination issues with large boards):
 
-```
+```text
 jira_search with JQL: assignee = currentUser() AND sprint = {sprint_id} ORDER BY status ASC, priority DESC
 ```
 
@@ -166,11 +176,13 @@ Use `fields: "status,assignee,issuetype,summary,priority,customfield_10028,custo
 **Note:** Story points are typically in `customfield_10028` ("Story Points"). Fall back to `customfield_10016` ("Story point estimate") if `customfield_10028` is null. If neither has data, show "Story Points: N/A".
 
 **Compute** (per sprint):
+
 - Separate into: completed (status category = Done) and not-done (everything else)
 - Sum story points: try `customfield_10028` ("Story Points") first, then `customfield_10016` ("Story point estimate"). If neither has data, show "Story Points: N/A" in the sprint header
 - Group not-done issues by status in workflow order: In Progress, Code Review, POST, To Do, New
 
 Store results as a list of sprints, each with:
+
 - `sprint_name`: e.g., "Sprint 26"
 - `board_name`: e.g., "OpenShift Edge Scrum"
 - `days_remaining`: integer
@@ -208,6 +220,7 @@ echo "$yesterday"
 ```
 
 **Resolve the file path** by replacing placeholders in `daily_notes.path`:
+
 - `{YYYY}` → year from yesterday
 - `{MM}` → month from yesterday (zero-padded)
 - `{DD}` → day from yesterday (zero-padded)
@@ -218,11 +231,13 @@ echo "$yesterday"
 **Parse based on format:**
 
 If `daily_notes.format` is `auto`, detect:
+
 - File contains `* TODO` or `** TODO` or `SCHEDULED:` → org-mode format
 - File contains `## Priority` or `## In Progress` or `- [ ]` → TODO format
 - Otherwise → freeform format
 
 **Org-mode format:** Extract all headings with a `TODO` keyword (not `DONE`):
+
 - Lines matching `^\*+ TODO (.*)` → extract the heading text after `TODO`
 - Lines matching `^\*+ IN-PROGRESS (.*)` or `^\*+ NEXT (.*)` → also extract as incomplete
 - Ignore headings with `DONE`, `CANCELLED`, or `WAITING` keywords
@@ -231,6 +246,7 @@ If `daily_notes.format` is `auto`, detect:
 **TODO format:** Extract all unchecked items (`- [ ]`) from all sections. These are incomplete tasks.
 
 **Freeform format:** Extract lines that:
+
 - Start with `in-progress` or `in progress` (case-insensitive)
 - Do NOT start with `done`, `completed`, `finished`, `verified` (case-insensitive)
 
@@ -251,7 +267,8 @@ If this fails, skip this section with a note: "Could not fetch PR dashboard — 
 **Fetch the PR summary page:**
 
 Use WebFetch on:
-```
+
+```text
 https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/periodic-ci-openshift-eng-edge-tooling-main-pr-notifier/{run_id}/artifacts/pr-notifier/openshift-edge-tooling-gh-notifier/artifacts/edge-tooling-pr-summary.html
 ```
 
@@ -279,6 +296,7 @@ gh api graphql \
 If `gh` is not available or the command fails, skip unresolved comments for that PR (show "?" instead of a count).
 
 Store results as a list of:
+
 - `repo`: e.g., `openshift/origin`
 - `pr_number`: integer
 - `title`: string
@@ -303,10 +321,12 @@ If `gh` is not available or the command fails, skip this section with a note: "C
 **Filter out stale PRs:** Discard any PR where `createdAt` is older than 200 days. This avoids surfacing abandoned review requests from old projects.
 
 **For each remaining PR**, compute:
+
 - `days_open`: days since `createdAt`
 - `repo`: repository full name (e.g., `openshift/origin`)
 
 Store results as a list of:
+
 - `repo`: e.g., `openshift/origin`
 - `pr_number`: integer
 - `title`: string
@@ -342,6 +362,7 @@ echo "$quarter_end $days_left"
 ```
 
 If `days_left <= 14`, store a reminder with:
+
 - `quarter_end_date`: formatted date (e.g., "Jun 30")
 - `days_left`: integer
 - Two action items:
@@ -356,7 +377,7 @@ Skip if `sections.rhel_queue` is `false` in config or `rhel_verification.enabled
 
 Query JIRA:
 
-```
+```text
 jira_search with JQL: project = "{rhel_verification.project}" AND summary ~ "{rhel_verification.summary_filter}" AND component = "{rhel_verification.component}" AND "Preliminary Testing" = Requested AND "Test Coverage" is EMPTY AND (fixVersion in unreleasedVersions() OR fixVersion is EMPTY)
 ```
 
@@ -365,6 +386,7 @@ Before interpolating `rhel_verification.*` config values, escape backslashes as 
 Use `fields: "summary,status,fixVersions"` and `limit: 20`.
 
 Store results as:
+
 - `count`: number of tickets found
 - `tickets`: list of key + summary
 
@@ -373,6 +395,7 @@ Store results as:
 Before rendering, remove duplicate tickets across sections. A ticket that appears in multiple data sources is shown only in the highest-priority section.
 
 **Priority order** (highest first):
+
 1. QA Ready (Step 2)
 2. Sprint Backlog (Step 3)
 3. Carry-over (Step 4)
@@ -387,6 +410,7 @@ Read the output format reference from `$PLUGIN_DIR/references/MORNING_OUTPUT_FOR
 Use the **panel layout** from the output format reference (`$PLUGIN_DIR/references/MORNING_OUTPUT_FORMAT.md`). All output uses rounded box-drawing characters (`╭╮╰╯│─`).
 
 **Title banner** (always rendered, before everything else):
+
 - Read the `title` field from config (default: `Morning Edge`)
 - Render the title in block pixel style using ▀▄█ half-block characters, following the character map from the output format reference
 - Center the text horizontally relative to the 60-char panel width
@@ -395,12 +419,14 @@ Use the **panel layout** from the output format reference (`$PLUGIN_DIR/referenc
 - One blank line after the title, before the header panel
 
 **Header panel** (always rendered):
+
 - Title line: `☀  Morning Briefing — {date}`
 - Sprint info: **bold** sprint name, days remaining, story points
 - Progress bar: 10 colored squares wide with bracket borders `▐...▌`, gradient fill (positions 1-3 🟥, 4-5 🟠, 6-7 🟡, 8-10 🟢, unfilled `░`)
 - Summary line: count items per non-empty section, join with ` · `, prefix with `>`
 
 **Section panels** — render in order: QA Ready, Sprint Backlog, Carry-over, Open PRs, Review Queue, RHEL Queue, Reminders.
+
 - Each section is its own panel: `╭─ » {title} ─...╮ ... ╰─...╯` (all sections use `»` as prefix)
 - Skip any section that has zero items (no empty panels)
 - **Ticket keys**: always **bold** (`**KEY**`)
@@ -409,6 +435,7 @@ Use the **panel layout** from the output format reference (`$PLUGIN_DIR/referenc
 - Long summaries wrap to a continuation line; bare URLs may extend past the right `│` for usability
 
 **Reminders panel** collects:
+
 - Sprint urgency reminder (if days_remaining <= 3): "⚠ **{sprint_name}** ends in {N} days — prepare tasks for next sprint" (or "🔴 **{sprint_name}** ends today — finalize work and groom next sprint")
 - Quarterly reminder (if within 14 days of quarter end)
 
@@ -416,7 +443,7 @@ Use the **panel layout** from the output format reference (`$PLUGIN_DIR/referenc
 
 **Error notes:** If any data source failed, append an error panel:
 
-```
+```text
 ╭─ ⚠ Notes ────────────────────────────────────────────────╮
 │  ⚠ Could not reach JIRA — QA tasks, sprint, RHEL skipped │
 │  ⚠ Could not fetch PR dashboard — open PRs skipped       │

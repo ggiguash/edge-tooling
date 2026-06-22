@@ -8,7 +8,7 @@ All panels use rounded box-drawing characters (`╭╮╰╯│─`). The header
 
 The output begins with the configured title rendered in block pixel characters (▀ ▄ █), centered above the panels. Default title: `Morning Edge`
 
-```
+```text
               █▄ ▄█ █▀▀█ █▀▀▄ █▄ █ █ █▄ █ █▀▀▀
               █ ▀ █ █  █ █▄▄▀ █ ▀█ █ █ ▀█ █ ▀█
               ▀   ▀ ▀▀▀▀ ▀  ▀ ▀  ▀ ▀ ▀  ▀ ▀▀▀▀
@@ -29,7 +29,7 @@ The output begins with the configured title rendered in block pixel characters (
 
 Each letter is 3 rows tall. Most are 4 columns wide; M and W are 5; I is 1; T is 3. Letters separated by 1 space.
 
-```
+```text
 A:█▀▀█  B:█▀▀▄  C:█▀▀▀  D:█▀▀▄  E:█▀▀▀  F:█▀▀▀  G:█▀▀▀
   █▀▀█    █▀▀▄    █       █  █    █▀▀     █▀▀     █ ▀█
   ▀  ▀    ▀▀▀▀    ▀▀▀▀    ▀▀▀▀    ▀▀▀▀    ▀       ▀▀▀▀
@@ -49,7 +49,7 @@ V:█  █  W:█   █  X:▀▄ ▄▀  Y:█  █  Z:▀▀▀█
 
 ## Template
 
-```
+```text
               █▄ ▄█ █▀▀█ █▀▀▄ █▄ █ █ █▄ █ █▀▀▀
               █ ▀ █ █  █ █▄▄▀ █ ▀█ █ █ ▀█ █ ▀█
               ▀   ▀ ▀▀▀▀ ▀  ▀ ▀  ▀ ▀ ▀  ▀ ▀▀▀▀
@@ -127,9 +127,10 @@ All sections use `»` as a prefix in the top border. The `⚠` symbol is reserve
 - Positions 6-7: 🟡 (yellow)
 - Positions 8-10: 🟢 (green)
 - Unfilled positions use `░` (U+2591)
-- Append ` {percentage}%` after the closing bracket
+- Append `{percentage}%` after the closing bracket
 
 Examples:
+
 - 0%:   `▐░░░░░░░░░░▌ 0%`
 - 20%:  `▐🟥🟥░░░░░░░░▌ 20%`
 - 50%:  `▐🟥🟥🟥🟠🟠░░░░░▌ 50%`
@@ -164,7 +165,7 @@ Examples:
 
 Errors go in their own panel at the bottom (uses `⚠` instead of `»`):
 
-```
+```text
 ╭─ ⚠ Notes ────────────────────────────────────────────────╮
 │  ⚠ Could not reach JIRA — QA tasks, sprint, RHEL skipped │
 │  ⚠ Could not fetch PR dashboard — open PRs skipped       │
