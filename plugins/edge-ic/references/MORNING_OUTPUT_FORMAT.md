@@ -62,7 +62,7 @@ V:█  █  W:█   █  X:▀▄ ▄▀  Y:█  █  Z:▀▀▀█
 │                                                          │
 │  **{sprint_name}** — {days_remaining} of {total_days} days remaining
 │  **Story Points:** {completed} / {total} ({pct}%)        │
-│  ▐{progress_bar}▌ {pct}%                                 │
+│  {progress_bar}                                          │
 │                                                          │
 │  > {summary_line}                                        │
 ╰──────────────────────────────────────────────────────────╯
@@ -110,7 +110,7 @@ V:█  █  W:█   █  X:▀▄ ▄▀  Y:█  █  Z:▀▀▀█
 All borders target **60 visual columns** wide (outer `╭`/`╰` to outer `╮`/`╯`).
 
 - **All borders**: **60 raw chars** (`╭` + 58×`─` + `╮`). Section markers use `»` (narrow, 1 visual column) so all borders are uniformly 60 raw = 60 visual
-- **Content lines**: left `│` + 2-space indent; right `│` aligned at column 60 where content fits; long content (URLs, summaries) can overflow past the right border
+- **Content lines**: left `│` + 2-space indent; right `│` aligned at column 60 where content fits; long summaries wrap to a continuation line; bare URLs may extend past the border for usability
 - **Corners**: `╭` top-left, `╮` top-right, `╰` bottom-left, `╯` bottom-right
 - **Section title**: embedded in top border: `╭─ » {title} ─...─╮`
 

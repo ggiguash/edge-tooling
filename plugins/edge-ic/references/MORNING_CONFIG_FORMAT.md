@@ -50,7 +50,7 @@ sections:
 | `jira.qa_components` | no | `[]` (all) | Filter QA tasks to specific components (e.g., `["Two Node Fencing", "LVMS"]`) |
 | `jira.board_ids` | yes | auto-discovered | List of agile board IDs for sprint queries (e.g., `["11479", "12345"]`) |
 | `github.username` | yes | inferred from git/gh | GitHub username for PR matching |
-| `rhel_verification.enabled` | yes | `false` | Whether to check RHEL verification queue |
+| `rhel_verification.enabled` | no | `false` | Whether to check RHEL verification queue |
 | `rhel_verification.project` | if enabled | `RHEL` | JIRA project key |
 | `rhel_verification.summary_filter` | if enabled | `[TNF]` | Summary search string |
 | `rhel_verification.component` | if enabled | `resource-agents` | Component filter |

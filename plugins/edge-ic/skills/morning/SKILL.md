@@ -34,7 +34,7 @@ Check `$ARGUMENTS`:
 cat "$HOME/.config/edge-ic/morning.yaml" 2>/dev/null
 ```
 
-If the file exists and `--setup` was NOT passed, read it and proceed to Step 2.
+If the file exists and `--setup` was NOT passed, read it and proceed to Step 2. If YAML parsing fails, warn the user and offer to re-run setup (`/morning --setup`), then stop.
 
 If the file does not exist OR `--setup` was passed, run the setup wizard:
 
@@ -104,13 +104,15 @@ Steps 2-8 are independent and can be run in parallel. Skip any step whose corres
 
 Skip if `sections.qa_tasks` is `false` in config.
 
+**If any JIRA MCP call fails in this step**, skip QA tasks and record an error note: "Could not reach JIRA — QA tasks skipped." Note: `currentUser()` in JQL only works when the MCP session is authenticated with the correct email; if queries return empty unexpectedly, verify JIRA auth.
+
 Query JIRA for tickets where the current user is the **QA Contact** and status matches the configured watch statuses. This searches across all projects, not just the sprint board:
 
 ```
 jira_search with JQL: "QA Contact" = currentUser() AND status in ("{status1}", "{status2}") ORDER BY priority DESC
 ```
 
-Replace `{status1}`, `{status2}` etc. with values from `jira.qa_statuses` in config (default: `["ON_QA"]`).
+Replace `{status1}`, `{status2}` etc. with values from `jira.qa_statuses` in config (default: `["ON_QA"]`). Before interpolating any config value into JQL, escape backslashes as `\\` and double-quotes as `\"` to prevent query breakage.
 
 If `jira.qa_components` is set in config, append a component filter:
 ```
@@ -134,11 +136,15 @@ Store results as a list of:
 
 Skip if `sections.sprint_backlog` is `false` in config.
 
+**If any JIRA MCP call fails in this step**, skip sprint backlog and record an error note: "Could not reach JIRA — sprint backlog skipped."
+
+**Board IDs:** If `board_ids` is missing or empty in config, attempt auto-discovery via `jira_get_agile_boards`. If that fails too, skip sprint section. If config has a legacy `board_id` (string) instead of `board_ids` (list), treat it as a single-element list.
+
 **For each board in `jira.board_ids`**, discover and gather sprint data:
 
 **Discover active sprint:**
 
-Use `jira_get_sprints_from_board` with each board ID and `state: "active"`. Extract per sprint:
+Use `jira_get_sprints_from_board` with each board ID and `state: "active"`. If no active sprint is found, skip this board's sprint header and backlog silently. Extract per sprint:
 - Sprint name
 - Sprint start date
 - Sprint end date
@@ -161,7 +167,7 @@ Use `fields: "status,assignee,issuetype,summary,priority,customfield_10028,custo
 
 **Compute** (per sprint):
 - Separate into: completed (status category = Done) and not-done (everything else)
-- Sum story points: completed points vs total points
+- Sum story points: try `customfield_10028` ("Story Points") first, then `customfield_10016` ("Story point estimate"). If neither has data, show "Story Points: N/A" in the sprint header
 - Group not-done issues by status in workflow order: In Progress, Code Review, POST, To Do, New
 
 Store results as a list of sprints, each with:
@@ -183,11 +189,20 @@ Skip if `sections.carry_over` is `false` in config or `daily_notes.enabled` is `
 **Determine yesterday's workday:**
 
 ```bash
-if [ "$(date +%u)" -eq 1 ]; then
-  # Monday — look back to Friday
-  yesterday=$(date -v-3d +%Y-%m-%d)
+if date -v-1d +%Y-%m-%d 2>/dev/null; then
+  # macOS/BSD
+  if [ "$(date +%u)" -eq 1 ]; then
+    yesterday=$(date -v-3d +%Y-%m-%d)
+  else
+    yesterday=$(date -v-1d +%Y-%m-%d)
+  fi
 else
-  yesterday=$(date -v-1d +%Y-%m-%d)
+  # Linux/GNU
+  if [ "$(date +%u)" -eq 1 ]; then
+    yesterday=$(date -d "3 days ago" +%Y-%m-%d)
+  else
+    yesterday=$(date -d "yesterday" +%Y-%m-%d)
+  fi
 fi
 echo "$yesterday"
 ```
@@ -231,7 +246,7 @@ Skip if `sections.open_prs` is `false` in config.
 curl -sf "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/periodic-ci-openshift-eng-edge-tooling-main-pr-notifier/latest-build.txt"
 ```
 
-If this fails, skip this section with a note: "Could not fetch PR dashboard — skipping open PRs section."
+If this fails, skip this section with a note: "Could not fetch PR dashboard — skipping open PRs section." The file contains just the numeric run ID with no trailing newline — strip whitespace before constructing the URL.
 
 **Fetch the PR summary page:**
 
@@ -242,10 +257,23 @@ https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/lo
 
 With prompt: "Extract all PRs where the Author column matches '{config.github.username}'. For each PR return: repo (e.g. openshift/origin), PR number, title, days open, days idle, missing labels, and unresolved conversations count if available."
 
-For each PR found, also fetch unresolved review comments via `gh`:
+For each PR found, also fetch unresolved review thread count via GraphQL (the REST API does not expose thread resolution state):
 
 ```bash
-gh pr view {pr_number} --repo {repo} --json reviewDecision,reviews,comments --jq '{reviewDecision, unresolved: [.reviews[].comments[]? | select(.isMinimized == false and .resolvedAt == null)] | length}'
+gh api graphql \
+  -F owner="{owner}" -F repo="{repo}" -F pr={pr_number} \
+  -f query='query($owner:String!,$repo:String!,$pr:Int!){
+    repository(owner:$owner,name:$repo){
+      pullRequest(number:$pr){
+        reviewDecision
+        reviewThreads(first:100){ nodes{ isResolved } }
+      }
+    }
+  }' \
+  --jq '{
+    reviewDecision: .data.repository.pullRequest.reviewDecision,
+    unresolved: [.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length
+  }'
 ```
 
 If `gh` is not available or the command fails, skip unresolved comments for that PR (show "?" instead of a count).
@@ -303,7 +331,13 @@ elif [ "$month" -le 9 ]; then
 else
   quarter_end="${year}-12-31"
 fi
-days_left=$(( ( $(date -j -f "%Y-%m-%d" "$quarter_end" +%s) - $(date +%s) ) / 86400 ))
+if date -j -f "%Y-%m-%d" "$quarter_end" +%s 2>/dev/null; then
+  # macOS/BSD
+  days_left=$(( ( $(date -j -f "%Y-%m-%d" "$quarter_end" +%s) - $(date +%s) ) / 86400 ))
+else
+  # Linux/GNU
+  days_left=$(( ( $(date -d "$quarter_end" +%s) - $(date +%s) ) / 86400 ))
+fi
 echo "$quarter_end $days_left"
 ```
 
@@ -318,11 +352,15 @@ If `days_left <= 14`, store a reminder with:
 
 Skip if `sections.rhel_queue` is `false` in config or `rhel_verification.enabled` is `false`.
 
+**If the JIRA MCP call fails**, skip this section and record an error note: "Could not reach JIRA — RHEL queue skipped." The `"Preliminary Testing" = Requested` clause uses a custom field that works on Jira Cloud; if the query fails with a field-not-found error, log it and skip.
+
 Query JIRA:
 
 ```
 jira_search with JQL: project = "{rhel_verification.project}" AND summary ~ "{rhel_verification.summary_filter}" AND component = "{rhel_verification.component}" AND "Preliminary Testing" = Requested AND "Test Coverage" is EMPTY AND (fixVersion in unreleasedVersions() OR fixVersion is EMPTY)
 ```
+
+Before interpolating `rhel_verification.*` config values, escape backslashes as `\\` and double-quotes as `\"`.
 
 Use `fields: "summary,status,fixVersions"` and `limit: 20`.
 
@@ -368,7 +406,7 @@ Use the **panel layout** from the output format reference (`$PLUGIN_DIR/referenc
 - **Ticket keys**: always **bold** (`**KEY**`)
 - **Sprint name**: always **bold** in header and reminders
 - All JIRA links: `https://redhat.atlassian.net/browse/{KEY}`
-- Content that overflows the box width (long URLs, summaries) can extend past the right `│` — readability over alignment
+- Long summaries wrap to a continuation line; bare URLs may extend past the right `│` for usability
 
 **Reminders panel** collects:
 - Sprint urgency reminder (if days_remaining <= 3): "⚠ **{sprint_name}** ends in {N} days — prepare tasks for next sprint" (or "🔴 **{sprint_name}** ends today — finalize work and groom next sprint")
@@ -383,35 +421,6 @@ Use the **panel layout** from the output format reference (`$PLUGIN_DIR/referenc
 │  ⚠ Could not reach JIRA — QA tasks, sprint, RHEL skipped │
 │  ⚠ Could not fetch PR dashboard — open PRs skipped       │
 ╰──────────────────────────────────────────────────────────╯
-```
-
-## Edge Cases
-
-- **No active sprint:** If `jira_get_sprints_from_board` returns no active sprint, skip the sprint header and sprint backlog section entirely. Show a note in the output: "No active sprint found."
-- **JIRA MCP unavailable:** If any JIRA MCP call fails, skip all JIRA-dependent sections (QA tasks, sprint backlog, RHEL queue). Append error note at bottom.
-- **PR dashboard unavailable:** If `latest-build.txt` fetch or the HTML fetch fails, skip the open PRs section. Append error note.
-- **No daily notes file:** Skip carry-over silently — no warning, no empty section.
-- **Monday carry-over:** Look back to Friday (3 days) for carry-over, not Saturday/Sunday.
-- **Config file exists but is malformed:** If YAML parsing fails, warn user and offer to re-run setup (`/morning --setup`).
-- **Story points field varies:** Try `customfield_10028` ("Story Points") first, then `customfield_10016` ("Story point estimate"). If neither has data, show "Story Points: N/A" in sprint header.
-- **Board IDs not set in config:** If `board_ids` is missing or empty, attempt auto-discovery via `jira_get_agile_boards`. If that fails, skip sprint section.
-- **Legacy `board_id` field:** If config has `board_id` (string) instead of `board_ids` (list), treat it as a single-element list for backwards compatibility.
-
-## Gotchas
-
-- **`currentUser()` in JQL:** Works only when authenticated via MCP. If the MCP config uses a different email than expected, queries return nothing. Verify during setup (Question 4).
-- **PR dashboard run ID:** The `latest-build.txt` file contains just the numeric run ID with no trailing newline. Strip whitespace before constructing the URL.
-- **RHEL "Preliminary Testing" field:** This is a custom field. The JQL syntax `"Preliminary Testing" = Requested` works on Jira Cloud but the field ID may vary by project. If the query fails, log the error and skip.
-- **macOS vs Linux date commands:** The `date -v-3d` syntax is macOS-specific. For portability, use: `date -d "3 days ago"` on Linux. Detect platform first:
-
-```bash
-if date -v-1d +%Y-%m-%d 2>/dev/null; then
-  # macOS
-  yesterday=$(date -v-1d +%Y-%m-%d)
-else
-  # Linux
-  yesterday=$(date -d "yesterday" +%Y-%m-%d)
-fi
 ```
 
 ## Usage
