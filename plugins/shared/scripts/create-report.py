@@ -17,6 +17,7 @@ import re
 import html as html_mod
 import glob as glob_mod
 from datetime import datetime, timezone
+from filter_images import tag_matches_release
 
 
 # ---------------------------------------------------------------------------
@@ -327,6 +328,7 @@ document.querySelectorAll('.data-table').forEach(function(table) {
             sortBy(colIdx, !th.classList.contains('sort-asc'));
         });
     });
+    // Sort by second-to-last column (e.g. "Updated" for bugs, "Image Created" for images) descending on load.
     if (headers.length >= 2) sortBy(headers.length - 2, false);
 });"""
 
@@ -721,34 +723,32 @@ def _load_catalog_id(images_dir, repo_slug):
     return None
 
 
-def load_images_data(workdir, component, releases):
+def load_images_data(workdir, releases):
     """Load cached image JSON files from ${WORKDIR}/images/.
 
-    Repos are discovered from filenames ({repo_slug}-{release}.json)
-    rather than a hardcoded mapping — doctor.sh is the single source
-    of truth for the component-to-repo list.
+    Each repo has a single {repo_slug}.json containing all images.
+    Images are filtered into per-release buckets here in Python.
     """
     images_dir = os.path.join(workdir, "images")
     if not os.path.isdir(images_dir):
         return None
 
-    release_suffixes = {f"-{r}.json" for r in releases}
-    repo_slugs = set()
-    for fname in os.listdir(images_dir):
-        for suffix in release_suffixes:
-            if fname.endswith(suffix):
-                repo_slugs.add(fname[: -len(suffix)])
-                break
-
     result = {}
-    for repo_slug in sorted(repo_slugs):
-        repo = repo_slug.replace("_", "/", 1)
+    for fname in sorted(os.listdir(images_dir)):
+        if not fname.endswith(".json") or fname.endswith("-id.txt"):
+            continue
+        repo_slug = fname[:-len(".json")]
+        path = os.path.join(images_dir, fname)
+        all_images = load_json(path)
+        if not all_images:
+            continue
+        repo = repo_slug.replace("@", "/", 1)
         repo_data = {}
         for release in releases:
-            path = os.path.join(images_dir, f"{repo_slug}-{release}.json")
-            data = load_json(path)
-            if data is not None:
-                repo_data[release] = data
+            filtered = [img for img in all_images
+                        if any(tag_matches_release(t, release) for t in img.get("tags", []))]
+            if filtered:
+                repo_data[release] = filtered
         if repo_data:
             catalog_id = _load_catalog_id(images_dir, repo_slug)
             result[repo] = {"releases": repo_data, "catalog_id": catalog_id}
@@ -757,32 +757,35 @@ def load_images_data(workdir, component, releases):
 
 
 _ZSTREAM_RE = re.compile(r'^v?\d+\.\d+\.\d+$')
-_ASSEMBLY_RE = re.compile(r'assembly\.(\d+\.\d+\.\d+)\.')
+_ASSEMBLY_RE = re.compile(r'assembly\.(\d+\.\d+\.\d+)(?:\.|$)')
 
 
 def _pick_zstream_tag(tags, release):
     """Pick the z-stream version tag (e.g. v4.18.42) for display."""
     if not tags:
         return ""
-    matching = [t for t in tags if release in t and _ZSTREAM_RE.match(t)]
+    matching = [t for t in tags if tag_matches_release(t, release) and _ZSTREAM_RE.match(t)]
     if matching:
         return max(matching, key=len).lstrip("v")
-    # Extract z-stream from assembly tag (e.g. "assembly.4.19.7.el9" → "4.19.7")
+    # Extract z-stream from assembly tag (e.g. "assembly.4.19.7.el9" → "4.19.7").
+    # Filter by release to avoid picking an assembly tag from a different release
+    # when an image carries tags for multiple versions.
     for t in tags:
+        if not tag_matches_release(t, release):
+            continue
         m = _ASSEMBLY_RE.search(t)
         if m:
             return m.group(1)
-    matching = [t for t in tags if release in t]
+    matching = [t for t in tags if tag_matches_release(t, release)]
     tag = min(matching, key=len) if matching else min(tags, key=len)
     return tag.lstrip("v")
 
 
-def _worst_grade(images):
-    """Return the worst freshness grade from a list of image objects."""
+def _worst_grade(grades):
+    """Return the worst freshness grade from a list of grade strings."""
     worst = -1
     worst_label = None
-    for img in images:
-        grade = img.get("freshness_grade")
+    for grade in grades:
         if grade and _GRADE_ORDER.get(grade, -1) > worst:
             worst = _GRADE_ORDER[grade]
             worst_label = grade
@@ -798,6 +801,7 @@ def _group_repo_images(images, release):
             groups[tag] = {
                 "tag": tag,
                 "archs": [],
+                "_seen_archs": set(),
                 "creation_date": (img.get("creation_date") or "")[:10],
                 "last_update_date": (img.get("last_update_date") or "")[:10],
                 "_grades": [],
@@ -805,33 +809,27 @@ def _group_repo_images(images, release):
         arch = img.get("architecture", "")
         image_id = img.get("_id", "")
         grade = img.get("freshness_grade")
-        if arch not in [a["arch"] for a in groups[tag]["archs"]]:
+        if arch not in groups[tag]["_seen_archs"]:
             groups[tag]["archs"].append({
                 "arch": arch,
                 "image_id": image_id,
                 "grade": grade or "N/A",
                 "grade_css": _GRADE_CSS.get(grade, "grade-na"),
             })
+            groups[tag]["_seen_archs"].add(arch)
         groups[tag]["_grades"].append(grade)
 
     versions = []
     for g in groups.values():
-        worst = _worst_grade([{"freshness_grade": gr} for gr in g["_grades"]])
+        worst = _worst_grade(g["_grades"])
         versions.append({
             "tag": g["tag"],
             "archs": sorted(g["archs"], key=lambda a: a["arch"]),
             "freshness_grade": worst or "N/A",
-            "grade_css": _GRADE_CSS.get(worst, "grade-na"),
             "creation_date": g["creation_date"],
             "last_update_date": g["last_update_date"],
         })
-    def _version_key(v):
-        parts = v["tag"].split(".")
-        try:
-            return tuple(int(p) for p in parts)
-        except ValueError:
-            return (0,)
-    versions.sort(key=_version_key, reverse=True)
+    versions.sort(key=lambda v: tuple(int(p) for p in v["tag"].split(".") if p.isdigit()), reverse=True)
     return versions
 
 
@@ -866,7 +864,7 @@ def build_images_tab_data(images_data, releases):
             })
         if repos:
             all_grades = [r["latest_grade"] for r in repos if r["latest_grade"]]
-            worst = max(all_grades, key=lambda g: _GRADE_ORDER.get(g, -1)) if all_grades else None
+            worst = _worst_grade(all_grades)
             releases_out[release] = {"repos": repos, "latest_grade": worst}
 
     return {"has_data": bool(releases_out), "releases": releases_out}
@@ -1705,7 +1703,7 @@ def main():
         json.dump(bugs_tab_data, f, indent=2)
 
     # Load container image health data
-    images_data = load_images_data(workdir, component, releases)
+    images_data = load_images_data(workdir, releases)
     images_tab_data = build_images_tab_data(images_data, releases) if images_data else None
 
     # Set graphs directory for rendering

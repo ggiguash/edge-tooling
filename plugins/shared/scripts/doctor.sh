@@ -357,7 +357,7 @@ cmd_finalize() {
         mkdir -p "${images_dir}"
 
         for repo in ${repos}; do
-            local repo_slug="${repo//\//_}"
+            local repo_slug="${repo//\//@}"
 
             # Fetch catalog repository ID (needed for catalog URLs)
             local id_file="${images_dir}/${repo_slug}-id.txt"
@@ -368,22 +368,17 @@ cmd_finalize() {
                 echo "" > "${id_file}"
             fi
 
-            for release in "${RELEASES[@]}"; do
-                release=$(echo "${release}" | xargs)
-                # Skip non-version releases (e.g. "main") — catalog only has numbered tags
-                [[ "${release}" =~ ^[0-9]+\.[0-9]+ ]] || continue
-                local outfile="${images_dir}/${repo_slug}-${release}.json"
-
-                echo "  Fetching ${repo} images for ${release}..." >&2
-                if bash "${SCRIPT_DIR}/rh-catalog.sh" "${repo}" images --tag "${release}" > "${outfile}" 2>/dev/null; then
-                    local img_count
-                    img_count=$(jq 'length' "${outfile}" 2>/dev/null || echo 0)
-                    echo "    ${img_count} images" >&2
-                else
-                    echo "    WARNING: catalog query failed" >&2
-                    echo "[]" > "${outfile}"
-                fi
-            done
+            # Fetch all images in one API call; Python filters by release
+            local outfile="${images_dir}/${repo_slug}.json"
+            echo "  Fetching ${repo} images..." >&2
+            if bash "${SCRIPT_DIR}/rh-catalog.sh" "${repo}" images > "${outfile}" 2>/dev/null; then
+                local img_count
+                img_count=$(jq 'length' "${outfile}" 2>/dev/null || echo 0)
+                echo "    ${img_count} images" >&2
+            else
+                echo "    WARNING: catalog query failed" >&2
+                echo "[]" > "${outfile}"
+            fi
         done
     fi
 
