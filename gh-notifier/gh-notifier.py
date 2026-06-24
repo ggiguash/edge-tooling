@@ -275,6 +275,22 @@ def iter_main_decision_files() -> Iterable[str]:
             yield name
 
 
+def _iter_pr_changed_files(org: str, repo: str, pr_number: int) -> Iterable[dict]:
+    """Paginate ``/pulls/{number}/files`` (GitHub defaults to 30 per page)."""
+    page = 1
+    while True:
+        files = gh_request(
+            f"/repos/{urllib.parse.quote(org)}/{urllib.parse.quote(repo)}/pulls/{pr_number}/files",
+            {"per_page": "100", "page": str(page)},
+        )
+        if not isinstance(files, list) or not files:
+            return
+        yield from files
+        if len(files) < 100:
+            return
+        page += 1
+
+
 def iter_open_decision_files() -> Iterable[tuple[str, str, str]]:
     """Yield ``(filename, head_sha, repo_path)`` for decision files in open PRs to ``main``."""
     prefix = f"{_EDGE_CONTEXT_DECISIONS_PATH}/"
@@ -293,12 +309,7 @@ def iter_open_decision_files() -> Iterable[tuple[str, str, str]]:
             head_sha = str((pr.get("head") or {}).get("sha") or "")
             if number is None or not head_sha:
                 continue
-            files = gh_request(
-                f"/repos/{urllib.parse.quote(_EDGE_CONTEXT_ORG)}/{urllib.parse.quote(_EDGE_CONTEXT_REPO)}/pulls/{number}/files"
-            )
-            if not isinstance(files, list):
-                continue
-            for item in files:
+            for item in _iter_pr_changed_files(_EDGE_CONTEXT_ORG, _EDGE_CONTEXT_REPO, int(number)):
                 if not isinstance(item, dict):
                     continue
                 path = str(item.get("filename") or "")
@@ -896,7 +907,6 @@ def write_pr_dashboard_html(
         decision_rows: list[str] = []
         for d in pending:
             title_e = html.escape(d.title)
-            makers_e = html.escape(d.decision_makers)
             num_e = html.escape(d.number)
             url_e = html.escape(d.url, quote=True)
             decision_rows.append(

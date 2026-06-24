@@ -147,6 +147,7 @@ class TestIterOpenDecisionFiles(unittest.TestCase):
                 self.assertEqual(query.get("state"), "open")
                 return [{"number": 14, "head": {"sha": "abc123def456"}}]
             if path.endswith("/pulls/14/files"):
+                self.assertEqual(query, {"per_page": "100", "page": "1"})
                 return [
                     {
                         "filename": (
@@ -157,7 +158,7 @@ class TestIterOpenDecisionFiles(unittest.TestCase):
                     {"filename": "decisions/README.md"},
                     {"filename": "README.md"},
                 ]
-            raise AssertionError(f"unexpected path: {path}")
+            raise AssertionError(f"unexpected path: {path} {query}")
 
         orig = gn.gh_request
         try:
@@ -171,6 +172,33 @@ class TestIterOpenDecisionFiles(unittest.TestCase):
         self.assertEqual(filename, "0003-align-story-points-to-reward-prioritizing-highest-priority-outcomes.md")
         self.assertEqual(head_sha, "abc123def456")
         self.assertTrue(path.startswith("decisions/"))
+
+    def test_paginates_pr_files_endpoint(self):
+        file_calls: list[dict[str, str] | None] = []
+
+        def fake_gh_request(path, query=None):
+            if path.endswith("/pulls"):
+                return [{"number": 99, "head": {"sha": "sha1"}}]
+            if path.endswith("/pulls/99/files"):
+                file_calls.append(query)
+                page = int((query or {}).get("page", 1))
+                if page == 1:
+                    return [{"filename": f"decisions/{i:04d}-decision.md"} for i in range(100)]
+                if page == 2:
+                    return [{"filename": "decisions/0100-extra-decision.md"}]
+                return []
+            raise AssertionError(f"unexpected path: {path}")
+
+        orig = gn.gh_request
+        try:
+            gn.gh_request = fake_gh_request
+            sources = list(gn.iter_open_decision_files())
+        finally:
+            gn.gh_request = orig
+
+        self.assertEqual(len(sources), 101)
+        self.assertEqual(file_calls[0], {"per_page": "100", "page": "1"})
+        self.assertEqual(file_calls[1], {"per_page": "100", "page": "2"})
 
 
 class TestPendingDecisionFromText(unittest.TestCase):
