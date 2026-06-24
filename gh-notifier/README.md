@@ -20,7 +20,7 @@ Design background and operational expectations: [`../proposals/gh-notifier.md`](
 2. Collects every raw entry under **`approvers:`** and **`reviewers:`** in `OWNERS`. Each entry is either an **alias** name defined under `aliases:` in `OWNERS_ALIASES` (expanded to GitHub logins) or treated as a **literal GitHub login**.
 3. For each configured repo, fetches **open** PRs from the GitHub API, keeps **non-draft** PRs whose author is in that login set and that do not carry **excluded** labels.
 4. Marks PRs **needing attention** when they are idle or old enough (`STALE_DAYS`), or when optional **required** / **forbidden** label rules fail.
-5. On **Fridays (UTC)**, fetches decision files from **edge-context** and keeps those with `status: proposed` in frontmatter.
+5. On **Fridays (UTC)**, fetches pending decisions from **edge-context** on **`main`** and in **open PRs** targeting `main` (``status: proposed`` only).
 6. Builds **Slack Block Kit** payloads, then writes **`GH_NOTIFIER_HTML_OUTPUT`** (default: `gh-notifier/pr-dashboard.html` under the repo root). Attention PRs are sorted by **longest open** first (`age_days` desc, then idle). On **Fridays**, when pending decisions exist, the HTML dashboard also includes a **Pending decisions** metric and table (omitted on other days or when none are pending). The **Slack webhook** uses at most **`MAX_PRS_IN_MESSAGE`** rows (see script); the HTML **copy** area lists **every** attention PR and rewrites PR links from Slack angle-bracket form to CommonMark `[title](url)` for easier paste into docs, GitHub, or Slack. The **JSON** copy area matches the capped webhook body. The page includes metrics, a PR table (or an “all clear” state), and **Copy text** / **Copy JSON** buttons.
 7. If **`SLACK_WEBHOOK_URL`** is set, POSTs the **capped** payload to Slack. On Fridays, pending decisions are appended to the same message when any exist.
 
@@ -64,7 +64,6 @@ Stdout prints a one-line summary and the **absolute path** to the HTML file. Run
 | `EXCLUDE_LABELS` | no | hold / WIP-style defaults | Comma or semicolon separated; PRs with any of these (case-insensitive) are skipped |
 | `REQUIRED_LABELS` | no | empty | If set, PRs missing any of these labels are flagged |
 | `FORBIDDEN_LABELS` | no | empty | If set, PRs carrying any of these labels are flagged |
-| `GH_NOTIFIER_DECISIONS_TEST` | no | `false` | **Local testing only.** Run the decisions digest on any day and include resolved decisions (`accepted`, `rejected`, `deprecated`, `superseded`) instead of `proposed` |
 
 `GITHUB_TOKEN`, `SLACK_WEBHOOK_URL`, and string list env vars are read **once at process start** (together with repo and label settings). `OWNERS` paths and the HTML output path are resolved in `main()`.
 

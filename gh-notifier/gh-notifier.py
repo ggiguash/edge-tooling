@@ -63,9 +63,6 @@ SLACK_WEBHOOK_URL = _env("SLACK_WEBHOOK_URL", "")
 PROW_JOB_URL = _env("PROW_JOB_URL", "")
 PROW_HTML_URL = _env("PROW_HTML_URL", "")
 VERBOSE_SLACK_MESSAGE = _truthy_env("VERBOSE_SLACK_MESSAGE")
-# Local validation only: fetch resolved decisions (accepted/rejected/…) and run on any day.
-DECISIONS_TEST = _truthy_env("GH_NOTIFIER_DECISIONS_TEST")
-_DECISIONS_RESOLVED_STATUSES = frozenset({"accepted", "rejected", "deprecated", "superseded"})
 
 # Comma-separated org/repo pairs
 _REPOS_RAW = _env("GITHUB_REPOS", "openshift-eng/edge-tooling")
@@ -261,12 +258,12 @@ def gh_get_repo_file(org: str, repo: str, path: str, *, ref: str) -> str:
     return base64.b64decode(content_b64).decode("utf-8")
 
 
-def iter_decision_files(org: str, repo: str, decisions_path: str, *, ref: str) -> Iterable[str]:
-    """Yield decision filenames (``NNNN-slug.md``) under ``decisions_path``."""
-    quoted_path = urllib.parse.quote(decisions_path, safe="/")
+def iter_main_decision_files() -> Iterable[str]:
+    """Yield decision filenames (``NNNN-slug.md``) on ``main``."""
+    quoted_path = urllib.parse.quote(_EDGE_CONTEXT_DECISIONS_PATH, safe="/")
     data = gh_request(
-        f"/repos/{urllib.parse.quote(org)}/{urllib.parse.quote(repo)}/contents/{quoted_path}",
-        {"ref": ref},
+        f"/repos/{urllib.parse.quote(_EDGE_CONTEXT_ORG)}/{urllib.parse.quote(_EDGE_CONTEXT_REPO)}/contents/{quoted_path}",
+        {"ref": _EDGE_CONTEXT_BRANCH},
     )
     if not isinstance(data, list):
         return
@@ -276,6 +273,43 @@ def iter_decision_files(org: str, repo: str, decisions_path: str, *, ref: str) -
         name = str(item.get("name") or "")
         if _DECISION_FILE_RE.match(name):
             yield name
+
+
+def iter_open_decision_files() -> Iterable[tuple[str, str, str]]:
+    """Yield ``(filename, head_sha, repo_path)`` for decision files in open PRs to ``main``."""
+    prefix = f"{_EDGE_CONTEXT_DECISIONS_PATH}/"
+    page = 1
+    while True:
+        pulls = gh_request(
+            f"/repos/{urllib.parse.quote(_EDGE_CONTEXT_ORG)}/{urllib.parse.quote(_EDGE_CONTEXT_REPO)}/pulls",
+            {"state": "open", "per_page": "100", "page": str(page), "base": _EDGE_CONTEXT_BRANCH},
+        )
+        if not isinstance(pulls, list) or not pulls:
+            return
+        for pr in pulls:
+            if not isinstance(pr, dict):
+                continue
+            number = pr.get("number")
+            head_sha = str((pr.get("head") or {}).get("sha") or "")
+            if number is None or not head_sha:
+                continue
+            files = gh_request(
+                f"/repos/{urllib.parse.quote(_EDGE_CONTEXT_ORG)}/{urllib.parse.quote(_EDGE_CONTEXT_REPO)}/pulls/{number}/files"
+            )
+            if not isinstance(files, list):
+                continue
+            for item in files:
+                if not isinstance(item, dict):
+                    continue
+                path = str(item.get("filename") or "")
+                if not path.startswith(prefix):
+                    continue
+                filename = path[len(prefix) :]
+                if _DECISION_FILE_RE.match(filename):
+                    yield filename, head_sha, path
+        if len(pulls) < 100:
+            return
+        page += 1
 
 
 def parse_frontmatter(text: str) -> dict[str, str]:
@@ -312,6 +346,28 @@ def decision_number_from_filename(filename: str) -> str:
     return filename[:4] if len(filename) >= 4 and filename[:4].isdigit() else filename
 
 
+def _decision_blob_url(org: str, repo: str, ref: str, path: str) -> str:
+    quoted_ref = urllib.parse.quote(ref, safe="")
+    return f"https://github.com/{org}/{repo}/blob/{quoted_ref}/{path}"
+
+
+def _pending_decision_from_text(text: str, filename: str, url: str) -> PendingDecision | None:
+    frontmatter = parse_frontmatter(text)
+    if not _decision_included_for_digest(frontmatter.get("status", "")):
+        return None
+    title = extract_decision_title(text)
+    if not title:
+        slug = filename[5:-3] if filename.endswith(".md") else filename
+        title = slug.replace("-", " ").title()
+    return PendingDecision(
+        number=decision_number_from_filename(filename),
+        title=title,
+        decision_makers=frontmatter.get("decision-makers", "—"),
+        filename=filename,
+        url=url,
+    )
+
+
 @dataclass
 class PendingDecision:
     number: str
@@ -322,36 +378,33 @@ class PendingDecision:
 
 
 def _decision_included_for_digest(status: str) -> bool:
-    s = status.lower()
-    if DECISIONS_TEST:
-        return s in _DECISIONS_RESOLVED_STATUSES
-    return s == "proposed"
+    return status.lower() == "proposed"
 
 
 def load_pending_decisions() -> list[PendingDecision]:
-    """Fetch decision files from openshift-eng/edge-context for the weekly digest."""
-    pending: list[PendingDecision] = []
+    """Fetch pending decisions from ``main`` and open PRs only."""
+    by_number: dict[str, PendingDecision] = {}
+
+    def _add(decision: PendingDecision) -> None:
+        by_number.setdefault(decision.number, decision)
+
     try:
-        filenames = sorted(
-            iter_decision_files(
-                _EDGE_CONTEXT_ORG,
-                _EDGE_CONTEXT_REPO,
-                _EDGE_CONTEXT_DECISIONS_PATH,
-                ref=_EDGE_CONTEXT_BRANCH,
-            )
-        )
+        filenames = sorted(iter_main_decision_files())
     except urllib.error.HTTPError as e:
         sys.stderr.write(
-            f"Warning: could not fetch pending decisions from "
-            f"{_EDGE_CONTEXT_ORG}/{_EDGE_CONTEXT_REPO} (HTTP {e.code}); continuing without them.\n"
+            f"Warning: could not list decisions on {_EDGE_CONTEXT_BRANCH} from "
+            f"{_EDGE_CONTEXT_ORG}/{_EDGE_CONTEXT_REPO} (HTTP {e.code}); "
+            "checking open PRs only.\n"
         )
-        return []
+        filenames = []
     except urllib.error.URLError as e:
         sys.stderr.write(
-            f"Warning: could not fetch pending decisions from "
-            f"{_EDGE_CONTEXT_ORG}/{_EDGE_CONTEXT_REPO} ({e.reason}); continuing without them.\n"
+            f"Warning: could not list decisions on {_EDGE_CONTEXT_BRANCH} from "
+            f"{_EDGE_CONTEXT_ORG}/{_EDGE_CONTEXT_REPO} ({e.reason}); "
+            "checking open PRs only.\n"
         )
-        return []
+        filenames = []
+
     for filename in filenames:
         path = f"{_EDGE_CONTEXT_DECISIONS_PATH}/{filename}"
         try:
@@ -361,24 +414,42 @@ def load_pending_decisions() -> list[PendingDecision]:
         except (urllib.error.HTTPError, ValueError) as e:
             sys.stderr.write(f"Warning: {path}: {e}\n")
             continue
-        frontmatter = parse_frontmatter(text)
-        if not _decision_included_for_digest(frontmatter.get("status", "")):
-            continue
-        title = extract_decision_title(text)
-        if not title:
-            slug = filename[5:-3] if filename.endswith(".md") else filename
-            title = slug.replace("-", " ").title()
-        pending.append(
-            PendingDecision(
-                number=decision_number_from_filename(filename),
-                title=title,
-                decision_makers=frontmatter.get("decision-makers", "—"),
-                filename=filename,
-                url=f"{_EDGE_CONTEXT_DECISIONS_URL}/{filename}",
-            )
+        decision = _pending_decision_from_text(
+            text,
+            filename,
+            f"{_EDGE_CONTEXT_DECISIONS_URL}/{filename}",
         )
-    pending.sort(key=lambda d: d.number)
-    return pending
+        if decision:
+            _add(decision)
+
+    try:
+        for filename, head_sha, path in iter_open_decision_files():
+            number = decision_number_from_filename(filename)
+            if number in by_number:
+                continue
+            try:
+                text = gh_get_repo_file(
+                    _EDGE_CONTEXT_ORG, _EDGE_CONTEXT_REPO, path, ref=head_sha
+                )
+            except (urllib.error.HTTPError, ValueError) as e:
+                sys.stderr.write(f"Warning: {path}@{head_sha[:7]}: {e}\n")
+                continue
+            file_url = _decision_blob_url(_EDGE_CONTEXT_ORG, _EDGE_CONTEXT_REPO, head_sha, path)
+            decision = _pending_decision_from_text(text, filename, file_url)
+            if decision:
+                _add(decision)
+    except urllib.error.HTTPError as e:
+        sys.stderr.write(
+            f"Warning: could not fetch open decision PRs from "
+            f"{_EDGE_CONTEXT_ORG}/{_EDGE_CONTEXT_REPO} (HTTP {e.code}); continuing.\n"
+        )
+    except urllib.error.URLError as e:
+        sys.stderr.write(
+            f"Warning: could not fetch open decision PRs from "
+            f"{_EDGE_CONTEXT_ORG}/{_EDGE_CONTEXT_REPO} ({e.reason}); continuing.\n"
+        )
+
+    return sorted(by_number.values(), key=lambda d: d.number)
 
 
 def is_friday_utc(now: datetime | None = None) -> bool:
@@ -388,7 +459,7 @@ def is_friday_utc(now: datetime | None = None) -> bool:
 
 
 def should_include_decisions_digest(now: datetime | None = None) -> bool:
-    return DECISIONS_TEST or is_friday_utc(now)
+    return is_friday_utc(now)
 
 
 def parse_github_ts(ts: str) -> datetime:
@@ -586,12 +657,7 @@ def _chunk_section_blocks(blocks: list[dict[str, Any]], text: str) -> None:
 
 def format_pending_decisions_mrkdwn(pending: list[PendingDecision]) -> str:
     n = len(pending)
-    if DECISIONS_TEST:
-        if n == 1:
-            intro = "[TEST] 1 resolved decision shown for validation:"
-        else:
-            intro = f"[TEST] {n} resolved decisions shown for validation:"
-    elif n == 1:
+    if n == 1:
         intro = "1 decision is pending and needs attention:"
     else:
         intro = f"{n} decisions are pending and need attention:"
@@ -614,10 +680,7 @@ def append_pending_decisions_to_payload(
     blocks.append(_divider())
     _chunk_section_blocks(blocks, format_pending_decisions_mrkdwn(pending))
     n = len(pending)
-    if DECISIONS_TEST:
-        suffix = f" · {n} test decision(s)" if n != 1 else " · 1 test decision"
-    else:
-        suffix = f" · {n} pending decision(s)" if n != 1 else " · 1 pending decision"
+    suffix = f" · {n} pending decision(s)" if n != 1 else " · 1 pending decision"
     payload["text"] = str(payload.get("text", "")) + suffix
 
 
@@ -845,16 +908,10 @@ def write_pr_dashboard_html(
             )
         decisions_metric = (
             f'<div class="metric"><div class="val">{pending_n}</div>'
-            f'<div class="lbl">{"Test decisions" if DECISIONS_TEST else "Pending decisions"}</div></div>'
-        )
-        decisions_heading = "Test team decisions" if DECISIONS_TEST else "Pending team decisions"
-        decisions_hint = (
-            "TEST MODE · showing resolved decisions (accepted/rejected/deprecated/superseded)"
-            if DECISIONS_TEST
-            else "status <code>proposed</code> · Friday weekly digest"
+            f'<div class="lbl">Pending decisions</div></div>'
         )
         decisions_section = f"""<section class="prs">
-<h2>{decisions_heading} <span class="badge">{pending_n}</span></h2>
+<h2>Pending team decisions <span class="badge">{pending_n}</span></h2>
 <div class="table-wrap">
 <table>
 <thead><tr>
@@ -865,7 +922,7 @@ def write_pr_dashboard_html(
 </tbody>
 </table>
 </div>
-<p class="hint">From <a class="inherit-color" target="_blank" rel="noopener noreferrer" href="{html.escape(_EDGE_CONTEXT_DECISIONS_URL, quote=True)}">openshift-eng/edge-context</a> · {decisions_hint}</p>
+<p class="hint">From <a class="inherit-color" target="_blank" rel="noopener noreferrer" href="{html.escape(_EDGE_CONTEXT_DECISIONS_URL, quote=True)}">openshift-eng/edge-context</a> · <code>main</code> and open PRs · status <code>proposed</code> · Friday weekly digest</p>
 </section>"""
 
     doc = f"""<!DOCTYPE html>
@@ -1126,8 +1183,6 @@ def main() -> int:
     pending_decisions: list[PendingDecision] = []
     if should_include_decisions_digest(fetched_at):
         pending_decisions = load_pending_decisions()
-        if pending_decisions:
-            label = "test decision(s)" if DECISIONS_TEST else "pending decision(s)"
 
     payload_full_mrkdwn = build_slack_payload(
         fetched_at=fetched_at,
