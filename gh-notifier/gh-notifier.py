@@ -63,6 +63,9 @@ SLACK_WEBHOOK_URL = _env("SLACK_WEBHOOK_URL", "")
 PROW_JOB_URL = _env("PROW_JOB_URL", "")
 PROW_HTML_URL = _env("PROW_HTML_URL", "")
 VERBOSE_SLACK_MESSAGE = _truthy_env("VERBOSE_SLACK_MESSAGE")
+# Local validation only: fetch resolved decisions (accepted/rejected/…) and run on any day.
+DECISIONS_TEST = _truthy_env("GH_NOTIFIER_DECISIONS_TEST")
+_DECISIONS_RESOLVED_STATUSES = frozenset({"accepted", "rejected", "deprecated", "superseded"})
 
 # Comma-separated org/repo pairs
 _REPOS_RAW = _env("GITHUB_REPOS", "openshift-eng/edge-tooling")
@@ -318,8 +321,15 @@ class PendingDecision:
     url: str
 
 
+def _decision_included_for_digest(status: str) -> bool:
+    s = status.lower()
+    if DECISIONS_TEST:
+        return s in _DECISIONS_RESOLVED_STATUSES
+    return s == "proposed"
+
+
 def load_pending_decisions() -> list[PendingDecision]:
-    """Fetch decision files with ``status: proposed`` from openshift-eng/edge-context."""
+    """Fetch decision files from openshift-eng/edge-context for the weekly digest."""
     pending: list[PendingDecision] = []
     try:
         filenames = sorted(
@@ -352,7 +362,7 @@ def load_pending_decisions() -> list[PendingDecision]:
             sys.stderr.write(f"Warning: {path}: {e}\n")
             continue
         frontmatter = parse_frontmatter(text)
-        if frontmatter.get("status", "").lower() != "proposed":
+        if not _decision_included_for_digest(frontmatter.get("status", "")):
             continue
         title = extract_decision_title(text)
         if not title:
@@ -375,6 +385,10 @@ def is_friday_utc(now: datetime | None = None) -> bool:
     """True on Fridays (UTC). Gates the weekly pending-decisions section."""
     ts = now or datetime.now(timezone.utc)
     return ts.weekday() == 4  # Monday=0 … Friday=4
+
+
+def should_include_decisions_digest(now: datetime | None = None) -> bool:
+    return DECISIONS_TEST or is_friday_utc(now)
 
 
 def parse_github_ts(ts: str) -> datetime:
@@ -572,7 +586,12 @@ def _chunk_section_blocks(blocks: list[dict[str, Any]], text: str) -> None:
 
 def format_pending_decisions_mrkdwn(pending: list[PendingDecision]) -> str:
     n = len(pending)
-    if n == 1:
+    if DECISIONS_TEST:
+        if n == 1:
+            intro = "[TEST] 1 resolved decision shown for validation:"
+        else:
+            intro = f"[TEST] {n} resolved decisions shown for validation:"
+    elif n == 1:
         intro = "1 decision is pending and needs attention:"
     else:
         intro = f"{n} decisions are pending and need attention:"
@@ -595,7 +614,10 @@ def append_pending_decisions_to_payload(
     blocks.append(_divider())
     _chunk_section_blocks(blocks, format_pending_decisions_mrkdwn(pending))
     n = len(pending)
-    suffix = f" · {n} pending decision(s)" if n != 1 else " · 1 pending decision"
+    if DECISIONS_TEST:
+        suffix = f" · {n} test decision(s)" if n != 1 else " · 1 test decision"
+    else:
+        suffix = f" · {n} pending decision(s)" if n != 1 else " · 1 pending decision"
     payload["text"] = str(payload.get("text", "")) + suffix
 
 
@@ -816,17 +838,23 @@ def write_pr_dashboard_html(
             url_e = html.escape(d.url, quote=True)
             decision_rows.append(
                 "<tr>"
-                f'<td class="mono"><a target="_blank" rel="noopener noreferrer" href="{url_e}">{num_e}</a></td>'
+                f'<td class="mono"><a class="inherit-color" target="_blank" rel="noopener noreferrer" href="{url_e}">{num_e}</a></td>'
                 f'<td class="title"><a target="_blank" rel="noopener noreferrer" href="{url_e}">{title_e}</a></td>'
-                f'<td>{makers_e}</td>'
+                f'<td> <a class="inherit-color" target="_blank" rel="noopener noreferrer" href="{url_e}">Click to view decision makers</a></td>'
                 "</tr>"
             )
         decisions_metric = (
             f'<div class="metric"><div class="val">{pending_n}</div>'
-            f'<div class="lbl">Pending decisions</div></div>'
+            f'<div class="lbl">{"Test decisions" if DECISIONS_TEST else "Pending decisions"}</div></div>'
+        )
+        decisions_heading = "Test team decisions" if DECISIONS_TEST else "Pending team decisions"
+        decisions_hint = (
+            "TEST MODE · showing resolved decisions (accepted/rejected/deprecated/superseded)"
+            if DECISIONS_TEST
+            else "status <code>proposed</code> · Friday weekly digest"
         )
         decisions_section = f"""<section class="prs">
-<h2>Pending team decisions <span class="badge">{pending_n}</span></h2>
+<h2>{decisions_heading} <span class="badge">{pending_n}</span></h2>
 <div class="table-wrap">
 <table>
 <thead><tr>
@@ -837,7 +865,7 @@ def write_pr_dashboard_html(
 </tbody>
 </table>
 </div>
-<p class="hint">From <a target="_blank" rel="noopener noreferrer" href="{html.escape(_EDGE_CONTEXT_DECISIONS_URL, quote=True)}">openshift-eng/edge-context</a> · status <code>proposed</code> · Friday weekly digest</p>
+<p class="hint">From <a class="inherit-color" target="_blank" rel="noopener noreferrer" href="{html.escape(_EDGE_CONTEXT_DECISIONS_URL, quote=True)}">openshift-eng/edge-context</a> · {decisions_hint}</p>
 </section>"""
 
     doc = f"""<!DOCTYPE html>
@@ -1096,12 +1124,10 @@ def main() -> int:
 
     fetch_errors: list[str] = []
     pending_decisions: list[PendingDecision] = []
-    if is_friday_utc(fetched_at):
+    if should_include_decisions_digest(fetched_at):
         pending_decisions = load_pending_decisions()
         if pending_decisions:
-            print(f"{len(pending_decisions)} pending decision(s) found (Friday digest).", flush=True)
-            for d in pending_decisions:
-                print(f"  {d.number} - {d.title} ({d.decision_makers})", flush=True)
+            label = "test decision(s)" if DECISIONS_TEST else "pending decision(s)"
 
     payload_full_mrkdwn = build_slack_payload(
         fetched_at=fetched_at,

@@ -64,6 +64,7 @@ Stdout prints a one-line summary and the **absolute path** to the HTML file. Run
 | `EXCLUDE_LABELS` | no | hold / WIP-style defaults | Comma or semicolon separated; PRs with any of these (case-insensitive) are skipped |
 | `REQUIRED_LABELS` | no | empty | If set, PRs missing any of these labels are flagged |
 | `FORBIDDEN_LABELS` | no | empty | If set, PRs carrying any of these labels are flagged |
+| `GH_NOTIFIER_DECISIONS_TEST` | no | `false` | **Local testing only.** Run the decisions digest on any day and include resolved decisions (`accepted`, `rejected`, `deprecated`, `superseded`) instead of `proposed` |
 
 `GITHUB_TOKEN`, `SLACK_WEBHOOK_URL`, and string list env vars are read **once at process start** (together with repo and label settings). `OWNERS` paths and the HTML output path are resolved in `main()`.
 
