@@ -240,7 +240,7 @@ _EDGE_CONTEXT_DECISIONS_PATH = "decisions"
 _EDGE_CONTEXT_DECISIONS_URL = (
     f"https://github.com/{_EDGE_CONTEXT_ORG}/{_EDGE_CONTEXT_REPO}/blob/{_EDGE_CONTEXT_BRANCH}/{_EDGE_CONTEXT_DECISIONS_PATH}"
 )
-_DECISION_FILE_RE = re.compile(r"^\d{4}-.+\.md$")
+_DECISION_FILE_RE = re.compile(r"^\d{4}-[^/]+\.md$")
 
 
 def gh_get_repo_file(org: str, repo: str, path: str, *, ref: str) -> str:
@@ -358,8 +358,10 @@ def decision_number_from_filename(filename: str) -> str:
 
 
 def _decision_blob_url(org: str, repo: str, ref: str, path: str) -> str:
+    """Build a GitHub blob URL with ref and path percent-encoded for Slack/HTML."""
     quoted_ref = urllib.parse.quote(ref, safe="")
-    return f"https://github.com/{org}/{repo}/blob/{quoted_ref}/{path}"
+    quoted_path = urllib.parse.quote(path, safe="/")
+    return f"https://github.com/{org}/{repo}/blob/{quoted_ref}/{quoted_path}"
 
 
 def _pending_decision_from_text(text: str, filename: str, url: str) -> PendingDecision | None:
@@ -428,7 +430,7 @@ def load_pending_decisions() -> list[PendingDecision]:
         decision = _pending_decision_from_text(
             text,
             filename,
-            f"{_EDGE_CONTEXT_DECISIONS_URL}/{filename}",
+            _decision_blob_url(_EDGE_CONTEXT_ORG, _EDGE_CONTEXT_REPO, _EDGE_CONTEXT_BRANCH, path),
         )
         if decision:
             _add(decision)

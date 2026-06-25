@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import os
 import sys
 import unittest
 from pathlib import Path
@@ -12,7 +11,6 @@ _GH_NOTIFIER_PATH = Path(__file__).resolve().parent.parent / "gh-notifier.py"
 
 
 def _load_gh_notifier():
-    os.environ.setdefault("GITHUB_TOKEN", "test-token")
     spec = importlib.util.spec_from_file_location("gh_notifier", _GH_NOTIFIER_PATH)
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot load {_GH_NOTIFIER_PATH}")
@@ -53,6 +51,7 @@ class TestDecisionFilenameRegex(unittest.TestCase):
             "001-three-digit-prefix.md",
             "0002",
             "0002-.md",
+            "0001-folder/notes.md",
         ):
             with self.subTest(name=name):
                 self.assertIsNone(gn._DECISION_FILE_RE.match(name))
@@ -103,6 +102,33 @@ class TestDecisionNumberFromFilename(unittest.TestCase):
 
     def test_non_numeric_prefix_returns_full_name(self):
         self.assertEqual(gn.decision_number_from_filename("README.md"), "README.md")
+
+
+class TestDecisionBlobUrl(unittest.TestCase):
+    def test_encodes_ref_and_path(self):
+        url = gn._decision_blob_url(
+            "openshift-eng",
+            "edge-context",
+            "feature/branch",
+            "decisions/0003-foo bar|unsafe>#1.md",
+        )
+        self.assertEqual(
+            url,
+            "https://github.com/openshift-eng/edge-context/blob/feature%2Fbranch/"
+            "decisions/0003-foo%20bar%7Cunsafe%3E%231.md",
+        )
+
+    def test_main_branch_path(self):
+        url = gn._decision_blob_url(
+            gn._EDGE_CONTEXT_ORG,
+            gn._EDGE_CONTEXT_REPO,
+            gn._EDGE_CONTEXT_BRANCH,
+            f"{gn._EDGE_CONTEXT_DECISIONS_PATH}/0002-slug.md",
+        )
+        self.assertEqual(
+            url,
+            "https://github.com/openshift-eng/edge-context/blob/main/decisions/0002-slug.md",
+        )
 
 
 class TestDecisionIncludedForDigest(unittest.TestCase):
@@ -172,6 +198,30 @@ class TestIterOpenDecisionFiles(unittest.TestCase):
         self.assertEqual(filename, "0003-align-story-points-to-reward-prioritizing-highest-priority-outcomes.md")
         self.assertEqual(head_sha, "abc123def456")
         self.assertTrue(path.startswith("decisions/"))
+
+    def test_rejects_nested_decision_paths_in_open_prs(self):
+        def fake_gh_request(path, query=None):
+            if path.endswith("/pulls"):
+                return [{"number": 7, "head": {"sha": "deadbeef"}}]
+            if path.endswith("/pulls/7/files"):
+                return [
+                    {"filename": "decisions/0001-valid-slug.md"},
+                    {"filename": "decisions/0001-folder/notes.md"},
+                ]
+            raise AssertionError(f"unexpected path: {path}")
+
+        orig = gn.gh_request
+        try:
+            gn.gh_request = fake_gh_request
+            sources = list(gn.iter_open_decision_files())
+        finally:
+            gn.gh_request = orig
+
+        self.assertEqual(len(sources), 1)
+        filename, head_sha, repo_path = sources[0]
+        self.assertEqual(filename, "0001-valid-slug.md")
+        self.assertEqual(head_sha, "deadbeef")
+        self.assertEqual(repo_path, "decisions/0001-valid-slug.md")
 
     def test_paginates_pr_files_endpoint(self):
         file_calls: list[dict[str, str] | None] = []
