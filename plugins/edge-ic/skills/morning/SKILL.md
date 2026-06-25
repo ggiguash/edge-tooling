@@ -152,30 +152,22 @@ Skip if `sections.sprint_backlog` is `false` in config.
 
 **Board IDs:** If `board_ids` is missing or empty in config, attempt auto-discovery via `jira_get_agile_boards`. If that fails too, skip sprint section. If config has a legacy `board_id` (string) instead of `board_ids` (list), treat it as a single-element list.
 
-**For each board in `jira.board_ids`**, discover and gather sprint data:
+**Fetch all active sprint issues in a single JQL query** (eliminates per-board sprint discovery calls):
 
-**Discover active sprint:**
+```text
+jira_search with JQL: assignee = currentUser() AND sprint in openSprints() ORDER BY status ASC, priority DESC
+```
 
-Use `jira_get_sprints_from_board` with each board ID and `state: "active"`. If no active sprint is found, skip this board's sprint header and backlog silently. Extract per sprint:
+Use `fields: "status,assignee,issuetype,summary,priority,customfield_10028,customfield_10016,sprint"` and `limit: 50`.
 
-- Sprint name
-- Sprint start date
-- Sprint end date
-- Sprint ID
+**Extract sprint metadata from the results:** The `sprint` field on each issue contains the sprint name, start date, end date, and board. Group issues by sprint name and derive:
 
-**Calculate sprint metadata** (per sprint):
-
+- Sprint name, start date, end date from the sprint field
 - Days remaining = sprint end date minus today
 - Total sprint days = sprint end date minus sprint start date
 - Sprint is urgent if days remaining <= 3
 
-**Fetch the user's sprint issues via JQL** (avoids pagination issues with large boards):
-
-```text
-jira_search with JQL: assignee = currentUser() AND sprint = {sprint_id} ORDER BY status ASC, priority DESC
-```
-
-Use `fields: "status,assignee,issuetype,summary,priority,customfield_10028,customfield_10016"` and `limit: 50`.
+If the query returns no results, skip the sprint section silently. If the `sprint` field is unavailable or null on any issue, fall back to `jira_get_sprints_from_board` for the configured board IDs.
 
 **Note:** Story points are typically in `customfield_10028` ("Story Points"). Fall back to `customfield_10016` ("Story point estimate") if `customfield_10028` is null. If neither has data, show "Story Points: N/A".
 
@@ -268,26 +260,25 @@ gh search prs --author=@me --state=open --json repository,number,title,createdAt
 
 Compute `days_open` from `createdAt` (today's date minus `createdAt` in days — be precise, do not eyeball). **Discard any PR where `days_open` > 200** — these are stale/abandoned PRs that add noise. Set `days_idle` and `missing_labels` to "?" (the CI dashboard is no longer fetched). If `gh` is not available, skip this section with a note.
 
-For each PR, fetch unresolved review thread count via GraphQL in parallel (the REST API does not expose thread resolution state):
+Fetch unresolved review thread counts for **all PRs in a single GraphQL query** using aliases (one round-trip instead of N):
 
 ```bash
-gh api graphql \
-  -F owner="{owner}" -F repo="{repo}" -F pr={pr_number} \
-  -f query='query($owner:String!,$repo:String!,$pr:Int!){
-    repository(owner:$owner,name:$repo){
-      pullRequest(number:$pr){
-        reviewDecision
-        reviewThreads(first:100){ nodes{ isResolved } }
-      }
-    }
-  }' \
-  --jq '{
-    reviewDecision: .data.repository.pullRequest.reviewDecision,
-    unresolved: [.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length
-  }'
+# Build a single batched query with one alias per PR
+# Example for 3 PRs:
+gh api graphql -f query='query {
+  pr0: repository(owner:"openshift-eng",name:"edge-tooling") {
+    pullRequest(number:198) { reviewDecision reviewThreads(first:100){ nodes{ isResolved } } }
+  }
+  pr1: repository(owner:"openshift",name:"origin") {
+    pullRequest(number:42) { reviewDecision reviewThreads(first:100){ nodes{ isResolved } } }
+  }
+}' --jq '{
+  pr0: { reviewDecision: .data.pr0.pullRequest.reviewDecision, unresolved: [.data.pr0.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length },
+  pr1: { reviewDecision: .data.pr1.pullRequest.reviewDecision, unresolved: [.data.pr1.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length }
+}'
 ```
 
-If `gh` is not available or the command fails, skip unresolved comments for that PR (show "?" instead of a count).
+Dynamically generate the query string and jq filter from the PR list. Map each alias (`pr0`, `pr1`, ...) back to the corresponding PR. If the query fails, set `unresolved: "?"` for all PRs.
 
 Store results as a list of:
 
@@ -304,11 +295,13 @@ Store results as a list of:
 
 Skip if `sections.review_queue` is `false` in config.
 
-**Fetch PRs where the user is a requested reviewer:**
+**Combine with Step 5 when both are enabled:** If both `sections.open_prs` and `sections.review_queue` are enabled, run both `gh search` commands in a single Bash call to save a tool round-trip:
 
 ```bash
-gh search prs --review-requested=@me --state=open --json repository,number,title,createdAt,url --limit 20
+echo '{"authored":' && gh search prs --author=@me --state=open --json repository,number,title,createdAt,url --limit 50 && echo ',"review":' && gh search prs --review-requested=@me --state=open --json repository,number,title,createdAt,url --limit 20 && echo '}'
 ```
+
+Parse the combined output and split into Step 5 and Step 6 data. If only one section is enabled, run its query alone.
 
 If `gh` is not available or the command fails, skip this section with a note: "Could not fetch review queue — skipping."
 
