@@ -112,10 +112,10 @@ Skip if `sections.qa_tasks` is `false` in config.
 
 **If any JIRA MCP call fails in this step**, skip QA tasks and record an error note: "Could not reach JIRA — QA tasks skipped." Note: `currentUser()` in JQL only works when the MCP session is authenticated with the correct email; if queries return empty unexpectedly, verify JIRA auth.
 
-Query JIRA for tickets where the current user is the **QA Contact** and status matches the configured watch statuses. This searches across all projects, not just the sprint board:
+Query JIRA for tickets where either the current user is the **QA Contact** or no QA Contact is assigned, and status matches the configured watch statuses. This searches across all projects, not just the sprint board:
 
 ```text
-jira_search with JQL: "QA Contact" = currentUser() AND status in ("{status1}", "{status2}") ORDER BY priority DESC
+jira_search with JQL: ("QA Contact" = currentUser() OR "QA Contact" is EMPTY) AND status in ("{status1}", "{status2}") ORDER BY priority DESC
 ```
 
 Replace `{status1}`, `{status2}` etc. with values from `jira.qa_statuses` in config (default: `["ON_QA"]`). Before interpolating any config value into JQL, escape backslashes as `\\` and double-quotes as `\"` to prevent query breakage.
@@ -139,6 +139,7 @@ Store results as a list of:
 - `status`: ticket status
 - `requester`: comment author who requested QA (or null)
 - `link`: `https://redhat.atlassian.net/browse/{key}`
+- `qa_assigned`: `true` if QA Contact = currentUser(), `false` if QA Contact is EMPTY
 
 ## Step 3: Gather Sprint Backlog
 
@@ -414,6 +415,13 @@ Use the **panel layout** from the output format reference (`$PLUGIN_DIR/referenc
 - Sprint info: **bold** sprint name, days remaining, story points
 - Progress bar: represents **story points completion** (`points_completed / points_total`). 10 colored squares wide, gradient fill (positions 1-3 🟥, 4-5 🟠, 6-7 🟡, 8-10 🟢, unfilled `░`). If story points are N/A, omit the bar entirely. Do NOT use sprint days elapsed — use story points only.
 - Summary line: count items per non-empty section, join with ` · `, prefix with `>`
+
+**QA Ready panel** — split into two sub-groups within the same panel:
+
+1. **Your QA** (`qa_assigned: true`) — tickets where you are the QA Contact. Label this group with `▸ Your QA`.
+2. **Unassigned QA** (`qa_assigned: false`) — tickets with no QA Contact set. Label this group with `▸ Unassigned`. These are candidates to pick up or assign.
+
+Omit a sub-group header if that group is empty. If both groups are empty, skip the panel entirely.
 
 **Section panels** — render in order: QA Ready, Sprint Backlog, Carry-over, Open PRs, Review Queue, RHEL Queue, Reminders.
 
