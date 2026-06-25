@@ -75,6 +75,7 @@ Follow-up: "Do you want to add boards from other projects?" If yes, ask for the 
 
 - Yes → ask two follow-ups:
   - "Which statuses mean a ticket is ready for your QA work? (comma-separated)" — default: `ON_QA`. This is a free-text field since different projects use different workflows (e.g., OCPBUGS uses `ON_QA`, other projects may use `Code Review` or `Review`).
+  - "Which Jira projects should be searched for QA tasks? (comma-separated project keys)" — default: `OCPBUGS, OCPEDGE`. Store as `jira.qa_projects`.
   - "Filter by specific components? Enter component names comma-separated, or leave blank for all." (e.g., `Two Node Fencing, LVMS`; default: empty = no filter)
 - No → set `sections.qa_tasks: false`
 
@@ -115,8 +116,10 @@ Skip if `sections.qa_tasks` is `false` in config.
 Query JIRA for tickets where either the current user is the **QA Contact** or no QA Contact is assigned, and status matches the configured watch statuses. This searches across all projects, not just the sprint board:
 
 ```text
-jira_search with JQL: ("QA Contact" = currentUser() OR "QA Contact" is EMPTY) AND status in ("{status1}", "{status2}") ORDER BY priority DESC
+jira_search with JQL: ("QA Contact" = currentUser() OR "QA Contact" is EMPTY) AND status in ("{status1}", "{status2}") AND project in ({proj1}, {proj2}, ...) ORDER BY priority DESC
 ```
+
+Replace `{proj1}`, `{proj2}` etc. with values from `jira.qa_projects` in config (default: `["OCPBUGS", "OCPEDGE"]`). Project keys do not need quoting in JQL.
 
 Replace `{status1}`, `{status2}` etc. with values from `jira.qa_statuses` in config (default: `["ON_QA"]`). Before interpolating any config value into JQL, escape backslashes as `\\` and double-quotes as `\"` to prevent query breakage.
 
