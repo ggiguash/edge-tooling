@@ -406,11 +406,14 @@ Progress bar: 10 slots, filled by story points ratio. Positions 1-3: 🟥, 4-5: 
 **Section order:** QA Ready, Sprint Backlog, Carry-over, Open PRs, Review Queue, RHEL Queue, Reminders.
 
 **QA Ready panel** — split into two sub-groups:
+
 - `▸ Your QA` (`qa_assigned: true`) — tickets where you are the QA Contact
 - `▸ Unassigned` (`qa_assigned: false`) — no QA Contact set
+
 Omit a sub-group if empty. Skip panel if both empty.
 
 **Formatting rules:**
+
 - Ticket keys: **bold** (`**KEY**`)
 - JIRA links: `https://redhat.atlassian.net/browse/{KEY}`
 - Sprint name: always **bold**
