@@ -113,23 +113,27 @@ Skip if `sections.qa_tasks` is `false` in config.
 
 **If any JIRA MCP call fails in this step**, skip QA tasks and record an error note: "Could not reach JIRA — QA tasks skipped." Note: `currentUser()` in JQL only works when the MCP session is authenticated with the correct email; if queries return empty unexpectedly, verify JIRA auth.
 
-Query JIRA for tickets where either the current user is the **QA Contact** or no QA Contact is assigned, and status matches the configured watch statuses. This searches across all projects, not just the sprint board:
+Run **two JQL queries** to separate assigned vs. unassigned QA tickets:
+
+**Query 1 — Your QA** (tickets assigned to you):
 
 ```text
-jira_search with JQL: ("QA Contact" = currentUser() OR "QA Contact" is EMPTY) AND status in ("{status1}", "{status2}") AND project in ({proj1}, {proj2}, ...) ORDER BY priority DESC
+jira_search with JQL: "QA Contact" = currentUser() AND status in ("{status1}", "{status2}") AND project in ({proj1}, {proj2}, ...) ORDER BY priority DESC
 ```
 
-Replace `{proj1}`, `{proj2}` etc. with values from `jira.qa_projects` in config (default: `["OCPBUGS", "OCPEDGE"]`). Project keys do not need quoting in JQL.
+Use `fields: "status,assignee,issuetype,summary,priority,components"` and `limit: 20`.
 
-Replace `{status1}`, `{status2}` etc. with values from `jira.qa_statuses` in config (default: `["ON_QA"]`). Before interpolating any config value into JQL, escape backslashes as `\\` and double-quotes as `\"` to prevent query breakage.
-
-If `jira.qa_components` is set in config, append a component filter:
+**Query 2 — Unassigned QA** (only if `jira.qa_components` is set in config — skip otherwise to avoid returning hundreds of irrelevant tickets):
 
 ```text
-AND component in ("{comp1}", "{comp2}")
+jira_search with JQL: "QA Contact" is EMPTY AND status in ("{status1}", "{status2}") AND project in ({proj1}, {proj2}, ...) AND component in ("{comp1}", "{comp2}") ORDER BY priority DESC
 ```
 
-Use `fields: "status,assignee,issuetype,summary,priority,components"` and `limit: 50`.
+Use `fields: "status,assignee,issuetype,summary,priority,components"` and `limit: 10`.
+
+If `jira.qa_components` is NOT set, skip Query 2 and add a note in the output: "Configure `qa_components` in `~/.config/edge-ic/morning.yaml` to see unassigned QA tickets for your team."
+
+Replace `{proj1}`, `{proj2}` etc. with values from `jira.qa_projects` in config (default: `["OCPBUGS", "OCPEDGE"]`). Replace `{status1}`, `{status2}` etc. with values from `jira.qa_statuses` in config (default: `["ON_QA"]`). Before interpolating any config value into JQL, escape backslashes as `\\` and double-quotes as `\"` to prevent query breakage.
 
 **Note:** The QA Contact field is `customfield_10470` (user picker). The JQL clause name is `"QA Contact"`. This is separate from the `assignee` field — a ticket's assignee is the developer; the QA Contact is the person responsible for testing. The `ON_QA` status exists on projects like OCPBUGS and CNV but not on OCPEDGE/USHIFT, so this query searches cross-project.
 
@@ -260,25 +264,7 @@ gh search prs --author=@me --state=open --json repository,number,title,createdAt
 
 Compute `days_open` from `createdAt` (today's date minus `createdAt` in days — be precise, do not eyeball). **Discard any PR where `days_open` > 200** — these are stale/abandoned PRs that add noise. Set `days_idle` and `missing_labels` to "?" (the CI dashboard is no longer fetched). If `gh` is not available, skip this section with a note.
 
-Fetch unresolved review thread counts for **all PRs in a single GraphQL query** using aliases (one round-trip instead of N):
-
-```bash
-# Build a single batched query with one alias per PR
-# Example for 3 PRs:
-gh api graphql -f query='query {
-  pr0: repository(owner:"openshift-eng",name:"edge-tooling") {
-    pullRequest(number:198) { reviewDecision reviewThreads(first:100){ nodes{ isResolved } } }
-  }
-  pr1: repository(owner:"openshift",name:"origin") {
-    pullRequest(number:42) { reviewDecision reviewThreads(first:100){ nodes{ isResolved } } }
-  }
-}' --jq '{
-  pr0: { reviewDecision: .data.pr0.pullRequest.reviewDecision, unresolved: [.data.pr0.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length },
-  pr1: { reviewDecision: .data.pr1.pullRequest.reviewDecision, unresolved: [.data.pr1.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length }
-}'
-```
-
-Dynamically generate the query string and jq filter from the PR list. Map each alias (`pr0`, `pr1`, ...) back to the corresponding PR. If the query fails, set `unresolved: "?"` for all PRs.
+**Skip the per-PR review thread fetch entirely** — it adds N sequential round-trips and the briefing doesn't need it. Set `unresolved: null` for all PRs. The PR link is enough to check threads on demand.
 
 Store results as a list of:
 
@@ -286,22 +272,17 @@ Store results as a list of:
 - `pr_number`: integer
 - `title`: string
 - `days_open`: string (e.g., "12d")
-- `days_idle`: string (e.g., "2d")
-- `missing_labels`: string (e.g., "lgtm")
-- `unresolved`: integer or "?" if unavailable
 - `link`: full GitHub PR URL
 
 ## Step 6: Gather PRs Awaiting Your Review
 
 Skip if `sections.review_queue` is `false` in config.
 
-**Combine with Step 5 when both are enabled:** If both `sections.open_prs` and `sections.review_queue` are enabled, run both `gh search` commands in a single Bash call to save a tool round-trip:
+**Fetch PRs where the user is a requested reviewer:**
 
 ```bash
-echo '{"authored":' && gh search prs --author=@me --state=open --json repository,number,title,createdAt,url --limit 50 && echo ',"review":' && gh search prs --review-requested=@me --state=open --json repository,number,title,createdAt,url --limit 20 && echo '}'
+gh search prs --review-requested=@me --state=open --json repository,number,title,createdAt,url --limit 20
 ```
-
-Parse the combined output and split into Step 5 and Step 6 data. If only one section is enabled, run its query alone.
 
 If `gh` is not available or the command fails, skip this section with a note: "Could not fetch review queue — skipping."
 
@@ -392,57 +373,54 @@ For each ticket key found in a higher-priority section, remove it from all lower
 
 ## Step 10: Render Output
 
-Read the output format reference from `$PLUGIN_DIR/references/MORNING_OUTPUT_FORMAT.md`.
+**Do NOT read the output format reference file.** All rendering rules are inline below for speed.
 
-Use the **panel layout** from the output format reference (`$PLUGIN_DIR/references/MORNING_OUTPUT_FORMAT.md`). All output uses rounded box-drawing characters (`╭╮╰╯│─`).
-
-**Title banner** (always rendered, before everything else):
-
-- Read the `title` field from config (default: `Morning Edge`)
-- Render the title in block pixel style using ▀▄█ half-block characters, following the character map from the output format reference
-- Center the text horizontally relative to the 60-char panel width
-- Multi-word titles: stack vertically (one word per block row), left-aligned at the same indent
-- If the rendered text exceeds 45 chars wide, fall back to spaced capital letters
-- One blank line after the title, before the header panel
-
-**Header panel** (always rendered):
-
-- Title line: `☀  Morning Briefing — {date}`
-- Sprint info: **bold** sprint name, days remaining, story points
-- Progress bar: represents **story points completion** (`points_completed / points_total`). 10 colored squares wide, gradient fill (positions 1-3 🟥, 4-5 🟠, 6-7 🟡, 8-10 🟢, unfilled `░`). If story points are N/A, omit the bar entirely. Do NOT use sprint days elapsed — use story points only.
-- Summary line: count items per non-empty section, join with ` · `, prefix with `>`
-
-**QA Ready panel** — split into two sub-groups within the same panel:
-
-1. **Your QA** (`qa_assigned: true`) — tickets where you are the QA Contact. Label this group with `▸ Your QA`.
-2. **Unassigned QA** (`qa_assigned: false`) — tickets with no QA Contact set. Label this group with `▸ Unassigned`. These are candidates to pick up or assign.
-
-Omit a sub-group header if that group is empty. If both groups are empty, skip the panel entirely.
-
-**Section panels** — render in order: QA Ready, Sprint Backlog, Carry-over, Open PRs, Review Queue, RHEL Queue, Reminders.
-
-- Each section is its own panel: `╭─ » {title} ─...╮ ... ╰─...╯` (all sections use `»` as prefix)
-- Skip any section that has zero items (no empty panels)
-- **Ticket keys**: always **bold** (`**KEY**`)
-- **Sprint name**: always **bold** in header and reminders
-- All JIRA links: `https://redhat.atlassian.net/browse/{KEY}`
-- Long summaries wrap to a continuation line; bare URLs may extend past the right `│` for usability
-
-**Reminders panel** collects:
-
-- Sprint urgency reminder (if days_remaining <= 3): "⚠ **{sprint_name}** ends in {N} days — prepare tasks for next sprint" (or "🔴 **{sprint_name}** ends today — finalize work and groom next sprint")
-- Quarterly reminder (if within 14 days of quarter end)
-
-**If all sections are empty**, show only the header panel with "Nothing on your plate — enjoy the quiet morning"
-
-**Error notes:** If any data source failed, append an error panel:
+**Title banner** — copy-paste the pre-rendered default title verbatim (do not compute it):
 
 ```text
-╭─ ⚠ Notes ────────────────────────────────────────────────╮
-│  ⚠ Could not reach JIRA — QA tasks, sprint, RHEL skipped │
-│  ⚠ Could not fetch PR dashboard — open PRs skipped       │
+              █▄ ▄█ █▀▀█ █▀▀▄ █▄ █ █ █▄ █ █▀▀▀
+              █ ▀ █ █  █ █▄▄▀ █ ▀█ █ █ ▀█ █ ▀█
+              ▀   ▀ ▀▀▀▀ ▀  ▀ ▀  ▀ ▀ ▀  ▀ ▀▀▀▀
+              █▀▀▀ █▀▀▄ █▀▀▀ █▀▀▀
+              █▀▀  █  █ █ ▀█ █▀▀
+              ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+```
+
+If the user configured a custom title, fall back to spaced capital letters (e.g., `D A I L Y`). Do not attempt pixel rendering for custom titles.
+
+**All panels** use `╭╮╰╯│─` box-drawing, 60 chars wide. Section header: `╭─ » {title} ─...─╮`. Skip empty sections.
+
+**Header panel:**
+
+```text
+╭──────────────────────────────────────────────────────────╮
+│  ☀  Morning Briefing — {date}                            │
+│  **{sprint}** — {days_left}/{total} days · {pts_done}/{pts_total} SP
+│  ▐{bar}▌ {pct}%                                          │
+│  > {summary}                                             │
 ╰──────────────────────────────────────────────────────────╯
 ```
+
+Progress bar: 10 slots, filled by story points ratio. Positions 1-3: 🟥, 4-5: 🟠, 6-7: 🟡, 8-10: 🟢, unfilled: `░`. Omit bar if story points N/A.
+
+**Section order:** QA Ready, Sprint Backlog, Carry-over, Open PRs, Review Queue, RHEL Queue, Reminders.
+
+**QA Ready panel** — split into two sub-groups:
+- `▸ Your QA` (`qa_assigned: true`) — tickets where you are the QA Contact
+- `▸ Unassigned` (`qa_assigned: false`) — no QA Contact set
+Omit a sub-group if empty. Skip panel if both empty.
+
+**Formatting rules:**
+- Ticket keys: **bold** (`**KEY**`)
+- JIRA links: `https://redhat.atlassian.net/browse/{KEY}`
+- Sprint name: always **bold**
+- URLs may extend past the right `│`
+
+**Reminders:** Sprint urgency if days_remaining <= 3 (⚠ or 🔴 if last day). Quarterly reminder if within 14 days.
+
+**All empty:** "Nothing on your plate — enjoy the quiet morning"
+
+**Errors:** Append `╭─ ⚠ Notes ─...╮` panel with `⚠` per failed source.
 
 ## Usage
 
