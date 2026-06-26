@@ -2,6 +2,8 @@
 
 Python script that lists **open pull requests** in configured GitHub repos, keeps only PRs whose **authors** appear in the team roster derived from **`OWNERS`** and **`OWNERS_ALIASES`**, applies **draft / label** filters, flags PRs that **need attention** (stale activity, age, optional label rules), and writes a **self-contained HTML dashboard** with Slack **copy** helpers. If **`SLACK_WEBHOOK_URL`** is set, it also posts to Slack: by default a **minimal** link-only message (`PROW_HTML_URL` first, optional `PROW_JOB_URL`), or the full Block Kit digest when **`VERBOSE_SLACK_MESSAGE`** is enabled.
 
+On **Fridays (UTC)**, the Slack message also includes **pending team decisions** (`status: proposed`) from **[openshift-eng/edge-context](https://github.com/openshift-eng/edge-context)**.
+
 There are **no third-party packages** (stdlib only: `urllib`, `json`, etc.).
 
 Design background and operational expectations: [`../proposals/gh-notifier.md`](../proposals/gh-notifier.md).
@@ -9,7 +11,7 @@ Design background and operational expectations: [`../proposals/gh-notifier.md`](
 ## Requirements
 
 - **Python 3.11+** (recommended; matches other tooling in this repository)
-- A **GitHub token** with permission to **read** pull requests on the repos you configure (`GITHUB_TOKEN`)
+- A **GitHub token** with permission to **read** pull requests on the repos you configure (`GITHUB_TOKEN`), and **read** `openshift-eng/edge-context` (for Friday decision digests)
 - Optional: **Slack Incoming Webhook** URL for automatic channel posts (`SLACK_WEBHOOK_URL`)
 
 ## How it works (short)
@@ -18,8 +20,18 @@ Design background and operational expectations: [`../proposals/gh-notifier.md`](
 2. Collects every raw entry under **`approvers:`** and **`reviewers:`** in `OWNERS`. Each entry is either an **alias** name defined under `aliases:` in `OWNERS_ALIASES` (expanded to GitHub logins) or treated as a **literal GitHub login**.
 3. For each configured repo, fetches **open** PRs from the GitHub API, keeps **non-draft** PRs whose author is in that login set and that do not carry **excluded** labels.
 4. Marks PRs **needing attention** when they are idle or old enough (`STALE_DAYS`), or when optional **required** / **forbidden** label rules fail.
-5. Builds **Slack Block Kit** payloads, then writes **`GH_NOTIFIER_HTML_OUTPUT`** (default: `gh-notifier/pr-dashboard.html` under the repo root). Attention PRs are sorted by **longest open** first (`age_days` desc, then idle). The **Slack webhook** uses at most **`MAX_PRS_IN_MESSAGE`** rows (see script); the HTML **copy** area lists **every** attention PR and rewrites PR links from Slack angle-bracket form to CommonMark `[title](url)` for easier paste into docs, GitHub, or Slack. The **JSON** copy area matches the capped webhook body. The page includes metrics, a PR table (or an “all clear” state), and **Copy text** / **Copy JSON** buttons.
-6. If **`SLACK_WEBHOOK_URL`** is set, POSTs the **capped** payload to Slack as before.
+5. On **Fridays (UTC)**, fetches pending decisions from **edge-context** on **`main`** and in **open PRs** targeting `main` (``status: proposed`` only).
+6. Builds **Slack Block Kit** payloads, then writes **`GH_NOTIFIER_HTML_OUTPUT`** (default: `gh-notifier/pr-dashboard.html` under the repo root). Attention PRs are sorted by **longest open** first (`age_days` desc, then idle). On **Fridays**, when pending decisions exist, the HTML dashboard also includes a **Pending decisions** metric and table (omitted on other days or when none are pending). The **Slack webhook** uses at most **`MAX_PRS_IN_MESSAGE`** rows (see script); the HTML **copy** area lists **every** attention PR and rewrites PR links from Slack angle-bracket form to CommonMark `[title](url)` for easier paste into docs, GitHub, or Slack. The **JSON** copy area matches the capped webhook body. The page includes metrics, a PR table (or an “all clear” state), and **Copy text** / **Copy JSON** buttons.
+7. If **`SLACK_WEBHOOK_URL`** is set, POSTs the **capped** payload to Slack. On Fridays, pending decisions are appended to the same message when any exist.
+
+Example pending-decisions section (Fridays only):
+
+```text
+3 decisions are pending and need attention:
+* <https://github.com/openshift-eng/edge-context/blob/main/decisions/0002-....md|0002> - Integrate Chai Bot - (OpenShift Edge Team, Technical Writers, PM)
+```
+
+Each decision number links to the file in edge-context.
 
 ## Run locally
 
@@ -57,8 +69,8 @@ Stdout prints a one-line summary and the **absolute path** to the HTML file. Run
 
 ## Slack payload
 
-**Default (minimal):** Block Kit with a link to **`PROW_HTML_URL`** first and an optional **`PROW_JOB_URL`** line for job logs. **Verbose:** header, metrics, optional Prow line, and PR rows (capped by **`MAX_PRS_IN_MESSAGE`** in the webhook). The HTML page always includes full-list **mrkdwn** (verbose, for pasting) and **JSON** matching whatever the webhook would post (minimal or verbose).
+**Default (minimal):** Block Kit with a link to **`PROW_HTML_URL`** first and an optional **`PROW_JOB_URL`** line for job logs. **Verbose:** header, metrics, optional Prow line, and PR rows (capped by **`MAX_PRS_IN_MESSAGE`** in the webhook). On **Fridays**, pending decisions from edge-context are appended when any exist. The HTML page always includes full-list **mrkdwn** (verbose, for pasting) and **JSON** matching whatever the webhook would post (minimal or verbose).
 
 ## CI (openshift/release)
 
-The intended integration is a **weekday periodic** job in **openshift/release** that checks out **edge-tooling** and runs this script with `GITHUB_TOKEN` (and optionally `SLACK_WEBHOOK_URL`) from CI secrets. Publish **`GH_NOTIFIER_HTML_OUTPUT`** as a job artifact so reviewers can open the dashboard in a browser. Team membership stays in **`OWNERS`** / **`OWNERS_ALIASES`** in this repository, not duplicated in release.
+The intended integration is a **weekday periodic** job in **openshift/release** that checks out **edge-tooling** and runs this script with `GITHUB_TOKEN` (and optionally `SLACK_WEBHOOK_URL`) from CI secrets. Publish **`GH_NOTIFIER_HTML_OUTPUT`** as a job artifact so reviewers can open the dashboard in a browser. Team membership stays in **`OWNERS`** / **`OWNERS_ALIASES`** in this repository, not duplicated in release. No separate job is needed for pending decisions — the existing daily run picks them up on Fridays automatically.
