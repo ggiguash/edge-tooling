@@ -24,6 +24,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WORKDIR=""
 COMPONENT=""
 
+# Component-to-image-repository mapping.
+_component_repos() {
+    case "${1}" in
+        microshift)    echo "openshift4/microshift-bootc-rhel9 openshift4/microshift-bootc-rhel10" ;;
+        lvm-operator)  echo "lvms4/lvms-rhel9-operator lvms4/lvms-operator-bundle lvms4/lvms-must-gather-rhel9 lvms4/topolvm-rhel9" ;;
+        *)             echo "" ;;
+    esac
+}
+
 # ---------------------------------------------------------------------------
 # prepare
 # ---------------------------------------------------------------------------
@@ -337,6 +346,44 @@ cmd_finalize() {
         python3 "${SCRIPT_DIR}/aggregate.py" \
             --prs --workdir "${WORKDIR}" >/dev/null || \
             echo "  WARNING: PR aggregation failed" >&2
+    fi
+
+    # Collect container image health data from the Red Hat catalog
+    local repos
+    repos=$(_component_repos "${COMPONENT}")
+    if [[ -n "${repos}" ]]; then
+        echo "=== Collecting container image health ===" >&2
+        local images_dir="${WORKDIR}/images"
+        mkdir -p "${images_dir}"
+
+        for repo in ${repos}; do
+            local repo_slug="${repo//\//@}"
+
+            # Fetch catalog repository ID (needed for catalog URLs)
+            local id_file="${images_dir}/${repo_slug}-id.txt"
+            if bash "${SCRIPT_DIR}/rh-catalog.sh" "${repo}" id > "${id_file}" 2>/dev/null; then
+                echo "  ${repo} catalog ID: $(cat "${id_file}")" >&2
+            else
+                echo "  WARNING: failed to fetch catalog ID for ${repo}" >&2
+                echo "" > "${id_file}"
+            fi
+
+            # Fetch per release so server-side filter keeps each call under the 500-image API cap
+            local outfile="${images_dir}/${repo_slug}.json"
+            local tmp_merged="[]"
+            echo "  Fetching ${repo} images..." >&2
+            for release in "${RELEASES[@]}"; do
+                release=$(echo "${release}" | xargs)
+                local tmp
+                if tmp=$(bash "${SCRIPT_DIR}/rh-catalog.sh" "${repo}" images --tag "${release}" 2>/dev/null); then
+                    tmp_merged=$(jq -s '.[0] + .[1] | unique_by(._id)' <(echo "${tmp_merged}") <(echo "${tmp}"))
+                    echo "    ${release}: $(echo "${tmp}" | jq 'length') images" >&2
+                else
+                    echo "    WARNING: catalog query failed for ${release}" >&2
+                fi
+            done
+            echo "${tmp_merged}" > "${outfile}"
+        done
     fi
 
     # Extract index image info (LVMS-specific, no-op for other components)
