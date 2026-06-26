@@ -22,9 +22,11 @@ EOF
     exit 1
 }
 
-# NOTE: page_size=500 caps results per API call with no pagination.
-# If a repo exceeds 500 images, older releases will be silently truncated.
-# Add pagination here if that becomes a problem.
+# page_size=500 is the API maximum; no pagination is implemented.
+# Server-side filter= keeps results well under this limit when --tag is
+# used, so truncation only risks unfiltered calls against repos with 500+
+# images across all releases. Do NOT add include= — it strips fields
+# (architecture, freshness_grades, dates) that filter_images.py needs.
 fetch_api() {
     local url="${API_BASE}/$1"
     curl -s --fail --max-time 60 --retry 3 --retry-delay 5 "${url}"
@@ -34,7 +36,13 @@ cmd_tags() {
     local repo=$1 tag=${2:-}
     local tag_args=()
     [[ -z "${tag}" ]] || tag_args=(--tag "${tag}")
-    fetch_api "${repo}/images?page_size=500" \
+    # Server-side filter narrows to images tagged vX.Y, avoiding the 500-image cap.
+    # Client-side filter_images.py still runs as a second pass for exact matching.
+    local query="page_size=500"
+    if [[ -n "${tag}" ]]; then
+        query+="&filter=repositories.tags.name~=v${tag}"
+    fi
+    fetch_api "${repo}/images?${query}" \
         | python3 "$(dirname "$0")/filter_images.py" tags "${tag_args[@]}"
 }
 
@@ -52,7 +60,13 @@ cmd_images() {
     local repo=$1 tag=${2:-}
     local tag_args=()
     [[ -z "${tag}" ]] || tag_args=(--tag "${tag}")
-    fetch_api "${repo}/images?page_size=500" \
+    # Server-side filter narrows to images tagged vX.Y, avoiding the 500-image cap.
+    # Client-side filter_images.py still runs as a second pass for exact matching.
+    local query="page_size=500"
+    if [[ -n "${tag}" ]]; then
+        query+="&filter=repositories.tags.name~=v${tag}"
+    fi
+    fetch_api "${repo}/images?${query}" \
         | python3 "$(dirname "$0")/filter_images.py" images "${tag_args[@]}"
 }
 

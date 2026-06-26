@@ -368,17 +368,21 @@ cmd_finalize() {
                 echo "" > "${id_file}"
             fi
 
-            # Fetch all images in one API call; Python filters by release
+            # Fetch per release so server-side filter keeps each call under the 500-image API cap
             local outfile="${images_dir}/${repo_slug}.json"
+            local tmp_merged="[]"
             echo "  Fetching ${repo} images..." >&2
-            if bash "${SCRIPT_DIR}/rh-catalog.sh" "${repo}" images > "${outfile}" 2>/dev/null; then
-                local img_count
-                img_count=$(jq 'length' "${outfile}" 2>/dev/null || echo 0)
-                echo "    ${img_count} images" >&2
-            else
-                echo "    WARNING: catalog query failed" >&2
-                echo "[]" > "${outfile}"
-            fi
+            for release in "${RELEASES[@]}"; do
+                release=$(echo "${release}" | xargs)
+                local tmp
+                if tmp=$(bash "${SCRIPT_DIR}/rh-catalog.sh" "${repo}" images --tag "${release}" 2>/dev/null); then
+                    tmp_merged=$(jq -s '.[0] + .[1] | unique_by(._id)' <(echo "${tmp_merged}") <(echo "${tmp}"))
+                    echo "    ${release}: $(echo "${tmp}" | jq 'length') images" >&2
+                else
+                    echo "    WARNING: catalog query failed for ${release}" >&2
+                fi
+            done
+            echo "${tmp_merged}" > "${outfile}"
         done
     fi
 
