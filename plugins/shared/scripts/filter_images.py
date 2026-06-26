@@ -42,6 +42,10 @@ def _current_freshness_grade(grades):
         try:
             start_dt = datetime.fromisoformat(start)
             end_dt = datetime.fromisoformat(end)
+            if start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=timezone.utc)
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=timezone.utc)
             if start_dt <= now < end_dt:
                 return g.get("grade")
         except (ValueError, TypeError):
@@ -82,7 +86,7 @@ def filter_images(data, tag_filter=""):
 
         result.append({
             "_id": entry.get("_id"),
-            "tags": sorted(set(all_tags), key=len),
+            "tags": sorted(set(all_tags), key=lambda t: (len(t), t)),
             "architecture": entry.get("architecture"),
             "freshness_grade": _current_freshness_grade(entry.get("freshness_grades")),
             "creation_date": entry.get("creation_date"),
