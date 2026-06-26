@@ -382,6 +382,11 @@ cmd_finalize() {
         done
     fi
 
+    # Extract index image info (LVMS-specific, no-op for other components)
+    bash "${SCRIPT_DIR}/extract-index-image.sh" \
+        --workdir "${WORKDIR}" "${releases_arg}" || \
+        echo "  WARNING: index image extraction failed" >&2
+
     # Generate HTML report
     echo "=== Generating HTML report ===" >&2
     python3 "${SCRIPT_DIR}/create-report.py" \
@@ -464,6 +469,11 @@ cmd_refresh() {
         echo "Usage: $(basename "$0") refresh --component <component> [--workdir DIR] [--ignore KEY1,KEY2,...] <release1,release2,...>" >&2
         return 1
     fi
+
+    # Extract index image info (LVMS-specific, no-op for other components)
+    bash "${SCRIPT_DIR}/extract-index-image.sh" \
+        --workdir "${WORKDIR}" "${releases_arg}" || \
+        echo "  WARNING: index image extraction failed" >&2
 
     # Generate HTML report (reads existing summary + bug files)
     echo "=== Generating HTML report ===" >&2
