@@ -1472,7 +1472,7 @@ def generate_html(component_title, releases_data, all_bug_candidates, pr_data, p
 
     pr_section = render_pr_section(pr_data, all_bug_candidates, pr_status, pr_error)
     bugs_section = render_bugs_section(bugs_tab_data) if bugs_tab_data else ""
-    images_section = render_images_section(images_tab_data) if images_tab_data else ""
+    images_section = render_images_section(images_tab_data)
 
     return f"""\
 <!DOCTYPE html>

@@ -42,10 +42,10 @@ def _current_freshness_grade(grades):
         try:
             start_dt = datetime.fromisoformat(start)
             end_dt = datetime.fromisoformat(end)
+            if start_dt <= now < end_dt:
+                return g.get("grade")
         except (ValueError, TypeError):
             continue
-        if start_dt <= now < end_dt:
-            return g.get("grade")
     return None
 
 
@@ -67,7 +67,7 @@ def filter_images(data, tag_filter=""):
 
     Output per image::
 
-        {_id, tags, architecture, digest, freshness_grade,
+        {_id, tags, architecture, freshness_grade,
          creation_date, last_update_date}
     """
     result = []
