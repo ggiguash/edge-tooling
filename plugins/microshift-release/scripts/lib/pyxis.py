@@ -7,25 +7,94 @@ from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
+try:
+    from requests_gssapi import HTTPSPNEGOAuth
+    _KERBEROS_AUTH = HTTPSPNEGOAuth()
+except ImportError:
+    _KERBEROS_AUTH = None
+
 PYXIS_BASE_URL = "https://catalog.redhat.com/api/containers/v1"
-PYXIS_STAGE_BASE_URL = "https://catalog.stage.redhat.com/api/containers/v1"
-BOOTC_REPO_PATH = (
-    "repositories/registry/registry.access.redhat.com"
-    "/repository/openshift4/microshift-bootc-rhel9/images"
-)
-BOOTC_STAGE_REPO_PATH = (
-    "repositories/registry/registry.stage.redhat.io"
-    "/repository/openshift4/microshift-bootc-rhel9/images"
-)
+PYXIS_STAGE_BASE_URL = "https://pyxis.stage.engineering.redhat.com/v1"
 CONTAINERFILE_URL_TEMPLATE = (
     "https://raw.githubusercontent.com/openshift/microshift"
     "/{commit}/packaging/images/bootc/Containerfile"
 )
 
-_CATALOG_URLS = {
-    "prod": f"{PYXIS_BASE_URL}/{BOOTC_REPO_PATH}",
-    "stage": f"{PYXIS_STAGE_BASE_URL}/{BOOTC_STAGE_REPO_PATH}",
+_BOOTC_REPO_TEMPLATE = {
+    "prod": (
+        PYXIS_BASE_URL + "/repositories/registry/registry.access.redhat.com"
+        "/repository/openshift4/microshift-bootc-rhel{rhel}/images"
+    ),
+    "stage": (
+        PYXIS_STAGE_BASE_URL + "/repositories/registry/registry.access.redhat.com"
+        "/repository/openshift4/microshift-bootc-rhel{rhel}/images"
+    ),
 }
+
+_GRAPHQL_URLS = {
+    "prod": "https://catalog.redhat.com/api/containers/graphql/",
+    "stage": "https://catalog.stage.redhat.com/api/containers/graphql/",
+}
+
+_REPO_BASE_URLS = {
+    "prod": PYXIS_BASE_URL,
+    "stage": PYXIS_STAGE_BASE_URL,
+}
+
+_BOOTC_REPO_NAME = "openshift{major}/microshift-bootc-rhel{rhel}"
+
+_GRAPHQL_IMAGES_QUERY = """
+query GET_REPOSITORY_BY_ID_IMAGES_HISTORY(
+  $id: ObjectIDFilterScalar
+  $page: Int! = 0
+  $page_size: Int!
+  $filter: ContainerImageFilter
+  $sort_by: [SortBy]
+) {
+  ContainerRepository: get_repository(id: $id) {
+    data {
+      registry
+      repository
+      edges {
+        images(page: $page, page_size: $page_size, filter: $filter, sort_by: $sort_by) {
+          total
+          data {
+            _id
+            image_id
+            docker_image_digest
+            architecture
+            parsed_data {
+              labels {
+                name
+                value
+              }
+              env_variables
+            }
+            freshness_grades {
+              grade
+            }
+            container_grades {
+              status
+              status_message
+            }
+            repositories {
+              repository
+              push_date
+              manifest_schema2_digest
+              tags {
+                name
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+# Cache repo IDs to avoid repeated lookups within a run
+_repo_id_cache = {}
 
 _LABEL_COMMIT_ID = "io.openshift.build.commit.id"
 _LABEL_COMMIT_URL = "io.openshift.build.commit.url"
@@ -34,16 +103,28 @@ _LABEL_SOURCE_LOCATION = "io.openshift.build.source-location"
 logger = logging.getLogger(__name__)
 
 
-def _catalog_url(catalog="prod"):
-    """Return the Pyxis images URL for the given catalog.
+def _catalog_auth(catalog):
+    """Return auth object for Pyxis requests. Stage requires Kerberos."""
+    if catalog == "stage":
+        if _KERBEROS_AUTH is None:
+            logger.warning("requests-gssapi not installed — stage Pyxis "
+                           "requires Kerberos (pip install requests-gssapi)")
+        return _KERBEROS_AUTH
+    return None
+
+
+def _catalog_url(catalog="prod", rhel=9):
+    """Return the Pyxis images URL for the given catalog and RHEL version.
 
     Args:
         catalog: "prod" or "stage".
+        rhel: RHEL version (9 or 10). Default 9 for backward compatibility.
 
     Returns:
         str: Full API URL for the bootc images endpoint.
     """
-    return _CATALOG_URLS.get(catalog, _CATALOG_URLS["prod"])
+    template = _BOOTC_REPO_TEMPLATE.get(catalog, _BOOTC_REPO_TEMPLATE["prod"])
+    return template.format(rhel=rhel)
 
 
 def _fetch_page(page, catalog="prod"):
@@ -139,6 +220,10 @@ def _parse_image_metadata(image):
     )
     assembly_version = assembly_match.group(1) if assembly_match else None
 
+    freshness = image.get("freshness_grades") or []
+    freshness_grade = freshness[-1].get("grade") if freshness else None
+    container_grades = image.get("container_grades") or {}
+
     return {
         "image_id": image.get("_id"),
         "commit_id": commit_id,
@@ -151,6 +236,8 @@ def _parse_image_metadata(image):
         "version_tags": version_tags,
         "assembly_version": assembly_version,
         "last_update_date": image.get("last_update_date"),
+        "freshness_grade": freshness_grade,
+        "container_grade_status": container_grades.get("status"),
     }
 
 
@@ -457,12 +544,14 @@ def fetch_all_bootc_images(catalog="prod", pages=5):
     return images
 
 
-def check_catalog_image(version, catalog="prod"):
+def check_catalog_image(version, catalog="prod", arch="amd64", rhel=9):
     """Check if a specific version's bootc image exists in the catalog.
 
     Args:
         version: Full version string, e.g., "4.21.8".
         catalog: "prod" or "stage".
+        arch: Architecture to query, e.g., "amd64" or "arm64".
+        rhel: RHEL version (9 or 10).
 
     Returns:
         dict: {valid: bool, reason: str, image: dict | None, catalog: str}
@@ -470,26 +559,21 @@ def check_catalog_image(version, catalog="prod"):
     tag = re.sub(r"-(ec|rc)\.\d+$", "", version)
     assembly_pattern = re.compile(rf"\bassembly\.{re.escape(tag)}\b")
 
-    url = _catalog_url(catalog)
+    url = _catalog_url(catalog, rhel=rhel)
     for page in range(5):
         params = {
-            "filter": "architecture==amd64",
+            "filter": f"architecture=={arch}",
             "page_size": 100,
             "page": page,
         }
         try:
-            resp = requests.get(url, params=params, timeout=30)
+            resp = requests.get(url, params=params, timeout=30,
+                                auth=_catalog_auth(catalog),
+                                verify=(catalog != "stage"))
             resp.raise_for_status()
             data = resp.json()
-        except requests.HTTPError as e:
-            if catalog == "stage" and e.response.status_code == 403:
-                logger.warning("Stage catalog unreachable (403), "
-                               "falling back to prod")
-                return check_catalog_image(version, catalog="prod")
-            return {"valid": False,
-                    "reason": f"Catalog query failed ({catalog}): {e}",
-                    "image": None, "catalog": catalog}
-        except (requests.RequestException, json.JSONDecodeError) as e:
+        except (requests.HTTPError, requests.RequestException,
+                json.JSONDecodeError) as e:
             return {"valid": False,
                     "reason": f"Catalog query failed ({catalog}): {e}",
                     "image": None, "catalog": catalog}
@@ -513,6 +597,151 @@ def check_catalog_image(version, catalog="prod"):
 
     return {"valid": False,
             "reason": f"Image for {version} not found in {catalog} catalog",
+            "image": None, "catalog": catalog}
+
+
+def _find_repo_id(catalog, repo_name):
+    """Discover the Pyxis ObjectID for a container repository.
+
+    Queries the REST API to find the repository by name,
+    then caches the result for subsequent calls.
+
+    Returns:
+        str or None: The repository ObjectID.
+    """
+    cache_key = (catalog, repo_name)
+    if cache_key in _repo_id_cache:
+        return _repo_id_cache[cache_key]
+
+    base = _REPO_BASE_URLS.get(catalog, _REPO_BASE_URLS["prod"])
+    url = f"{base}/repositories"
+    params = {"filter": f"repository=={repo_name}", "page_size": 1}
+    try:
+        resp = requests.get(url, params=params, timeout=15,
+                            auth=_catalog_auth(catalog),
+                            verify=(catalog != "stage"))
+        if resp.status_code != 200:
+            logger.warning("Repo search returned HTTP %d for %s on %s",
+                           resp.status_code, repo_name, catalog)
+            return None
+        data = resp.json()
+        items = data.get("data", [])
+        if items:
+            repo_id = items[0].get("_id")
+            _repo_id_cache[cache_key] = repo_id
+            return repo_id
+    except (requests.RequestException, json.JSONDecodeError) as exc:
+        logger.debug("Repo ID lookup failed for %s on %s: %s",
+                     repo_name, catalog, exc)
+    return None
+
+
+def check_catalog_image_graphql(version, catalog="prod", arch="amd64", rhel=9):
+    """Check if a bootc image exists in the catalog.
+
+    Uses the Pyxis GraphQL API for prod, REST API for stage (no GraphQL
+    on the stage Pyxis instance).
+
+    Args:
+        version: Full version string, e.g., "4.21.8".
+        catalog: "prod" or "stage".
+        arch: Architecture, e.g., "amd64" or "arm64".
+        rhel: RHEL version (9 or 10).
+
+    Returns:
+        dict: {valid: bool, reason: str, image: dict | None, catalog: str}
+    """
+    if catalog == "stage":
+        return check_catalog_image(version, catalog="stage", arch=arch, rhel=rhel)
+
+    major = version.split(".")[0]
+    repo_name = _BOOTC_REPO_NAME.format(major=major, rhel=rhel)
+    repo_id = _find_repo_id(catalog, repo_name)
+    if not repo_id:
+        return {"valid": False,
+                "reason": f"Repository {repo_name} not found in {catalog}",
+                "image": None, "catalog": catalog}
+
+    graphql_url = _GRAPHQL_URLS.get(catalog, _GRAPHQL_URLS["prod"])
+    page_size = 250
+
+    # GA/Z-stream: tags contain "assembly.X.Y.Z"
+    # EC/RC: tags contain "vX.Y.Z-ec.N" or "vX.Y.Z-rc.N"
+    base_version = re.sub(r"-(ec|rc)\.\d+$", "", version)
+    tag_patterns = [
+        re.compile(rf"\bassembly\.{re.escape(base_version)}\b"),
+        re.compile(rf"^v{re.escape(version)}$"),
+    ]
+
+    for page in range(5):
+        variables = {
+            "id": repo_id,
+            "page": page,
+            "page_size": page_size,
+            "filter": {
+                "and": [
+                    {"repositories_elemMatch": {
+                        "and": [{"repository": {"eq": repo_name}}]
+                    }}
+                ]
+            },
+            "sort_by": [
+                {"field": "repositories.push_date", "order": "DESC"},
+                {"field": "repositories.repository", "order": "ASC"},
+            ],
+        }
+
+        try:
+            resp = requests.post(
+                graphql_url,
+                json={"query": _GRAPHQL_IMAGES_QUERY, "variables": variables},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+        except (requests.RequestException, json.JSONDecodeError) as exc:
+            return {"valid": False,
+                    "reason": f"GraphQL query failed ({catalog}): {exc}",
+                    "image": None, "catalog": catalog}
+
+        data = result.get("data") or {}
+        repo_data = (data.get("ContainerRepository") or {}).get("data") or {}
+        edges = (repo_data.get("edges") or {})
+        images_data = (edges.get("images") or {}).get("data", [])
+
+        for image in images_data:
+            if image.get("architecture") != arch:
+                continue
+            for repo in image.get("repositories", []):
+                for t in repo.get("tags", []):
+                    tag_name = t.get("name", "")
+                    if any(p.search(tag_name) for p in tag_patterns):
+                        all_tags = [{"name": tg.get("name", "")}
+                                    for r in image.get("repositories", [])
+                                    for tg in r.get("tags", [])]
+                        base_meta = _parse_image_metadata(image)
+                        metadata = {
+                            "image_id": image.get("_id"),
+                            "docker_image_digest": image.get("docker_image_digest"),
+                            "commit_id": base_meta["commit_id"],
+                            "commit_short": base_meta["commit_short"],
+                            "freshness_grade": base_meta.get("freshness_grade"),
+                            "container_grade_status": base_meta.get("container_grade_status"),
+                            "tags": all_tags,
+                            "matched_tag": tag_name,
+                        }
+                        return {
+                            "valid": True,
+                            "reason": f"Image found in {catalog} catalog (tag {tag_name})",
+                            "image": metadata,
+                            "catalog": catalog,
+                        }
+
+        if len(images_data) < page_size:
+            break
+
+    return {"valid": False,
+            "reason": f"Image for {version} ({arch}) not found in {catalog} catalog",
             "image": None, "catalog": catalog}
 
 

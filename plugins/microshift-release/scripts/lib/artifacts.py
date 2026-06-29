@@ -243,44 +243,29 @@ _ARCH_MAP = {"x86_64": "amd64", "aarch64": "arm64"}
 def _fetch_advisory_data(advisory_url):
     """Fetch advisory YAML and extract spec.type and per-arch image SHAs.
 
+    Delegates to fetch_advisory_details and projects the result into the
+    flat {arch_key: sha} format expected by callers.
+
     Args:
         advisory_url: GitLab raw URL to the advisory YAML.
 
     Returns:
         dict: {"spec_type": str|None, "images": {arch: sha}} or None on failure.
     """
-    import yaml as _yaml  # noqa: PLC0415
-    try:
-        resp = _http_get(advisory_url, verify=False, timeout=15)
-        if resp.status_code != 200:
-            logger.debug("Advisory YAML fetch returned HTTP %d: %s",
-                         resp.status_code, advisory_url)
-            return None
-        content = _yaml.safe_load(resp.text)
-    except (requests.RequestException, _yaml.YAMLError) as exc:
-        logger.debug("Advisory YAML fetch/parse failed for %s: %s",
-                     advisory_url, exc)
+    details = fetch_advisory_details(advisory_url)
+    if details is None:
         return None
 
-    spec = content.get("spec", {})
-    images = spec.get("content", {}).get("images", [])
     image_shas = {}
-    for img in images:
-        comp = img.get("component", "")
-        if "microshift-bootc" not in comp:
-            continue
-        arch = img.get("architecture")
-        sha_match = re.search(r"@sha256:([0-9a-f]+)",
-                              img.get("containerImage", ""))
-        if arch and sha_match:
-            rhel_match = re.search(r"rhel(\d+)", comp)
-            if rhel_match:
-                image_shas[f"{arch}/el{rhel_match.group(1)}"] = sha_match.group(1)
-            else:
-                image_shas[arch] = sha_match.group(1)
+    if details.get("images"):
+        for img in details["images"]:
+            key = img.get("arch_key", img.get("architecture", ""))
+            sha = img.get("sha")
+            if key and sha:
+                image_shas[key] = sha
 
     return {
-        "spec_type": spec.get("type"),
+        "spec_type": details.get("spec_type"),
         "images": image_shas if image_shas else None,
     }
 
@@ -695,3 +680,79 @@ def _parse_spec_content(content):
                 names.append(f"{base_name}-{args[0]}")
 
     return list(dict.fromkeys(names)) if names else None
+
+
+def fetch_advisory_details(advisory_url):
+    """Fetch advisory YAML and return full image details for promotion checks.
+
+    Returns:
+        dict: {"spec_type": str, "images": [{"component", "architecture",
+               "containerImage", "sha", "repo"}]} or None on failure.
+    """
+    import yaml as _yaml  # noqa: PLC0415
+    try:
+        resp = _http_get(advisory_url, verify=False, timeout=15)
+        if resp.status_code != 200:
+            logger.warning("Advisory YAML fetch returned HTTP %d: %s",
+                           resp.status_code, advisory_url)
+            return None
+        content = _yaml.safe_load(resp.text)
+    except (requests.RequestException, _yaml.YAMLError) as exc:
+        logger.warning("Advisory YAML fetch/parse failed for %s: %s",
+                       advisory_url, exc)
+        return None
+
+    if not isinstance(content, dict):
+        logger.warning("Advisory YAML is not a mapping: %s", advisory_url)
+        return None
+    spec = content.get("spec", {})
+    raw_images = spec.get("content", {}).get("images", [])
+    images = []
+    for img in raw_images:
+        comp = img.get("component", "")
+        if "microshift-bootc" not in comp:
+            continue
+        container_image = img.get("containerImage", "")
+        sha_match = re.search(r"@sha256:([0-9a-f]+)", container_image)
+        repo = container_image.split("@")[0] if "@" in container_image else container_image
+        arch = img.get("architecture", "")
+        rhel_match = re.search(r"rhel(\d+)", comp)
+        arch_key = arch
+        if rhel_match:
+            arch_key = f"{arch}/el{rhel_match.group(1)}"
+        images.append({
+            "component": comp,
+            "architecture": arch,
+            "arch_key": arch_key,
+            "containerImage": container_image,
+            "sha": sha_match.group(1) if sha_match else None,
+            "repo": repo,
+        })
+
+    return {
+        "spec_type": spec.get("type"),
+        "images": images if images else None,
+    }
+
+
+def fetch_shipment_mr_approvals(project_id, mr_iid):
+    """Check whether a GitLab MR has been approved.
+
+    Returns:
+        dict: {"approved": bool, "approvers": [str], "approvals_required": int}
+              or None on failure.
+    """
+    resp = _gitlab_get(f"projects/{project_id}/merge_requests/{mr_iid}/approvals")
+    if resp is None or resp.status_code != 200:
+        return None
+    try:
+        data = resp.json()
+    except (json.JSONDecodeError, ValueError):
+        return None
+    approvers = [a.get("user", {}).get("username", "unknown")
+                 for a in data.get("approved_by", [])]
+    return {
+        "approved": data.get("approved", False),
+        "approvers": approvers,
+        "approvals_required": data.get("approvals_required", 0),
+    }
