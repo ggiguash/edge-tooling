@@ -3,7 +3,7 @@ name: microshift-ci:pcp-dashboard
 argument-hint: <workdir-or-prow-url>
 description: Generate interactive PCP performance dashboard from per-VM CI artifacts
 user-invocable: true
-allowed-tools: Bash, Read, Write, WebFetch
+allowed-tools: Bash, Read, Write
 ---
 
 # microshift-ci:pcp-dashboard
@@ -48,7 +48,7 @@ Each MicroShift CI scenario runs on its own VM that collects PCP archives at `sc
      ```
 
 2. If the argument is a local path:
-   - Verify the directory exists and contains an `artifacts/` subdirectory
+   - Verify the directory exists and contains an `artifacts/` subdirectory. If not, report that no artifacts directory was found and stop
    - Use it directly as `<WORKDIR>`
 
 ### Step 2: Validate Prerequisites
@@ -57,15 +57,8 @@ Each MicroShift CI scenario runs on its own VM that collects PCP archives at `sc
 
 **Actions**:
 
-1. Check that `pcp2json` is available:
-
-   ```text
-   command -v pcp2json
-   ```
-
-   If missing, report: `Install with: sudo dnf install -y pcp-export-pcp2json`
-
-2. Check that Python 3 is available
+1. Check that Python 3 is available
+2. The `generate-dashboard.sh` script handles `pcp2json` detection internally — it falls back to running it in a container via podman or docker. If none of `pcp2json`, `podman`, or `docker` is available, the script reports installation options and stops
 
 ### Step 3: Generate Dashboard
 
@@ -84,8 +77,9 @@ Each MicroShift CI scenario runs on its own VM that collects PCP archives at `sc
    - Extracts each tarball and runs PCP metric extraction (CPU, memory, disk I/O, disk usage)
    - Collects scenario metadata from junit.xml files
    - Assembles a self-contained HTML dashboard at `<WORKDIR>/pcp-dashboard.html`
-
-3. Report the output path to the user
+3. If no PCP tarballs are found, report that no per-VM PCP data is available for this job
+4. If individual scenario extraction fails, skip that scenario and continue with others
+5. Report the output path to the user
 
 ### Step 4: Open Dashboard
 
@@ -99,12 +93,6 @@ Each MicroShift CI scenario runs on its own VM that collects PCP archives at `sc
    ```text
    open <WORKDIR>/pcp-dashboard.html
    ```
-
-**Error Handling**:
-
-- If no PCP tarballs are found, report that no per-VM PCP data is available for this job
-- If `pcp2json` is not installed, the script automatically falls back to running it in a container via podman or docker. If neither is available, it reports installation options and stops
-- If individual scenario extraction fails, skip that scenario and continue with others
 
 ## Examples
 

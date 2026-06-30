@@ -33,14 +33,21 @@ def find_scenario_dirs(artifacts_root):
             dirs.clear()
 
 
+MAX_XML_SIZE = 10 * 1024 * 1024  # 10 MB — reject unreasonably large JUnit files
+
+
 def parse_junit(junit_path):
     """Parse a junit.xml and return test summary dict."""
     try:
-        tree = ET.parse(junit_path)
-    except (ET.ParseError, FileNotFoundError):
+        size = os.path.getsize(junit_path)
+        if size > MAX_XML_SIZE:
+            return None
+        with open(junit_path, "rb") as f:
+            content = f.read()
+        root = ET.fromstring(content)
+    except (ET.ParseError, FileNotFoundError, OSError):
         return None
 
-    root = tree.getroot()
     suite = root if root.tag == "testsuite" else root.find(".//testsuite")
     if suite is None:
         return None
@@ -76,6 +83,7 @@ def find_vm_hosts(scenario_dir):
 
 
 def main():
+    """Parse arguments, scan artifacts for JUnit data, and write scenarios.json."""
     parser = argparse.ArgumentParser(
         description="Extract scenario metadata from junit.xml files")
     parser.add_argument("--workdir", required=True,
@@ -88,7 +96,9 @@ def main():
     output = args.output or os.path.join(
         args.workdir, "pcp-dashboard", "scenarios.json")
 
-    os.makedirs(os.path.dirname(output), exist_ok=True)
+    output_dir = os.path.dirname(output)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
 
     result = {}
 

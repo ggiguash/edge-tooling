@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 # Generate an interactive PCP performance dashboard from per-VM PCP archives.
 #
 # For each scenario that has PCP archives (pcp-archives.tar in vms/<host>/pcp/),
@@ -36,6 +36,7 @@ while [[ $# -gt 0 ]]; do
             WORKDIR="$2"; shift 2 ;;
         --parallel)
             [[ $# -lt 2 ]] && { echo "Error: --parallel requires a number" >&2; usage; }
+            [[ "$2" =~ ^[1-9][0-9]*$ ]] || { echo "Error: --parallel must be a positive integer" >&2; usage; }
             PARALLEL="$2"; shift 2 ;;
         --timezone)
             [[ $# -lt 2 ]] && { echo "Error: --timezone requires a value" >&2; usage; }
@@ -81,7 +82,7 @@ detect_pcp2json() {
 }
 
 ensure_container_image() {
-    if ${CONTAINER_RT} image exists "${CONTAINER_IMAGE}" 2>/dev/null; then
+    if ${CONTAINER_RT} image inspect "${CONTAINER_IMAGE}" >/dev/null 2>&1; then
         echo "Using ${CONTAINER_RT} container (image ${CONTAINER_IMAGE})" >&2
         return 0
     fi
@@ -156,7 +157,7 @@ process_tarball() {
     parse_tarball_path "${tar_path}"
 
     if [[ -z "${BUILD_ID}" || -z "${SCENARIO}" || -z "${VM_HOST}" ]]; then
-        echo "  SKIP: cannot parse path ${tar_path}" >&2
+        echo "  SKIP: cannot parse tarball path" >&2
         return 0
     fi
 
@@ -165,10 +166,10 @@ process_tarball() {
 
     local tmp_dir
     tmp_dir=$(mktemp -d)
-    trap "rm -rf '${tmp_dir}'" RETURN
 
     if ! tar xf "${tar_path}" -C "${tmp_dir}" 2>/dev/null; then
         echo "  ${SCENARIO}: tar extraction failed" >&2
+        rm -rf -- "${tmp_dir}"
         return 0
     fi
 
@@ -185,6 +186,7 @@ process_tarball() {
 
     if [[ -z "${pcp_dir}" ]]; then
         echo "  ${SCENARIO}: no PCP archive found in tarball" >&2
+        rm -rf -- "${tmp_dir}"
         return 0
     fi
 
@@ -206,7 +208,8 @@ process_tarball() {
         filesys.used filesys.capacity filesys.mountdir \
         && ok=$((ok + 1))
 
-    echo "  ${BUILD_ID}/${SCENARIO} (${VM_HOST}): ${ok}/4 metrics" >&2
+    echo "  ${BUILD_ID}/${SCENARIO}: ${ok}/4 metrics" >&2
+    rm -rf -- "${tmp_dir}"
 }
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import html
 import json
 import os
 import sys
@@ -59,8 +60,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 JS_APP = """\
 (function() {
-    const DATA = __DATA_PLACEHOLDER__;
-    const SCENARIOS = __SCENARIOS_PLACEHOLDER__;
+    const DATA = JSON.parse(document.getElementById('pcp-data').textContent);
+    const SCENARIOS = JSON.parse(document.getElementById('pcp-scenarios').textContent);
 
     const sidebar = document.getElementById('sidebar-items');
     const mainArea = document.getElementById('main-area');
@@ -141,11 +142,11 @@ JS_APP = """\
         // Info cards
         var infoRow = document.createElement('div');
         infoRow.className = 'scenario-info';
-        infoRow.innerHTML = infoCard(meta.status === 'pass' ? 'PASS' : meta.status === 'fail' ? 'FAIL' : '?', 'Status', meta.status || 'unknown')
-            + infoCard(meta.tests !== undefined ? meta.tests : '-', 'Tests', '')
-            + infoCard(meta.failures !== undefined ? meta.failures : '-', 'Failures', meta.failures > 0 ? 'fail' : '')
-            + infoCard(meta.duration_sec !== undefined ? formatDuration(meta.duration_sec) : '-', 'Duration', '')
-            + infoCard(meta.vm_hosts ? meta.vm_hosts.join(', ') : '-', 'VM Host', '');
+        infoRow.appendChild(infoCard(meta.status === 'pass' ? 'PASS' : meta.status === 'fail' ? 'FAIL' : '?', 'Status', meta.status || 'unknown'));
+        infoRow.appendChild(infoCard(meta.tests !== undefined ? String(meta.tests) : '-', 'Tests', ''));
+        infoRow.appendChild(infoCard(meta.failures !== undefined ? String(meta.failures) : '-', 'Failures', meta.failures > 0 ? 'fail' : ''));
+        infoRow.appendChild(infoCard(meta.duration_sec !== undefined ? formatDuration(meta.duration_sec) : '-', 'Duration', ''));
+        infoRow.appendChild(infoCard(meta.vm_hosts ? meta.vm_hosts.join(', ') : '-', 'VM Host', ''));
         mainArea.appendChild(infoRow);
 
         // Chart grid
@@ -159,12 +160,26 @@ JS_APP = """\
         if (metrics.disk) renderDisk(grid, metrics.disk);
 
         if (!metrics.cpu && !metrics.mem && !metrics.io && !metrics.disk) {
-            grid.innerHTML = '<div class="chart-card" style="grid-column:1/-1;text-align:center;padding:40px;color:#6c757d;">No PCP metric data available for this scenario.</div>';
+            var empty = document.createElement('div');
+            empty.className = 'chart-card';
+            empty.style.cssText = 'grid-column:1/-1;text-align:center;padding:40px;color:#6c757d;';
+            empty.textContent = 'No PCP metric data available for this scenario.';
+            grid.appendChild(empty);
         }
     }
 
     function infoCard(value, label, cls) {
-        return '<div class="info-card"><span class="value ' + cls + '">' + value + '</span><span class="label">' + label + '</span></div>';
+        var card = document.createElement('div');
+        card.className = 'info-card';
+        var valSpan = document.createElement('span');
+        valSpan.className = 'value' + (cls ? ' ' + cls : '');
+        valSpan.textContent = value;
+        card.appendChild(valSpan);
+        var lblSpan = document.createElement('span');
+        lblSpan.className = 'label';
+        lblSpan.textContent = label;
+        card.appendChild(lblSpan);
+        return card;
     }
 
     function formatDuration(sec) {
@@ -193,7 +208,13 @@ JS_APP = """\
         var row = document.createElement('div');
         row.className = 'stats-row';
         items.forEach(function(it) {
-            row.innerHTML += '<span>' + it.label + ': <span class="val">' + it.value + '</span></span>';
+            var span = document.createElement('span');
+            span.appendChild(document.createTextNode(it.label + ': '));
+            var val = document.createElement('span');
+            val.className = 'val';
+            val.textContent = it.value;
+            span.appendChild(val);
+            row.appendChild(span);
         });
         card.appendChild(row);
     }
@@ -373,10 +394,16 @@ def load_scenarios(dashboard_dir):
     return {}
 
 
+def escape_json_for_script(json_str):
+    """Neutralize sequences that could break out of a script tag."""
+    return json_str.replace("</", "<\\/").replace("<!--", "<\\!--")
+
+
 def build_html(chartjs_src, data_json, scenarios_json, timezone):
     """Assemble the complete HTML document."""
-    js_app = JS_APP.replace("__DATA_PLACEHOLDER__", data_json)
-    js_app = js_app.replace("__SCENARIOS_PLACEHOLDER__", scenarios_json)
+    safe_data = escape_json_for_script(data_json)
+    safe_scenarios = escape_json_for_script(scenarios_json)
+    safe_tz = html.escape(timezone)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -391,7 +418,7 @@ def build_html(chartjs_src, data_json, scenarios_json, timezone):
 <body>
 <div class="sidebar">
     <h1>PCP Dashboard</h1>
-    <div style="padding:4px 16px;font-size:0.75em;color:#8888aa;">Timezone: {timezone}</div>
+    <div style="padding:4px 16px;font-size:0.75em;color:#8888aa;">Timezone: {safe_tz}</div>
     <div id="sidebar-items"></div>
 </div>
 <div class="main" id="main-area">
@@ -400,17 +427,20 @@ def build_html(chartjs_src, data_json, scenarios_json, timezone):
         <p>Choose a scenario from the sidebar to view performance metrics.</p>
     </div>
 </div>
+<script type="application/json" id="pcp-data">{safe_data}</script>
+<script type="application/json" id="pcp-scenarios">{safe_scenarios}</script>
 <script>
 {chartjs_src}
 </script>
 <script>
-{js_app}
+{JS_APP}
 </script>
 </body>
 </html>"""
 
 
 def main():
+    """Parse arguments, load metric data, and write the dashboard HTML."""
     parser = argparse.ArgumentParser(
         description="Generate interactive PCP performance dashboard HTML")
     parser.add_argument("--workdir", required=True,
