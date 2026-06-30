@@ -262,7 +262,9 @@ Suggested Remediation: {Based on where the error occurs, think hard about how to
 | 2 | Intermittent failure / likely flake |
 | 1 | Infrastructure noise or self-healing condition |
 
-After the human-readable report above, append a machine-readable JSON block for downstream automation. This block MUST appear at the very end of the report, after all prose and analysis. The block is a JSON array with one object per failure:
+After the human-readable report above, append a machine-readable JSON block for downstream automation. This block MUST appear at the very end of the report, after all prose and analysis. The block is a JSON array with one object per failure.
+
+**CRITICAL:** You MUST include BOTH the opening `--- STRUCTURED SUMMARY ---` marker AND the closing `--- END STRUCTURED SUMMARY ---` marker.
 
 ```text
 --- STRUCTURED SUMMARY ---

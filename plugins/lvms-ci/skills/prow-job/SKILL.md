@@ -183,7 +183,9 @@ Error: {The exact error, including additional log context if it relates to the f
 Suggested Remediation: {Based on where the error occurs, think hard about how to correct the error ONLY if it requires fixing. Infrastructure failures may not require code changes.}
 ```
 
-After the human-readable report above, append a machine-readable JSON block for downstream automation. This block MUST appear at the very end of the report, after all prose and analysis. The block is a JSON array with one object per failure:
+After the human-readable report above, append a machine-readable JSON block for downstream automation. This block MUST appear at the very end of the report, after all prose and analysis. The block is a JSON array with one object per failure.
+
+**CRITICAL:** You MUST include BOTH the opening `--- STRUCTURED SUMMARY ---` marker AND the closing `--- END STRUCTURED SUMMARY ---` marker.
 
 ```text
 --- STRUCTURED SUMMARY ---

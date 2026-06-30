@@ -39,7 +39,7 @@ def parse_structured_summary(filepath):
         content = f.read()
 
     m = re.search(
-        r"--- STRUCTURED SUMMARY ---\n(.+?)\n--- END STRUCTURED SUMMARY ---",
+        r"--- STRUCTURED SUMMARY ---\n(.+?)(?:\n--- END STRUCTURED SUMMARY ---|\Z)",
         content, re.DOTALL,
     )
     if not m:
