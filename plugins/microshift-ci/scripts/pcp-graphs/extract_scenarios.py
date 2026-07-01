@@ -23,7 +23,7 @@ def find_scenario_dirs(artifacts_root):
         build_dir = os.path.join(artifacts_root, build_id)
         if not os.path.isdir(build_dir):
             continue
-        for root, dirs, files in os.walk(build_dir):
+        for root, dirs, _files in os.walk(build_dir):
             if os.path.basename(root) != "scenario-info":
                 continue
             for scenario in sorted(os.listdir(root)):
@@ -52,11 +52,23 @@ def parse_junit(junit_path):
     if suite is None:
         return None
 
-    tests = int(suite.get("tests", "0"))
-    failures = int(suite.get("failures", "0"))
-    errors = int(suite.get("errors", "0"))
-    skipped = int(suite.get("skipped", "0"))
-    time_sec = float(suite.get("time", "0"))
+    def _int(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return 0
+
+    def _float(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
+    tests = _int(suite.get("tests", "0"))
+    failures = _int(suite.get("failures", "0"))
+    errors = _int(suite.get("errors", "0"))
+    skipped = _int(suite.get("skipped", "0"))
+    time_sec = _float(suite.get("time", "0"))
     timestamp = suite.get("timestamp", "")
 
     return {
