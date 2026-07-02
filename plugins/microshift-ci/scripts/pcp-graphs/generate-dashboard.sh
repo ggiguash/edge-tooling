@@ -8,7 +8,7 @@
 #
 # Prerequisites: gsutil, python3, and one of:
 #   - pcp-export-pcp2json (native)
-#   - podman or docker (container fallback)
+#   - podman (container fallback)
 
 set -euo pipefail
 
@@ -18,7 +18,7 @@ URL=""
 PARALLEL=6
 TIMEZONE="UTC"
 PCP2JSON_MODE=""  # "native" or "container"
-CONTAINER_RT=""   # "podman" or "docker"
+CONTAINER_RT=""   # "podman"
 CONTAINER_IMAGE="pcp2json-tool"
 
 usage() {
@@ -90,18 +90,13 @@ detect_pcp2json() {
         return 0
     fi
 
-    for rt in podman docker; do
-        if command -v "${rt}" >/dev/null 2>&1; then
-            CONTAINER_RT="${rt}"
-            break
-        fi
-    done
-
-    if [[ -z "${CONTAINER_RT}" ]]; then
-        echo "ERROR: pcp2json not found and no container runtime (podman/docker) available." >&2
+    if command -v podman >/dev/null 2>&1; then
+        CONTAINER_RT="podman"
+    else
+        echo "ERROR: pcp2json not found and podman is not available." >&2
         echo "Install one of:" >&2
         echo "  - pcp-export-pcp2json (dnf install pcp-export-pcp2json)" >&2
-        echo "  - podman or docker (for container fallback)" >&2
+        echo "  - podman (for container fallback)" >&2
         exit 1
     fi
 

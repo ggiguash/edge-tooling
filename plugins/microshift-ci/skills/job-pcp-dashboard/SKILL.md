@@ -18,7 +18,7 @@ Generate an interactive HTML dashboard with per-VM PCP metrics (CPU, memory, dis
    bash plugins/microshift-ci/scripts/pcp-graphs/generate-dashboard.sh --url <ARGUMENTS>
    ```
 
-2. Open the generated dashboard in the default browser:
+2. Open the generated dashboard in the default browser. Use `open` on macOS or `xdg-open` on Linux:
 
    ```bash
    open /tmp/microshift-job-pcp-dashboard.<BUILD_ID>/pcp-dashboard.html
@@ -30,4 +30,4 @@ Generate an interactive HTML dashboard with per-VM PCP metrics (CPU, memory, dis
 
 - `gsutil` CLI (for downloading artifacts from GCS)
 - Python 3
-- One of: `pcp-export-pcp2json` (native), `podman`, or `docker` (container fallback)
+- One of: `pcp-export-pcp2json` (native) or `podman` (container fallback)
