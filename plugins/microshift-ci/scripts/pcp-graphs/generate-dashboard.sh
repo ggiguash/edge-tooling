@@ -1,12 +1,12 @@
 #!/usr/bin/bash
-# Generate an interactive PCP performance dashboard from per-VM PCP archives.
+# Generate an interactive PCP performance dashboard from a Prow job URL.
 #
-# For each scenario that has PCP archives (pcp-archives.tar in vms/<host>/pcp/),
-# extracts metrics and produces an interactive HTML dashboard.
+# Downloads artifacts from GCS, extracts per-VM PCP archives, and produces
+# an interactive HTML dashboard.
 #
-# Usage: generate-dashboard.sh --workdir DIR [--parallel N] [--timezone TZ]
+# Usage: generate-dashboard.sh --url <prow-url> [--parallel N] [--timezone TZ]
 #
-# Prerequisites: python3, and one of:
+# Prerequisites: gsutil, python3, and one of:
 #   - pcp-export-pcp2json (native)
 #   - podman or docker (container fallback)
 
@@ -14,7 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-WORKDIR=""
+URL=""
 PARALLEL=6
 TIMEZONE="UTC"
 PCP2JSON_MODE=""  # "native" or "container"
@@ -22,8 +22,8 @@ CONTAINER_RT=""   # "podman" or "docker"
 CONTAINER_IMAGE="pcp2json-tool"
 
 usage() {
-    echo "Usage: ${0} --workdir DIR [--parallel N] [--timezone TZ]" >&2
-    echo "  --workdir DIR   : work directory containing artifacts/<build_id>/ (required)" >&2
+    echo "Usage: ${0} --url <prow-url> [--parallel N] [--timezone TZ]" >&2
+    echo "  --url URL       : Prow job URL (required)" >&2
     echo "  --parallel N    : number of parallel extraction jobs (default: 6)" >&2
     echo "  --timezone TZ   : IANA timezone for timestamps (default: UTC)" >&2
     exit 1
@@ -31,9 +31,9 @@ usage() {
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --workdir)
-            [[ $# -lt 2 ]] && { echo "Error: --workdir requires a directory" >&2; usage; }
-            WORKDIR="$2"; shift 2 ;;
+        --url)
+            [[ $# -lt 2 ]] && { echo "Error: --url requires a URL" >&2; usage; }
+            URL="$2"; shift 2 ;;
         --parallel)
             [[ $# -lt 2 ]] && { echo "Error: --parallel requires a number" >&2; usage; }
             [[ "$2" =~ ^[1-9][0-9]*$ ]] || { echo "Error: --parallel must be a positive integer" >&2; usage; }
@@ -46,9 +46,37 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "${WORKDIR}" ]]; then
-    echo "Error: --workdir is required" >&2
+if [[ -z "${URL}" ]]; then
+    echo "Error: --url is required" >&2
     usage
+fi
+
+# ---------------------------------------------------------------------------
+# URL parsing and artifact download
+# ---------------------------------------------------------------------------
+
+GCS_PATH=$(echo "${URL}" | sed \
+    -e 's|https\{0,1\}://prow.ci.openshift.org/view/gs/|gs://|' \
+    -e 's|https\{0,1\}://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/|gs://|')
+
+if [[ "${GCS_PATH}" == "${URL}" ]]; then
+    echo "Error: unrecognized Prow URL format" >&2
+    exit 1
+fi
+
+BUILD_ID=$(basename "${GCS_PATH}")
+WORKDIR="/tmp/microshift-job-pcp-dashboard.${BUILD_ID}"
+
+if [[ -d "${WORKDIR}/artifacts" ]]; then
+    echo "Artifacts already downloaded at ${WORKDIR}/artifacts" >&2
+else
+    if ! command -v gsutil >/dev/null 2>&1; then
+        echo "Error: gsutil is required to download artifacts" >&2
+        exit 1
+    fi
+    echo "Downloading artifacts from ${GCS_PATH}..." >&2
+    mkdir -p "${WORKDIR}/artifacts"
+    gsutil -q -m cp -r "${GCS_PATH}/" "${WORKDIR}/artifacts/"
 fi
 
 # ---------------------------------------------------------------------------
