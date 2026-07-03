@@ -13,6 +13,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SHARED_SCRIPTS="$(cd "${SCRIPT_DIR}/../../../shared/scripts" && pwd)"
 
 URL=""
 PARALLEL=6
@@ -52,32 +53,14 @@ if [[ -z "${URL}" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# URL parsing and artifact download
+# URL parsing and artifact download (delegates to shared download-jobs.sh)
 # ---------------------------------------------------------------------------
 
-GCS_PATH=$(echo "${URL}" | sed \
-    -e 's|https\{0,1\}://prow.ci.openshift.org/view/gs/|gs://|' \
-    -e 's|https\{0,1\}://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/|gs://|')
-
-if [[ "${GCS_PATH}" == "${URL}" ]]; then
-    echo "Error: unrecognized Prow URL format" >&2
-    exit 1
-fi
-
-BUILD_ID=$(basename "${GCS_PATH}")
+# Extract build ID (last path segment of the URL) to compute workdir
+BUILD_ID=$(basename "${URL%/}")
 WORKDIR="/tmp/microshift-job-pcp-dashboard.${BUILD_ID}"
 
-if [[ -d "${WORKDIR}/artifacts" ]]; then
-    echo "Artifacts already downloaded at ${WORKDIR}/artifacts" >&2
-else
-    if ! command -v gsutil >/dev/null 2>&1; then
-        echo "Error: gsutil is required to download artifacts" >&2
-        exit 1
-    fi
-    echo "Downloading artifacts from ${GCS_PATH}..." >&2
-    mkdir -p "${WORKDIR}/artifacts"
-    gsutil -q -m cp -r "${GCS_PATH}/" "${WORKDIR}/artifacts/"
-fi
+bash "${SHARED_SCRIPTS}/download-jobs.sh" --workdir "${WORKDIR}" --url "${URL}"
 
 # ---------------------------------------------------------------------------
 # pcp2json detection: native or container fallback
