@@ -236,39 +236,106 @@ process_tarball() {
 }
 
 # ---------------------------------------------------------------------------
+# Hypervisor PCP archive discovery and processing
+# ---------------------------------------------------------------------------
+
+find_hypervisor_pcp_dirs() {
+    find "${WORKDIR}/artifacts" -name "Latest" -path "*pmlogs*" \
+        -exec dirname {} \; 2>/dev/null | sort
+}
+
+process_hypervisor_dir() {
+    local pcp_dir="$1"
+
+    local build_id
+    build_id=$(echo "${pcp_dir}" | sed -nE 's|.*/artifacts/([0-9]*)/artifacts/.*|\1|p')
+    if [[ -z "${build_id}" ]]; then
+        echo "  SKIP: cannot extract build_id from hypervisor path" >&2
+        return 0
+    fi
+
+    local output_dir="${WORKDIR}/pcp-dashboard/${build_id}/hypervisor"
+    mkdir -p "${output_dir}"
+
+    local effective_dir="${pcp_dir}"
+    if [[ "${PCP2JSON_MODE}" == "container" ]]; then
+        # On macOS, podman runs in a VM that shares /Users but not /tmp.
+        # Copy PCP files to $TMPDIR so the container can mount them.
+        effective_dir=$(mktemp -d)
+        cp "${pcp_dir}/"*.0 "${pcp_dir}/"*.index "${pcp_dir}/"*.meta "${effective_dir}/" 2>/dev/null
+        if [[ -f "${pcp_dir}/Latest" ]]; then
+            cp "${pcp_dir}/Latest" "${effective_dir}/"
+        fi
+    fi
+
+    local ok=0
+
+    extract_metric "${effective_dir}" "${output_dir}/cpu.json" "parse_cpu.py" \
+        kernel.all.cpu.user kernel.all.cpu.sys kernel.all.cpu.idle kernel.all.cpu.wait.total \
+        && ok=$((ok + 1))
+
+    extract_metric "${effective_dir}" "${output_dir}/mem.json" "parse_mem.py" \
+        mem.util.used mem.util.free mem.util.cached mem.physmem \
+        && ok=$((ok + 1))
+
+    extract_metric "${effective_dir}" "${output_dir}/io.json" "parse_pcp.py" \
+        disk.dev.read disk.dev.write disk.dev.await disk.dev.aveq \
+        && ok=$((ok + 1))
+
+    extract_metric "${effective_dir}" "${output_dir}/disk.json" "parse_disk_usage.py" \
+        filesys.used filesys.capacity filesys.mountdir \
+        && ok=$((ok + 1))
+
+    echo "  ${build_id}/hypervisor: ${ok}/4 metrics" >&2
+    if [[ "${effective_dir}" != "${pcp_dir}" ]]; then
+        rm -rf -- "${effective_dir}"
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 detect_pcp2json
 
-export -f process_tarball parse_tarball_path run_pcp2json extract_metric
+export -f process_tarball parse_tarball_path run_pcp2json extract_metric process_hypervisor_dir
 export SCRIPT_DIR WORKDIR TIMEZONE PCP2JSON_MODE CONTAINER_RT CONTAINER_IMAGE
 
 tarballs=$(find_pcp_tarballs)
+hypervisor_dirs=$(find_hypervisor_pcp_dirs)
 
-if [[ -z "${tarballs}" ]]; then
-    echo "No per-VM PCP archives found in ${WORKDIR}/artifacts" >&2
+if [[ -z "${tarballs}" && -z "${hypervisor_dirs}" ]]; then
+    echo "No PCP archives found in ${WORKDIR}/artifacts" >&2
     exit 0
 fi
 
-total=$(echo "${tarballs}" | wc -l | tr -d ' ')
+if [[ -n "${tarballs}" ]]; then
+    total=$(echo "${tarballs}" | wc -l | tr -d ' ')
 
-# Container mode: run sequentially to avoid overwhelming the container runtime.
-# Native mode: run in parallel.
-if [[ "${PCP2JSON_MODE}" == "container" ]]; then
-    echo "Processing PCP archives for ${total} scenario VMs (sequential, container mode)..." >&2
-    while IFS= read -r tar_path; do
-        process_tarball "${tar_path}"
-    done <<< "${tarballs}"
-else
-    echo "Processing PCP archives for ${total} scenario VMs (${PARALLEL} parallel)..." >&2
-    while IFS= read -r tar_path; do
-        process_tarball "${tar_path}" &
-        while [[ $(jobs -rp | wc -l) -ge ${PARALLEL} ]]; do
-            wait -n 2>/dev/null || true
-        done
-    done <<< "${tarballs}"
-    wait
+    # Container mode: run sequentially to avoid overwhelming the container runtime.
+    # Native mode: run in parallel.
+    if [[ "${PCP2JSON_MODE}" == "container" ]]; then
+        echo "Processing PCP archives for ${total} scenario VMs (sequential, container mode)..." >&2
+        while IFS= read -r tar_path; do
+            process_tarball "${tar_path}"
+        done <<< "${tarballs}"
+    else
+        echo "Processing PCP archives for ${total} scenario VMs (${PARALLEL} parallel)..." >&2
+        while IFS= read -r tar_path; do
+            process_tarball "${tar_path}" &
+            while [[ $(jobs -rp | wc -l) -ge ${PARALLEL} ]]; do
+                wait -n 2>/dev/null || true
+            done
+        done <<< "${tarballs}"
+        wait
+    fi
+fi
+
+if [[ -n "${hypervisor_dirs}" ]]; then
+    echo "Processing hypervisor PCP archives..." >&2
+    while IFS= read -r hv_dir; do
+        process_hypervisor_dir "${hv_dir}"
+    done <<< "${hypervisor_dirs}"
 fi
 
 # Extract scenario metadata
