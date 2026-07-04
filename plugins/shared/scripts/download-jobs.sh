@@ -67,7 +67,9 @@ download_job() {
 
 usage() {
     echo "Usage: <jobs-json> | ${0} --workdir DIR [--parallel N]" >&2
+    echo "       ${0} --workdir DIR --url <prow-url>" >&2
     echo "  --workdir DIR: work directory (required)" >&2
+    echo "  --url URL:     download a single job by Prow URL" >&2
     echo "  --parallel N:  number of parallel downloads (default: 6)" >&2
     echo "" >&2
     echo "Accepts JSON on stdin from:" >&2
@@ -78,12 +80,16 @@ usage() {
 
 main() {
     local parallel=6
+    local url=""
 
     while [[ ${#} -gt 0 ]]; do
         case "${1}" in
             --workdir)
                 [[ ${#} -lt 2 ]] && { echo "Error: --workdir requires a directory" >&2; usage; }
                 WORKDIR="${2}"; shift 2 ;;
+            --url)
+                [[ ${#} -lt 2 ]] && { echo "Error: --url requires a URL" >&2; usage; }
+                url="${2}"; shift 2 ;;
             --parallel)
                 [[ ${#} -lt 2 ]] && { echo "Error: --parallel requires a number" >&2; usage; }
                 parallel="${2}"; shift 2 ;;
@@ -96,6 +102,20 @@ main() {
     if [[ -z "${WORKDIR}" ]]; then
         echo "Error: --workdir is required" >&2
         usage
+    fi
+
+    # Single-URL mode: download one job directly
+    if [[ -n "${url}" ]]; then
+        local gcs_path
+        gcs_path=$(url_to_gcs "${url}")
+        if [[ "${gcs_path}" == "${url}" ]]; then
+            echo "Error: unrecognized Prow URL format" >&2
+            exit 1
+        fi
+        local build_id
+        build_id=$(basename "${gcs_path}")
+        download_job "${build_id}" "${url}"
+        return $?
     fi
 
     mkdir -p "${WORKDIR}/artifacts"
