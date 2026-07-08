@@ -59,16 +59,18 @@ Ask user to confirm or correct: "Your GitHub username appears to be `{inferred}`
 **Question 3:** Infer JIRA email from the MCP config environment:
 
 ```bash
-echo "${JIRA_USERNAME:-}" 2>/dev/null
+jira_email="${JIRA_USERNAME:-}"
 ```
 
-Ask user to confirm: "Your JIRA email appears to be `{inferred}`. Is that correct?"
+Do **not** echo the raw email to stdout. Present it only in the confirmation prompt. Ask user to confirm: "Your JIRA email appears to be `{jira_email}`. Is that correct?"
 
 **Question 4:** Auto-discover boards. Query boards for the user's projects:
 
 Use `jira_get_agile_boards` to search boards. Present the results and ask the user to pick one or more boards they want to track sprints from. Store the selected IDs in `board_ids` (list).
 
 Follow-up: "Do you want to add boards from other projects?" If yes, ask for the project key, search its boards, and let them pick. Repeat until they're done.
+
+**If no boards are found** (empty results from all queries), warn the user: "No agile boards found for your projects." Offer two options: (a) enter board IDs manually if they know them, or (b) skip sprint tracking for now — sets `sections.sprint_backlog: false` and adds a YAML comment: `# No boards found — run /morning --setup to retry`.
 
 **Question 5:** Ask the user:
 > "Do you want to track QA tasks (tickets where you are the QA Contact)?"
@@ -101,7 +103,11 @@ Follow-up: "Do you want to add boards from other projects?" If yes, ask for the 
 
 ```bash
 mkdir -p "$HOME/.config/edge-ic"
+cp "$HOME/.config/edge-ic/morning.yaml" \
+   "$HOME/.config/edge-ic/morning.yaml.bak" 2>/dev/null
 ```
+
+If a backup was created, inform the user: "Previous config backed up to `morning.yaml.bak`."
 
 Write the YAML config to `$HOME/.config/edge-ic/morning.yaml` using the collected values. Then proceed to Step 2.
 
@@ -177,9 +183,9 @@ If the query returns no results, skip the sprint section silently. If the `sprin
 
 **Compute** (per sprint):
 
-- Separate into: completed (status category = Done) and not-done (everything else)
+- Separate into completed and not-done using the `status.statusCategory.name` field (nested inside `status` in the response): statuses with category `"Done"` are completed; everything else is not-done. Do **not** match on status name strings for this classification
 - Sum story points: try `customfield_10028` ("Story Points") first, then `customfield_10016` ("Story point estimate"). If neither has data, show "Story Points: N/A" in the sprint header
-- Group not-done issues by status in workflow order: In Progress, Code Review, POST, To Do, New
+- Group not-done issues by status in workflow order: In Progress, Code Review, POST, To Do, New. **Any status not in this list goes into an "Other" catch-all group** rendered last — never silently drop issues with unrecognized statuses
 
 Store results as a list of sprints, each with:
 
@@ -192,7 +198,7 @@ Store results as a list of sprints, each with:
 - `is_urgent`: boolean (days_remaining <= 3)
 - `issues`: list grouped by status, each with key, summary, status, link
 
-**Rendering:** If multiple boards have active sprints, render a separate sprint header and backlog section for each. Show the board name in the header to distinguish them.
+**Rendering with multiple sprints:** If the query returns issues from multiple sprints (different boards or overlapping sprints on one board), use the sprint with the **fewest days remaining** for the header panel's progress bar and sprint name. Render each sprint's backlog issues in a separate `╭─ » Sprint: {name} ({board}) ─╮` section panel below the header. If only one sprint exists, use it for the header and render its issues in the standard Sprint Backlog panel.
 
 ## Step 4: Gather Yesterday's Carry-Over
 
@@ -262,7 +268,7 @@ Skip if `sections.open_prs` is `false` in config.
 gh search prs --author=@me --state=open --json repository,number,title,createdAt,url --limit 50
 ```
 
-Compute `days_open` from `createdAt` (today's date minus `createdAt` in days — be precise, do not eyeball). **Discard any PR where `days_open` > 200** — these are stale/abandoned PRs that add noise. Set `days_idle` and `missing_labels` to "?" (the CI dashboard is no longer fetched). If `gh` is not available, skip this section with a note.
+Compute `days_open` from `createdAt` (today's date minus `createdAt` in days — be precise, do not eyeball). **Discard any PR where `days_open` > 200** — these are stale/abandoned PRs that add noise. Set `days_idle` and `missing_labels` to "?" (the CI dashboard is no longer fetched). If the `gh` command fails for any reason (not installed, not authenticated, network error), skip this section with a note: "Could not fetch open PRs — skipping."
 
 **Skip the per-PR review thread fetch entirely** — it adds N sequential round-trips and the briefing doesn't need it. Set `unresolved: null` for all PRs. The PR link is enough to check threads on demand.
 
