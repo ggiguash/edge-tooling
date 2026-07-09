@@ -30,7 +30,7 @@ bash plugins/microshift-release/scripts/prow_testing.sh <action> <version> [--ex
 |---|---|---|
 | `aws` CLI (configured) | Step 0 (preflight), Step 5 (upload) | Yes |
 | `gh` CLI (authenticated) | All PR operations | Yes |
-| Push access to `openshift/microshift` | Step 1 (create PR) | Yes |
+| GitHub fork of `openshift/microshift` | Step 1 (create PR) | Yes |
 | `gsutil` CLI | Step 4 (download) | Yes |
 
 ## Arguments
@@ -136,6 +136,7 @@ The script exits non-zero with a JSON `message` field. Common errors:
 | Version < 4.21 | Jenkins pipelines, not Prow CI |
 | Nightly version | Phase 2 does not apply |
 | `gh` failure | Not authenticated or no permissions |
+| `git push` failure | Fork of `openshift/microshift` doesn't exist, or no push access |
 | Branch exists | Delete it or use existing PR |
 | `gsutil` not found | Install Google Cloud SDK |
 | `aws` not found | Install and configure AWS CLI |
