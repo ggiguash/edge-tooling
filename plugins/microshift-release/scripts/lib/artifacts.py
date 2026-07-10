@@ -444,9 +444,10 @@ def fetch_shipment_mr(version):
             "found": False,
             "reason": "GitLab MR search returned non-JSON response",
         }
+    # Trailing space on both sides guards against 4.22.4 matching 4.22.40.
+    expected = f"Microshift-bootc shipment for {version} "
     matching = [mr for mr in mrs
-                if "Microshift-bootc shipment for" in mr.get("title", "")
-                and mr.get("title", "").strip().endswith(version)]
+                if expected in f'{mr.get("title", "").strip()} ']
 
     if not matching:
         return {
