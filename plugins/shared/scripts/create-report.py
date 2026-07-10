@@ -9,7 +9,6 @@ Usage:
     create-report.py --component <component> [--workdir DIR] <release1,release2,...>
 """
 
-import base64
 import json
 import sys
 import os
@@ -134,12 +133,17 @@ CSS = """\
         .graph-toggle { cursor: pointer; text-decoration: none; font-size: 1em; margin-left: 4px; }
         .graph-toggle:hover { opacity: 0.7; }
         .perf-graphs { margin: 6px 0 6px 0; padding: 8px 12px; background: #f8f9fa; border-left: 3px solid #6c757d; }
-        .perf-graphs img { max-width: 100%; height: auto; border: 1px solid #dee2e6; border-radius: 4px; }
-        .graph-tabs { display: flex; gap: 0; margin: 4px 0 0 0; border-bottom: 2px solid #dee2e6; }
-        .graph-tab-btn { padding: 4px 14px; border: 1px solid #dee2e6; border-bottom: none; border-radius: 4px 4px 0 0; background: #e9ecef; color: #495057; font-size: 0.82em; font-weight: 600; cursor: pointer; margin-bottom: -2px; }
-        .graph-tab-btn.active { background: #fff; border-bottom: 2px solid #fff; color: #212529; }
-        .graph-pane { display: none; padding: 6px 0; }
-        .graph-pane.active { display: block; }
+        .pcp-chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 6px; }
+        .pcp-chart-card { background: #fff; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .pcp-chart-card h4 { font-size: 0.9em; color: #1a1a2e; margin: 0 0 6px 0; }
+        .pcp-chart-card canvas { width: 100% !important; height: 240px !important; }
+        .pcp-chart-card:fullscreen { display: flex; flex-direction: column; justify-content: center; padding: 32px; }
+        .pcp-chart-card:fullscreen canvas { height: 70vh !important; }
+        .pcp-fs-btn { background: none; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 1.1em; color: #6c757d; padding: 2px 6px; line-height: 1; }
+        .pcp-fs-btn:hover { background: #f0f0f0; color: #333; }
+        .pcp-stats-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; font-size: 0.75em; color: #6c757d; }
+        .pcp-stats-row .val { font-weight: 600; color: #333; }
+        @media (max-width: 900px) { .pcp-chart-grid { grid-template-columns: 1fr; } }
         .anchor-link, .section-anchor { color: #adb5bd; text-decoration: none; cursor: pointer; }
         .anchor-link:hover, .section-anchor:hover { color: #0366d6; }
         .anchor-link { font-size: 0.85em; }
@@ -188,7 +192,21 @@ document.querySelectorAll('.col-title').forEach(function(el) {
 });
 function toggleGraph(id) {
     var el = document.getElementById(id);
-    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    if (!el) return;
+    var show = el.style.display === 'none';
+    el.style.display = show ? 'block' : 'none';
+    if (show && !el.dataset.rendered) {
+        el.dataset.rendered = '1';
+        pcpCharts.init({ cardClass: 'pcp-chart-card', headingTag: 'h4', statsClass: 'pcp-stats-row' });
+        var dataEl = el.querySelector('script[type="application/json"]');
+        if (!dataEl) return;
+        var m = JSON.parse(dataEl.textContent);
+        var grid = el.querySelector('.pcp-chart-grid');
+        if (m.cpu) pcpCharts.renderCpu(grid, m.cpu);
+        if (m.mem) pcpCharts.renderMem(grid, m.mem);
+        if (m.io) pcpCharts.renderIo(grid, m.io);
+        if (m.disk) pcpCharts.renderDisk(grid, m.disk);
+    }
 }
 function filterToday(on) {
     var today = new Date().toISOString().split('T')[0];
@@ -239,13 +257,6 @@ function filterLatestImages(on) {
     document.querySelectorAll('#tab-images .data-table tbody tr').forEach(function(row) {
         row.style.display = (!on || row.hasAttribute('data-latest')) ? '' : 'none';
     });
-}
-function showGraphTab(btn, paneId) {
-    var container = btn.closest('.perf-graphs');
-    container.querySelectorAll('.graph-tab-btn').forEach(function(b) { b.classList.remove('active'); });
-    container.querySelectorAll('.graph-pane').forEach(function(p) { p.classList.remove('active'); });
-    btn.classList.add('active');
-    document.getElementById(paneId).classList.add('active');
 }
 document.getElementById('loading').style.display='none';
 document.querySelector('.container').style.display='';
@@ -1059,8 +1070,10 @@ def _render_index_image(index_info):
     return "\n".join(lines)
 
 
-# Graph workdir — set by main() before rendering
+# Graph workdir and Chart.js source — set by main() before rendering
 _GRAPHS_DIR = None
+_CHARTJS_SRC = ""
+_PCP_CHARTS_SRC = ""
 
 
 def _extract_build_id(url):
@@ -1073,32 +1086,34 @@ def _extract_build_id(url):
 
 _graph_counter = 0
 
-# Cache of loaded graph data: build_id -> list of (label, b64)
 _graph_cache = {}
 
+_METRIC_FILES = [("cpu.json", "cpu"), ("mem.json", "mem"),
+                 ("io.json", "io"), ("disk.json", "disk")]
 
-def _load_job_graphs(build_id):
-    """Load and cache base64-encoded graphs for a build_id."""
+
+def _load_job_metrics(build_id):
+    """Load and cache parsed PCP metric JSON files for a build_id."""
     if build_id in _graph_cache:
         return _graph_cache[build_id]
-    graphs = []
+    metrics = {}
     if _GRAPHS_DIR:
         graph_dir = os.path.join(_GRAPHS_DIR, build_id)
         if os.path.isdir(graph_dir):
-            for png in sorted(glob_mod.glob(os.path.join(graph_dir, "*.png"))):
-                try:
-                    label = re.sub(r"^\d+_", "", os.path.splitext(os.path.basename(png))[0]).replace("_", " ").title()
-                    with open(png, "rb") as f:
-                        b64 = base64.b64encode(f.read()).decode("ascii")
-                    graphs.append((label, b64))
-                except Exception as e:
-                    print(f"WARNING: skipping {png}: {e}", file=sys.stderr)
-    _graph_cache[build_id] = graphs
-    return graphs
+            for fname, key in _METRIC_FILES:
+                fpath = os.path.join(graph_dir, fname)
+                if os.path.isfile(fpath):
+                    try:
+                        with open(fpath) as f:
+                            metrics[key] = json.load(f)
+                    except (json.JSONDecodeError, IOError) as e:
+                        print(f"WARNING: skipping {fpath}: {e}", file=sys.stderr)
+    _graph_cache[build_id] = metrics
+    return metrics
 
 
 def _render_job_with_graphs(job):
-    """Render a single job list item with optional graph icon and inline graphs."""
+    """Render a single job list item with optional graph icon and inline charts."""
     global _graph_counter
     date_str = f'<span class="job-date">[{_e(job["date"])}]</span>'
     url = job.get("url", "")
@@ -1113,8 +1128,8 @@ def _render_job_with_graphs(job):
     if not bid:
         return f"<li>{job_link}</li>"
 
-    graphs = _load_job_graphs(bid)
-    if not graphs:
+    metrics = _load_job_metrics(bid)
+    if not metrics:
         return f"<li>{job_link}</li>"
 
     _graph_counter += 1
@@ -1122,37 +1137,16 @@ def _render_job_with_graphs(job):
 
     icon = f' <a class="graph-toggle" onclick="toggleGraph(\'{gid}\')" title="Host performance graphs">&#x1F4CA;</a>'
 
-    # Build tabbed graph panel (hidden by default)
-    header = '<div class="graph-source">Host metrics (PCP)</div>'
-    if len(graphs) == 1:
-        label, b64 = graphs[0]
-        panel = (
-            f'<div id="{gid}" class="perf-graphs" style="display:none">'
-            f'{header}'
-            f'<img src="data:image/png;base64,{b64}" alt="{_e(label)}"/>'
-            f'</div>'
-        )
-    else:
-        tabs = []
-        panes = []
-        for i, (label, b64) in enumerate(graphs):
-            active = " active" if i == 0 else ""
-            tid = f"{gid}-{i}"
-            tabs.append(
-                f'<button class="graph-tab-btn{active}" onclick="showGraphTab(this,\'{tid}\')">{_e(label)}</button>'
-            )
-            panes.append(
-                f'<div id="{tid}" class="graph-pane{active}">'
-                f'<img src="data:image/png;base64,{b64}" alt="{_e(label)}"/>'
-                f'</div>'
-            )
-        panel = (
-            f'<div id="{gid}" class="perf-graphs" style="display:none">'
-            f'{header}'
-            f'<div class="graph-tabs">{"".join(tabs)}</div>'
-            + "".join(panes)
-            + '</div>'
-        )
+    metrics_json = json.dumps(metrics, separators=(",", ":"))
+    safe_json = metrics_json.replace("</", "<\\/").replace("<!--", "<\\!--")
+
+    panel = (
+        f'<div id="{gid}" class="perf-graphs" style="display:none">'
+        f'<div class="graph-source">Host metrics (PCP)</div>'
+        f'<script type="application/json">{safe_json}</script>'
+        f'<div class="pcp-chart-grid"></div>'
+        f'</div>'
+    )
 
     return f"<li>{job_link}{icon}{panel}</li>"
 
@@ -1575,6 +1569,7 @@ def generate_html(component_title, releases_data, all_bug_candidates, pr_data, p
 
     <p>&nbsp;</p><p>&nbsp;</p><p>&nbsp;</p><p>&nbsp;</p>
 </div>
+{f'<script>{_CHARTJS_SRC}</script><script>{_PCP_CHARTS_SRC}</script>' if _CHARTJS_SRC else ''}
 <script>
 {JS}
 </script>
@@ -1756,11 +1751,27 @@ def main():
     images_data = load_images_data(workdir, releases)
     images_tab_data = build_images_tab_data(images_data, releases) if images_data else None
 
-    # Set graphs directory for rendering
-    global _GRAPHS_DIR
+    # Set graphs directory and load Chart.js for rendering
+    global _GRAPHS_DIR, _CHARTJS_SRC, _PCP_CHARTS_SRC
     graphs_dir = os.path.join(workdir, "graphs")
     if os.path.isdir(graphs_dir):
-        _GRAPHS_DIR = graphs_dir
+        search_dirs = [
+            os.path.dirname(os.path.abspath(sys.argv[0])),
+            os.path.dirname(os.path.abspath(__file__)),
+        ]
+        for sdir in search_dirs:
+            chartjs_path = os.path.join(sdir, "pcp-graphs", "vendor", "chart.umd.min.js")
+            charts_path = os.path.join(sdir, "pcp-graphs", "pcp-charts.js")
+            if os.path.isfile(chartjs_path) and os.path.isfile(charts_path):
+                with open(chartjs_path) as f:
+                    _CHARTJS_SRC = f.read()
+                with open(charts_path) as f:
+                    _PCP_CHARTS_SRC = f.read()
+                _GRAPHS_DIR = graphs_dir
+                break
+        else:
+            print("WARNING: Chart.js or pcp-charts.js not found, "
+                  "interactive PCP charts will not render", file=sys.stderr)
 
     # Generate HTML
     timestamp = datetime.now(timezone.utc)

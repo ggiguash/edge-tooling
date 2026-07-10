@@ -432,12 +432,7 @@ cmd_graphs() {
         echo "Error: pcp Python module not found. Run: pip install pcp" >&2
         return 1
     fi
-    if ! python3 -c "import matplotlib" 2>/dev/null; then
-        echo "Error: matplotlib not installed. Run: pip install matplotlib" >&2
-        return 1
-    fi
-
-    echo "=== Generating PCP graphs ===" >&2
+    echo "=== Extracting PCP metrics ===" >&2
     bash "${SCRIPT_DIR}/pcp-graphs/generate-graphs.sh" \
         --workdir "${WORKDIR}" --timezone "${timezone}"
 }
