@@ -1751,7 +1751,6 @@ def main():
     global _GRAPHS_DIR, _CHARTJS_SRC, _PCP_CHARTS_SRC
     graphs_dir = os.path.join(workdir, "graphs")
     if os.path.isdir(graphs_dir):
-        _GRAPHS_DIR = graphs_dir
         search_dirs = [
             os.path.dirname(os.path.abspath(sys.argv[0])),
             os.path.dirname(os.path.abspath(__file__)),
@@ -1764,6 +1763,7 @@ def main():
                     _CHARTJS_SRC = f.read()
                 with open(charts_path) as f:
                     _PCP_CHARTS_SRC = f.read()
+                _GRAPHS_DIR = graphs_dir
                 break
         else:
             print("WARNING: Chart.js or pcp-charts.js not found, "

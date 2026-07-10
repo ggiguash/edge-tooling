@@ -118,10 +118,9 @@ def main():
             continue
         if cached is None:
             cached = 0
+        used_excl_cached = max(used - cached, 0)
         if total is None:
-            total = used + free + cached
-
-        used_excl_cached = used - cached
+            total = used_excl_cached + cached + free
 
         result["timestamps"].append(ts)
         result["used_gb"].append(round(used_excl_cached * KB_TO_GB, 2))
