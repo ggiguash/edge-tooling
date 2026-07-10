@@ -32,6 +32,7 @@ var pcpCharts = (function() {
         var fsBtn = document.createElement('button');
         fsBtn.className = 'pcp-fs-btn';
         fsBtn.title = 'Toggle fullscreen';
+        fsBtn.setAttribute('aria-label', 'Toggle fullscreen');
         fsBtn.textContent = '⛶';
         fsBtn.addEventListener('click', function() { toggleFullscreen(card); });
         header.appendChild(fsBtn);
@@ -139,9 +140,18 @@ var pcpCharts = (function() {
 
         var c2 = makeCard(grid, 'Disk I/O Latency');
         var chart2 = new Chart(c2.canvas, { type: 'line', data: { labels: d.timestamps, datasets: [
-            { label: 'Await', data: d.await, borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.15)', fill: true, pointRadius: 0, borderWidth: 1.5, tension: 0.2 },
-            { label: 'Queue Length', data: d.aveq, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.15)', fill: true, pointRadius: 0, borderWidth: 1.5, tension: 0.2 }
-        ] }, options: lineOpts('ms / depth') });
+            { label: 'Await (ms)', data: d.await, borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.15)', fill: true, pointRadius: 0, borderWidth: 1.5, tension: 0.2, yAxisID: 'y' },
+            { label: 'Queue Length', data: d.aveq, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.15)', fill: true, pointRadius: 0, borderWidth: 1.5, tension: 0.2, yAxisID: 'y1' }
+        ] }, options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }, tooltip: { mode: 'index', intersect: false } },
+            scales: {
+                x: { ticks: { maxTicksLimit: 8, maxRotation: 0, font: { size: 10 } }, grid: { display: false } },
+                y: { position: 'left', title: { display: true, text: 'Await (ms)', font: { size: 11 } }, beginAtZero: true, ticks: { font: { size: 10 } } },
+                y1: { position: 'right', title: { display: true, text: 'Queue Length', font: { size: 11 } }, beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { font: { size: 10 } } }
+            }
+        } });
         track(chart2);
         addStats(c2.card, [
             { label: 'Peak Await', value: peak(d.await).toFixed(1) + ' ms' },
