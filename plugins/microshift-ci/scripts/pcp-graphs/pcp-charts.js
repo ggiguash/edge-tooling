@@ -23,13 +23,31 @@ var pcpCharts = (function() {
     function makeCard(grid, title) {
         var card = document.createElement('div');
         card.className = _opts.cardClass;
+        var header = document.createElement('div');
+        header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;';
         var h = document.createElement(_opts.headingTag);
         h.textContent = title;
-        card.appendChild(h);
+        h.style.margin = '0';
+        header.appendChild(h);
+        var fsBtn = document.createElement('button');
+        fsBtn.className = 'pcp-fs-btn';
+        fsBtn.title = 'Toggle fullscreen';
+        fsBtn.textContent = '⛶';
+        fsBtn.addEventListener('click', function() { toggleFullscreen(card); });
+        header.appendChild(fsBtn);
+        card.appendChild(header);
         var canvas = document.createElement('canvas');
         card.appendChild(canvas);
         grid.appendChild(card);
         return { card: card, canvas: canvas };
+    }
+
+    function toggleFullscreen(card) {
+        if (document.fullscreenElement === card) {
+            document.exitFullscreen();
+        } else {
+            card.requestFullscreen().catch(function() {});
+        }
     }
 
     function addStats(card, items) {

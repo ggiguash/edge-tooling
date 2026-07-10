@@ -47,6 +47,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .chart-card { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 .chart-card h3 { font-size: 0.95em; color: #1a1a2e; margin-bottom: 8px; }
 .chart-card canvas { width: 100% !important; height: 280px !important; }
+.chart-card:fullscreen { display: flex; flex-direction: column; justify-content: center; padding: 32px; }
+.chart-card:fullscreen canvas { height: 70vh !important; }
+.pcp-fs-btn { background: none; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 1.1em; color: #6c757d; padding: 2px 6px; line-height: 1; }
+.pcp-fs-btn:hover { background: #f0f0f0; color: #333; }
 .stats-row { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 0.78em; color: #6c757d; }
 .stats-row span { white-space: nowrap; }
 .stats-row .val { font-weight: 600; color: #333; }

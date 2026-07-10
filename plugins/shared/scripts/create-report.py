@@ -137,6 +137,10 @@ CSS = """\
         .pcp-chart-card { background: #fff; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         .pcp-chart-card h4 { font-size: 0.9em; color: #1a1a2e; margin: 0 0 6px 0; }
         .pcp-chart-card canvas { width: 100% !important; height: 240px !important; }
+        .pcp-chart-card:fullscreen { display: flex; flex-direction: column; justify-content: center; padding: 32px; }
+        .pcp-chart-card:fullscreen canvas { height: 70vh !important; }
+        .pcp-fs-btn { background: none; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 1.1em; color: #6c757d; padding: 2px 6px; line-height: 1; }
+        .pcp-fs-btn:hover { background: #f0f0f0; color: #333; }
         .pcp-stats-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; font-size: 0.75em; color: #6c757d; }
         .pcp-stats-row .val { font-weight: 600; color: #333; }
         @media (max-width: 900px) { .pcp-chart-grid { grid-template-columns: 1fr; } }
