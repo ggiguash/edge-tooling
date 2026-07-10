@@ -154,10 +154,10 @@ JS_APP = """\
         grid.className = 'chart-grid';
         mainArea.appendChild(grid);
 
-        if (metrics.cpu) renderCpu(grid, metrics.cpu);
-        if (metrics.mem) renderMem(grid, metrics.mem);
-        if (metrics.io) renderIo(grid, metrics.io);
-        if (metrics.disk) renderDisk(grid, metrics.disk);
+        if (metrics.cpu) pcpCharts.renderCpu(grid, metrics.cpu);
+        if (metrics.mem) pcpCharts.renderMem(grid, metrics.mem);
+        if (metrics.io) pcpCharts.renderIo(grid, metrics.io);
+        if (metrics.disk) pcpCharts.renderDisk(grid, metrics.disk);
 
         if (!metrics.cpu && !metrics.mem && !metrics.io && !metrics.disk) {
             var empty = document.createElement('div');
@@ -192,151 +192,7 @@ JS_APP = """\
         return h + 'h ' + m + 'm';
     }
 
-    function makeCard(grid, title) {
-        var card = document.createElement('div');
-        card.className = 'chart-card';
-        var h3 = document.createElement('h3');
-        h3.textContent = title;
-        card.appendChild(h3);
-        var canvas = document.createElement('canvas');
-        card.appendChild(canvas);
-        grid.appendChild(card);
-        return { card: card, canvas: canvas };
-    }
-
-    function addStats(card, items) {
-        var row = document.createElement('div');
-        row.className = 'stats-row';
-        items.forEach(function(it) {
-            var span = document.createElement('span');
-            span.appendChild(document.createTextNode(it.label + ': '));
-            var val = document.createElement('span');
-            val.className = 'val';
-            val.textContent = it.value;
-            span.appendChild(val);
-            row.appendChild(span);
-        });
-        card.appendChild(row);
-    }
-
-    function peak(arr) { return arr.length ? Math.max.apply(null, arr) : 0; }
-    function avg(arr) { return arr.length ? arr.reduce(function(a,b){return a+b;},0) / arr.length : 0; }
-
-    function renderCpu(grid, d) {
-        var c = makeCard(grid, 'CPU Usage');
-        var chart = new Chart(c.canvas, {
-            type: 'line',
-            data: {
-                labels: d.timestamps,
-                datasets: [
-                    { label: 'User', data: d.user, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.15)', fill: true, pointRadius: 0, borderWidth: 1.5, tension: 0.2, order: 3 },
-                    { label: 'I/O Wait', data: d.iowait, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.15)', fill: true, pointRadius: 0, borderWidth: 1.5, tension: 0.2, order: 2 },
-                    { label: 'System', data: d.sys, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.15)', fill: true, pointRadius: 0, borderWidth: 1.5, tension: 0.2, order: 1 }
-                ]
-            },
-            options: cpuMemOpts('CPU %', 100)
-        });
-        activeCharts.push(chart);
-        addStats(c.card, [
-            { label: 'Peak User', value: peak(d.user).toFixed(1) + '%' },
-            { label: 'Peak System', value: peak(d.sys).toFixed(1) + '%' },
-            { label: 'Peak I/O Wait', value: peak(d.iowait).toFixed(1) + '%' },
-            { label: 'Avg Total', value: avg(d.user.map(function(v,i){return v + d.sys[i] + d.iowait[i];})).toFixed(1) + '%' }
-        ]);
-    }
-
-    function renderMem(grid, d) {
-        var c = makeCard(grid, 'Memory Usage');
-        var datasets = [
-            { label: 'Used', data: d.used_gb, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.15)', fill: true, pointRadius: 0, borderWidth: 1.5, tension: 0.2, order: 2 },
-            { label: 'Cached', data: d.cached_gb, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.15)', fill: true, pointRadius: 0, borderWidth: 1.5, tension: 0.2, order: 1 }
-        ];
-        if (d.total_gb && d.total_gb.length) {
-            datasets.push({ label: 'Total', data: d.total_gb, borderColor: '#333', backgroundColor: 'transparent', fill: false, pointRadius: 0, borderWidth: 1.5, borderDash: [5,3], tension: 0, order: 0 });
-        }
-        var maxY = d.total_gb && d.total_gb.length ? Math.ceil(Math.max.apply(null, d.total_gb) * 1.1) : undefined;
-        var chart = new Chart(c.canvas, {
-            type: 'line',
-            data: { labels: d.timestamps, datasets: datasets },
-            options: cpuMemOpts('GB', maxY)
-        });
-        activeCharts.push(chart);
-        addStats(c.card, [
-            { label: 'Peak Used', value: peak(d.used_gb).toFixed(2) + ' GB' },
-            { label: 'Peak Cached', value: peak(d.cached_gb).toFixed(2) + ' GB' },
-            { label: 'Total', value: d.total_gb && d.total_gb.length ? d.total_gb[0].toFixed(2) + ' GB' : '-' }
-        ]);
-    }
-
-    function renderIo(grid, d) {
-        var c = makeCard(grid, 'Disk I/O');
-        var chart = new Chart(c.canvas, {
-            type: 'line',
-            data: {
-                labels: d.timestamps,
-                datasets: [
-                    { label: 'Read OPS', data: d.bi, borderColor: '#3b82f6', backgroundColor: 'transparent', fill: false, pointRadius: 0, borderWidth: 1.5, tension: 0.2, yAxisID: 'y' },
-                    { label: 'Write OPS', data: d.bo, borderColor: '#ef4444', backgroundColor: 'transparent', fill: false, pointRadius: 0, borderWidth: 1.5, tension: 0.2, yAxisID: 'y' },
-                    { label: 'Await (ms)', data: d.await, borderColor: '#22c55e', backgroundColor: 'transparent', fill: false, pointRadius: 0, borderWidth: 1.5, borderDash: [5,3], tension: 0.2, yAxisID: 'y1' }
-                ]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }, tooltip: { mode: 'index', intersect: false } },
-                scales: {
-                    x: { ticks: { maxTicksLimit: 8, maxRotation: 0, font: { size: 10 } }, grid: { display: false } },
-                    y: { position: 'left', title: { display: true, text: 'OPS', font: { size: 11 } }, beginAtZero: true, ticks: { font: { size: 10 } } },
-                    y1: { position: 'right', title: { display: true, text: 'Await (ms)', font: { size: 11 } }, beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { font: { size: 10 } } }
-                }
-            }
-        });
-        activeCharts.push(chart);
-        addStats(c.card, [
-            { label: 'Peak Read', value: peak(d.bi).toFixed(0) + ' OPS' },
-            { label: 'Peak Write', value: peak(d.bo).toFixed(0) + ' OPS' },
-            { label: 'Peak Await', value: peak(d.await).toFixed(1) + ' ms' },
-            { label: 'Peak Queue', value: peak(d.aveq).toFixed(2) }
-        ]);
-    }
-
-    function renderDisk(grid, d) {
-        var c = makeCard(grid, 'Disk Usage');
-        var colors = ['#8b5cf6','#3b82f6','#22c55e','#f59e0b','#ef4444','#ec4899','#06b6d4','#84cc16'];
-        var datasets = d.partitions.map(function(p, i) {
-            var lbl = p.device;
-            if (p.mountdir) lbl += ' (' + p.mountdir + ')';
-            if (p.capacity_gb) lbl += ' ' + p.capacity_gb + 'G';
-            return {
-                label: lbl, data: p.used_pct,
-                borderColor: colors[i % colors.length], backgroundColor: 'transparent',
-                fill: false, pointRadius: 0, borderWidth: 1.5, tension: 0.2
-            };
-        });
-        var chart = new Chart(c.canvas, {
-            type: 'line',
-            data: { labels: d.timestamps, datasets: datasets },
-            options: cpuMemOpts('Usage %', 100)
-        });
-        activeCharts.push(chart);
-        var statsItems = d.partitions.map(function(p) {
-            var pctArr = p.used_pct.filter(function(v) { return v !== null; });
-            return { label: 'Peak ' + (p.mountdir || p.device), value: peak(pctArr).toFixed(1) + '%' };
-        });
-        addStats(c.card, statsItems.slice(0, 4));
-    }
-
-    function cpuMemOpts(yLabel, yMax) {
-        return {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }, tooltip: { mode: 'index', intersect: false } },
-            scales: {
-                x: { ticks: { maxTicksLimit: 8, maxRotation: 0, font: { size: 10 } }, grid: { display: false } },
-                y: { beginAtZero: true, max: yMax, title: { display: true, text: yLabel, font: { size: 11 } }, ticks: { font: { size: 10 } } }
-            }
-        };
-    }
+    pcpCharts.init({ onChart: function(c) { activeCharts.push(c); } });
 })();
 """
 
@@ -348,6 +204,16 @@ def load_chartjs():
         print(f"ERROR: Chart.js not found at {path}", file=sys.stderr)
         print("Run: curl -sL https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js "
               f"-o {path}", file=sys.stderr)
+        sys.exit(1)
+    with open(path) as f:
+        return f.read()
+
+
+def load_pcp_charts_js():
+    """Load the shared PCP chart rendering functions."""
+    path = os.path.join(SCRIPT_DIR, "pcp-charts.js")
+    if not os.path.isfile(path):
+        print(f"ERROR: pcp-charts.js not found at {path}", file=sys.stderr)
         sys.exit(1)
     with open(path) as f:
         return f.read()
@@ -399,7 +265,7 @@ def escape_json_for_script(json_str):
     return json_str.replace("</", "<\\/").replace("<!--", "<\\!--")
 
 
-def build_html(chartjs_src, data_json, scenarios_json, timezone):
+def build_html(chartjs_src, pcp_charts_src, data_json, scenarios_json, timezone):
     """Assemble the complete HTML document."""
     safe_data = escape_json_for_script(data_json)
     safe_scenarios = escape_json_for_script(scenarios_json)
@@ -433,6 +299,9 @@ def build_html(chartjs_src, data_json, scenarios_json, timezone):
 {chartjs_src}
 </script>
 <script>
+{pcp_charts_src}
+</script>
+<script>
 {JS_APP}
 </script>
 </body>
@@ -455,6 +324,7 @@ def main():
     output = args.output or os.path.join(args.workdir, "pcp-dashboard.html")
 
     chartjs_src = load_chartjs()
+    pcp_charts_src = load_pcp_charts_js()
     data = load_metrics(dashboard_dir)
     scenarios = load_scenarios(dashboard_dir)
 
@@ -465,7 +335,7 @@ def main():
     data_json = json.dumps(data, separators=(",", ":"))
     scenarios_json = json.dumps(scenarios, separators=(",", ":"))
 
-    html = build_html(chartjs_src, data_json, scenarios_json, args.timezone)
+    html = build_html(chartjs_src, pcp_charts_src, data_json, scenarios_json, args.timezone)
 
     with open(output, "w") as f:
         f.write(html)

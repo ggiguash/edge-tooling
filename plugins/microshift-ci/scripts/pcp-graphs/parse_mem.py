@@ -2,6 +2,7 @@
 """Parse pcp2json output with mem.util.{used,free,cached} and mem.physmem.
 
 pcp2json returns these as kilobyte values. We convert to GB for readability.
+used_gb excludes cached so that Used + Cached + Free = Total for stacked charts.
 
 Outputs a clean JSON with arrays: timestamps, used_gb, cached_gb, free_gb, total_gb.
 """
@@ -120,8 +121,10 @@ def main():
         if total is None:
             total = used + free + cached
 
+        used_excl_cached = used - cached
+
         result["timestamps"].append(ts)
-        result["used_gb"].append(round(used * KB_TO_GB, 2))
+        result["used_gb"].append(round(used_excl_cached * KB_TO_GB, 2))
         result["cached_gb"].append(round(cached * KB_TO_GB, 2))
         result["free_gb"].append(round(free * KB_TO_GB, 2))
         result["total_gb"].append(round(total * KB_TO_GB, 2))

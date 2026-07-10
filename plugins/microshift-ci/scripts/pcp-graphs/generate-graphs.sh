@@ -1,12 +1,12 @@
 #!/bin/bash
-# Generate PCP performance graphs for all jobs in a workdir.
+# Extract PCP metrics as JSON for all jobs in a workdir.
 #
 # For each job that has PCP archives (pmlogs), extracts metrics and
-# produces PNG graphs. Output goes to ${WORKDIR}/graphs/<build_id>/.
+# produces JSON files. Output goes to ${WORKDIR}/graphs/<build_id>/.
 #
 # Usage: generate-graphs.sh --workdir DIR [--parallel N] [--timezone TZ]
 #
-# Prerequisites: pcp-export-pcp2json, python3, matplotlib
+# Prerequisites: pcp-export-pcp2json, python3
 
 set -euo pipefail
 
@@ -67,46 +67,32 @@ generate_job_graphs() {
     local output_dir="${WORKDIR}/graphs/${build_id}"
     mkdir -p "${output_dir}"
 
-    # CPU usage graph (tab order: 1)
-    if "${SCRIPT_DIR}/extract_cpu.sh" "${pcp_dir}" "${output_dir}/1_cpu_usage.json" "${TIMEZONE}" 2>/dev/null; then
-        if python3 "${SCRIPT_DIR}/plot_cpu.py" "${output_dir}/1_cpu_usage.json" \
-                -o "${output_dir}/1_cpu_usage.png" --timezone "${TIMEZONE}" >/dev/null 2>&1; then
-            echo "  ${build_id}: cpu_usage" >&2
-        else
-            echo "  ${build_id}: cpu_usage plot failed" >&2
-        fi
+    # CPU metrics
+    if "${SCRIPT_DIR}/extract_cpu.sh" "${pcp_dir}" "${output_dir}/cpu.json" "${TIMEZONE}" 2>/dev/null; then
+        echo "  ${build_id}: cpu" >&2
     else
         echo "  ${build_id}: cpu extraction failed" >&2
     fi
 
-    # Memory usage graph (tab order: 2)
-    if "${SCRIPT_DIR}/extract_mem.sh" "${pcp_dir}" "${output_dir}/2_mem_usage.json" "${TIMEZONE}" 2>/dev/null; then
-        if python3 "${SCRIPT_DIR}/plot_mem.py" "${output_dir}/2_mem_usage.json" \
-                -o "${output_dir}/2_mem_usage.png" --timezone "${TIMEZONE}" >/dev/null 2>&1; then
-            echo "  ${build_id}: mem_usage" >&2
-        else
-            echo "  ${build_id}: mem_usage plot failed" >&2
-        fi
+    # Memory metrics
+    if "${SCRIPT_DIR}/extract_mem.sh" "${pcp_dir}" "${output_dir}/mem.json" "${TIMEZONE}" 2>/dev/null; then
+        echo "  ${build_id}: mem" >&2
+    else
+        echo "  ${build_id}: mem extraction failed" >&2
     fi
 
-    # Disk I/O graph (tab order: 3)
-    if "${SCRIPT_DIR}/extract_io.sh" "${pcp_dir}" "${output_dir}/3_disk_io.json" "${TIMEZONE}" 2>/dev/null; then
-        if python3 "${SCRIPT_DIR}/plot_io.py" "${output_dir}/3_disk_io.json" \
-                -o "${output_dir}/3_disk_io.png" --timezone "${TIMEZONE}" >/dev/null 2>&1; then
-            echo "  ${build_id}: disk_io" >&2
-        else
-            echo "  ${build_id}: disk_io plot failed" >&2
-        fi
+    # Disk I/O metrics
+    if "${SCRIPT_DIR}/extract_io.sh" "${pcp_dir}" "${output_dir}/io.json" "${TIMEZONE}" 2>/dev/null; then
+        echo "  ${build_id}: io" >&2
+    else
+        echo "  ${build_id}: io extraction failed" >&2
     fi
 
-    # Disk usage graph (tab order: 4)
-    if "${SCRIPT_DIR}/extract_disk_usage.sh" "${pcp_dir}" "${output_dir}/4_disk_usage.json" "${TIMEZONE}" 2>/dev/null; then
-        if python3 "${SCRIPT_DIR}/plot_disk_usage.py" "${output_dir}/4_disk_usage.json" \
-                -o "${output_dir}/4_disk_usage.png" --timezone "${TIMEZONE}" >/dev/null 2>&1; then
-            echo "  ${build_id}: disk_usage" >&2
-        else
-            echo "  ${build_id}: disk_usage plot failed" >&2
-        fi
+    # Disk usage metrics
+    if "${SCRIPT_DIR}/extract_disk_usage.sh" "${pcp_dir}" "${output_dir}/disk.json" "${TIMEZONE}" 2>/dev/null; then
+        echo "  ${build_id}: disk" >&2
+    else
+        echo "  ${build_id}: disk extraction failed" >&2
     fi
 }
 
@@ -135,5 +121,5 @@ done <<< "${pcp_dirs}"
 wait
 
 # Count results
-local_ok=$(find "${WORKDIR}/graphs" -name "*.png" 2>/dev/null | wc -l)
-echo "Done: ${local_ok} graphs generated." >&2
+local_ok=$(find "${WORKDIR}/graphs" -name "*.json" 2>/dev/null | wc -l)
+echo "Done: ${local_ok} metric files generated." >&2
