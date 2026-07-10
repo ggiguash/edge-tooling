@@ -126,25 +126,24 @@ var pcpCharts = (function() {
     }
 
     function renderIo(grid, d) {
-        var c = makeCard(grid, 'Disk I/O');
-        var chart = new Chart(c.canvas, { type: 'line', data: { labels: d.timestamps, datasets: [
-            { label: 'Read OPS', data: d.bi, borderColor: '#3b82f6', backgroundColor: 'transparent', fill: false, pointRadius: 0, borderWidth: 1.5, tension: 0.2, yAxisID: 'y' },
-            { label: 'Write OPS', data: d.bo, borderColor: '#ef4444', backgroundColor: 'transparent', fill: false, pointRadius: 0, borderWidth: 1.5, tension: 0.2, yAxisID: 'y' },
-            { label: 'Await (ms)', data: d.await, borderColor: '#22c55e', backgroundColor: 'transparent', fill: false, pointRadius: 0, borderWidth: 1.5, borderDash: [5, 3], tension: 0.2, yAxisID: 'y1' }
-        ] }, options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }, tooltip: { mode: 'index', intersect: false } },
-            scales: {
-                x: { ticks: { maxTicksLimit: 8, maxRotation: 0, font: { size: 10 } }, grid: { display: false } },
-                y: { position: 'left', title: { display: true, text: 'OPS', font: { size: 11 } }, beginAtZero: true, ticks: { font: { size: 10 } } },
-                y1: { position: 'right', title: { display: true, text: 'Await (ms)', font: { size: 11 } }, beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { font: { size: 10 } } }
-            }
-        } });
-        track(chart);
-        addStats(c.card, [
+        var c1 = makeCard(grid, 'Disk I/O Throughput');
+        var chart1 = new Chart(c1.canvas, { type: 'line', data: { labels: d.timestamps, datasets: [
+            { label: 'Read', data: d.bi, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.15)', fill: true, pointRadius: 0, borderWidth: 1.5, tension: 0.2 },
+            { label: 'Write', data: d.bo, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.15)', fill: true, pointRadius: 0, borderWidth: 1.5, tension: 0.2 }
+        ] }, options: lineOpts('OPS') });
+        track(chart1);
+        addStats(c1.card, [
             { label: 'Peak Read', value: peak(d.bi).toFixed(0) + ' OPS' },
-            { label: 'Peak Write', value: peak(d.bo).toFixed(0) + ' OPS' },
+            { label: 'Peak Write', value: peak(d.bo).toFixed(0) + ' OPS' }
+        ]);
+
+        var c2 = makeCard(grid, 'Disk I/O Latency');
+        var chart2 = new Chart(c2.canvas, { type: 'line', data: { labels: d.timestamps, datasets: [
+            { label: 'Await', data: d.await, borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.15)', fill: true, pointRadius: 0, borderWidth: 1.5, tension: 0.2 },
+            { label: 'Queue Length', data: d.aveq, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.15)', fill: true, pointRadius: 0, borderWidth: 1.5, tension: 0.2 }
+        ] }, options: lineOpts('ms / depth') });
+        track(chart2);
+        addStats(c2.card, [
             { label: 'Peak Await', value: peak(d.await).toFixed(1) + ' ms' },
             { label: 'Peak Queue', value: peak(d.aveq).toFixed(2) }
         ]);
