@@ -82,17 +82,23 @@ var pcpCharts = (function() {
         ]);
     }
 
+    function memOpts(yMax) {
+        var opts = lineOpts('GB', yMax);
+        opts.scales.y.stacked = true;
+        return opts;
+    }
+
     function renderMem(grid, d) {
         var c = makeCard(grid, 'Memory Usage');
         var ds = [
-            { label: 'Used', data: d.used_gb, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.15)', fill: true, pointRadius: 0, borderWidth: 1.5, tension: 0.2, order: 2 },
-            { label: 'Cached', data: d.cached_gb, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.15)', fill: true, pointRadius: 0, borderWidth: 1.5, tension: 0.2, order: 1 }
+            { label: 'Used', data: d.used_gb, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.4)', fill: 'origin', pointRadius: 0, borderWidth: 1.5, tension: 0.2, stack: 'mem', order: 2 },
+            { label: 'Cached', data: d.cached_gb, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.4)', fill: '-1', pointRadius: 0, borderWidth: 1.5, tension: 0.2, stack: 'mem', order: 1 }
         ];
         if (d.total_gb && d.total_gb.length) {
             ds.push({ label: 'Total', data: d.total_gb, borderColor: '#333', backgroundColor: 'transparent', fill: false, pointRadius: 0, borderWidth: 1.5, borderDash: [5, 3], tension: 0, order: 0 });
         }
         var maxY = d.total_gb && d.total_gb.length ? Math.ceil(Math.max.apply(null, d.total_gb) * 1.1) : undefined;
-        var chart = new Chart(c.canvas, { type: 'line', data: { labels: d.timestamps, datasets: ds }, options: lineOpts('GB', maxY) });
+        var chart = new Chart(c.canvas, { type: 'line', data: { labels: d.timestamps, datasets: ds }, options: memOpts(maxY) });
         track(chart);
         addStats(c.card, [
             { label: 'Peak Used', value: peak(d.used_gb).toFixed(2) + ' GB' },
