@@ -46,7 +46,7 @@ def extract_issue_type(issue):
 
 
 def extract_sp(issue, issue_type=None):
-    """Extract story points. Bugs always return 0."""
+    """Extract story points. Bugs always return 0. Returns 0 on unparseable input."""
     if issue_type is None:
         issue_type = extract_issue_type(issue)
     if issue_type == "Bug":
@@ -54,10 +54,20 @@ def extract_sp(issue, issue_type=None):
     raw = issue.get("customfield_10028")
     if raw is None:
         return 0
-    if isinstance(raw, dict):
-        val = raw.get("value")
-        return int(val) if val is not None else 0
-    return int(float(raw))  # truncates fractional SP intentionally
+    try:
+        if isinstance(raw, bool):
+            return 0
+        if isinstance(raw, dict):
+            val = raw.get("value")
+            if val is None:
+                return 0
+            val = float(val)
+        else:
+            val = float(raw)
+        result = max(0, round(val))
+        return result
+    except (ValueError, TypeError):
+        return 0
 
 
 def extract_epic_key(issue):
@@ -174,6 +184,16 @@ def format_date(d):
     if isinstance(d, str):
         return parse_date(d).isoformat()
     return d.isoformat()
+
+
+def safe_format_date(d, fallback):
+    """Format date, returning fallback on None or parse failure."""
+    if d is None:
+        return fallback
+    try:
+        return format_date(d)
+    except (ValueError, TypeError, AttributeError):
+        return fallback
 
 
 def days_between(start, end, inclusive=True):
