@@ -30,25 +30,25 @@ def _parse_bool(value):
 
 
 def parse_structured_summary(filepath):
-    """Extract the STRUCTURED SUMMARY JSON array from a per-job report file.
+    """Parse a per-job report file as JSON.
 
     Returns a list of dicts, one per failure entry. Returns [] if the file
-    has no STRUCTURED SUMMARY block or the JSON is malformed.
+    cannot be parsed as JSON.
     """
     with open(filepath, "r") as f:
         content = f.read()
 
-    m = re.search(
-        r"--- STRUCTURED SUMMARY ---\n(.+?)(?:\n--- END STRUCTURED SUMMARY ---|\Z)",
-        content, re.DOTALL,
-    )
-    if not m:
-        return []
-
     try:
-        entries = json.loads(m.group(1))
+        entries = json.loads(content)
     except json.JSONDecodeError:
-        return []
+        m = re.search(r'\[.*\]', content, re.DOTALL)
+        if m:
+            try:
+                entries = json.loads(m.group(0))
+            except json.JSONDecodeError:
+                return []
+        else:
+            return []
 
     if isinstance(entries, dict):
         entries = [entries]
@@ -66,18 +66,18 @@ def parse_structured_summary(filepath):
 
         results.append({
             "severity": severity,
-            "stack_layer": data.get("stack_layer", ""),
-            "step_name": data.get("step_name", ""),
-            "error_signature": data.get("error_signature", ""),
-            "raw_error": data.get("raw_error", ""),
-            "root_cause": data.get("root_cause", ""),
+            "stack_layer": data.get("stack_layer") or "",
+            "step_name": data.get("step_name") or "",
+            "error_signature": data.get("error_signature") or "",
+            "raw_error": data.get("raw_error") or "",
+            "root_cause": data.get("root_cause") or "",
             "infrastructure_failure": _parse_bool(data.get("infrastructure_failure", False)),
-            "job_url": data.get("job_url", ""),
-            "job_name": data.get("job_name", ""),
-            "release": data.get("release", ""),
-            "finished": data.get("finished", ""),
-            "remediation": data.get("remediation", ""),
-            "confidence": data.get("confidence", ""),
+            "job_url": data.get("job_url") or "",
+            "job_name": data.get("job_name") or "",
+            "release": data.get("release") or "",
+            "finished": data.get("finished") or "",
+            "remediation": data.get("remediation") or "",
+            "confidence": data.get("confidence") or "",
             "causal_chain": [
                 link for link in (data.get("causal_chain") or [])
                 if isinstance(link, dict) and "cause" in link
