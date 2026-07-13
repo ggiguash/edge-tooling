@@ -11,6 +11,8 @@ Load only the law files your task requires. Do not read the entire `laws/` direc
 | Create Epic | `laws/01-jira-projects.md`, `laws/04-jira-epics.md`, `laws/06-jira-fields.md`, `laws/07-workflow-states.md`, `laws/13-roles.md`, `laws/14-agent-conventions.md` |
 | Release Health (orchestrator) | `laws/00-team-roster.md`, `laws/01-jira-projects.md`, `laws/05-jira-features.md`, `laws/06-jira-fields.md`, `laws/09-sprint-policies.md`, `laws/14-agent-conventions.md` |
 | Release Health Analysis | `laws/00-team-roster.md`, `laws/01-jira-projects.md`, `laws/03-jira-bugs.md`, `laws/04-jira-epics.md`, `laws/06-jira-fields.md`, `laws/07-workflow-states.md`, `laws/09-sprint-policies.md` |
+| Release Planning (orchestrator) | `laws/00-team-roster.md`, `laws/01-jira-projects.md`, `laws/03-jira-bugs.md`, `laws/04-jira-epics.md`, `laws/05-jira-features.md`, `laws/06-jira-fields.md`, `laws/09-sprint-policies.md`, `laws/14-agent-conventions.md` |
+| Release Planning Analysis | `laws/02-jira-stories.md`, `laws/04-jira-epics.md`, `laws/05-jira-features.md`, `laws/07-workflow-states.md`, `laws/09-sprint-policies.md` |
 | Sprint Health | `laws/00-team-roster.md`, `laws/06-jira-fields.md`, `laws/07-workflow-states.md`, `laws/09-sprint-policies.md` |
 | Bug Triage | `laws/01-jira-projects.md`, `laws/03-jira-bugs.md`, `laws/10-bug-triage.md`, `laws/11-work-prioritization.md` |
 | Epic Refinement | `laws/04-jira-epics.md`, `laws/12-epic-feature-refinement.md`, `laws/13-roles.md` |

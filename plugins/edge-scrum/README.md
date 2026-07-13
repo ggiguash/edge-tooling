@@ -68,3 +68,35 @@ Analyzes the health of an OCP release cycle. Traverses the full Jira hierarchy �
 Output is saved to `.reports/release_health_{version}_{YYYY-MM-DD}.md`.
 
 See [`skills/release-health/README.md`](skills/release-health/README.md) for full usage details.
+
+#### `release-planning`
+
+Assesses whether the team can deliver planned scope within remaining time. Runs a data-quality gate followed by six planning risk checks — capacity, timeline, assignment, bug load, sizing, and composite progress — to surface risks per person and per feature before they become execution problems.
+
+**Usage:**
+
+```shell
+/release-planning [version] [sprint-range] [bc:branch-cut-sprint] [pd:pencils-down-sprint] [--component <component>]
+```
+
+| Example | Description |
+|---------|-------------|
+| `/release-planning` | Interactive mode — prompts for all parameters |
+| `/release-planning 5.0 287-292 bc:292` | Analyze OCP 5.0, sprints 287–292, branch cut at 292 |
+| `/release-planning 5.0 287-292 bc:292 pd:291` | Same, with pencils down at sprint 291 |
+| `/release-planning 5.0 287-292 bc:292 --component TNA` | Filtered to TNA features only |
+
+**Pencils down** is when all feature code must be merged. **Branch cut** is when the release branch is created. Feature timeline risk is measured against pencils down. If `pd:` is omitted, it defaults to the branch cut sprint.
+
+**What it produces:**
+
+1. **Data Quality** — validates story-level breakdown before running checks
+2. **Capacity** — per-person assigned SP vs remaining capacity
+3. **Timeline** — per-feature remaining work vs time left
+4. **Assignment** — unassigned work and single points of failure
+5. **Bug Load** — unassigned Blocker/Critical bugs
+6. **Sizing** — T-shirt size vs actual scope mismatches
+7. **Composite Risk** — multi-signal risk assessment per feature (LOW/MEDIUM/HIGH)
+8. **Recommendations** — actionable per-person, per-feature, and team-level actions
+
+Output is saved to `.reports/release_planning_{version}_{YYYY-MM-DD}.md` and `.reports/release_planning_{version}_{YYYY-MM-DD}.docx`.
