@@ -27,26 +27,25 @@ This command does NOT re-analyze CI jobs. It consumes existing job analysis file
 
 - `<ARGUMENTS>` (required): Source identifier(s), optionally followed by flags
   - `<sources>` (required): One or more comma-separated sources. Each source is one of:
-    - **Release version** (e.g., `4.22`, `main`): Looks for files matching `jobs/release-<release>-job-*.txt`
-    - **PR number** (e.g., `pr-6396` or `pr6396`): Looks for files matching `jobs/prs-job-*-pr<number>-*.txt`
+    - **Release version** (e.g., `4.22`, `main`): Looks for files matching `jobs/release-<release>-job-*.json`
+    - **PR number** (e.g., `pr-6396` or `pr6396`): Looks for files matching `jobs/prs-job-*-pr<number>-*.json`
     - **Rebase PR shorthand** (e.g., `rebase-release-4.22`): Resolves to the corresponding rebase PR by scanning existing `jobs/prs-job-*` files for the matching release version in their content
   - `--create` (optional): Actually create/update JIRA issues. Without this flag, only a dry-run report is produced. See Step 3 for the auto-decision policy.
 
 ## Prerequisites
 
 - Job analysis files must already exist in `<WORKDIR>/jobs/`:
-  - For releases: `jobs/release-<release>-job-*.txt` (produced by `/microshift-ci:doctor`)
-  - For PRs: `jobs/prs-job-*-pr<number>-*.txt` (produced by `/microshift-ci:doctor`)
-- Each job file must contain a `--- STRUCTURED SUMMARY ---` block (see below)
+  - For releases: `jobs/release-<release>-job-*.json` (produced by `/microshift-ci:doctor`)
+  - For PRs: `jobs/prs-job-*-pr<number>-*.json` (produced by `/microshift-ci:doctor`)
+- Each job file must be a valid JSON array (see below)
 - MCP Jira server must be configured and accessible
 - User must have permissions to create issues in USHIFT
 
-### STRUCTURED SUMMARY Block
+### Job File Format
 
-Each job analysis file produced by `/microshift-ci:prow-job` must end with a machine-readable JSON block. The block is a JSON array with one object per independent failure. Each file may contain multiple entries when a job has independent failures across different scenarios.
+Each job analysis file produced by the `microshift-ci:prow-job-analyzer` agent is a pure JSON file containing an array with one object per independent failure. Each file may contain multiple entries when a job has independent failures across different scenarios.
 
-```text
---- STRUCTURED SUMMARY ---
+```json
 [
   {
     "severity": 3,
@@ -63,10 +62,9 @@ Each job analysis file produced by `/microshift-ci:prow-job` must end with a mac
     "finished": "2026-06-01"
   }
 ]
---- END STRUCTURED SUMMARY ---
 ```
 
-If a job file lacks this block, it is skipped with a warning.
+If a job file cannot be parsed as valid JSON, it is skipped with a warning.
 
 ## Work Directory
 
@@ -576,30 +574,27 @@ Creates bugs across all releases, updating existing Jira duplicates and skipping
 ```
 
 ```text
-Error: No job analysis files found at <WORKDIR>/jobs/release-4.19-job-*.txt
-
-Run the analysis first:
-  /microshift-ci:doctor 4.19
+No job files found for 4.19 in <WORKDIR>
 ```
 
 ## Notes
 
 - This command does NOT run CI analysis — it only consumes existing analysis files from `<WORKDIR>`
 - Supports two file naming patterns:
-  - Release jobs: `jobs/release-<release>-job-*.txt` (from `/microshift-ci:doctor`)
-  - PR jobs: `jobs/prs-job-*-pr<number>-*.txt` (from `/microshift-ci:doctor`)
+  - Release jobs: `jobs/release-<release>-job-*.json` (from `/microshift-ci:doctor`)
+  - PR jobs: `jobs/prs-job-*-pr<number>-*.json` (from `/microshift-ci:doctor`)
 - Dry-run is the default to prevent accidental bug creation
 - The `--create` flag enables actual bug creation and updating
 - Candidates are always merged via `search-bugs.py --merge` (even for a single source) to produce a unified output with Jira data injected. Cross-release deduplication uses fuzzy signature matching (token-based overlap similarity, 50% threshold)
 - Infrastructure failures (`failure_type: "infrastructure"`) are automatically skipped — these are transient CI/cloud issues, not product bugs. Classification uses the same step-name-based logic as the HTML report (`classify_breakdown` in `classify.py`)
 - Bugs are created in USHIFT with component "MicroShift"; duplicate search covers both USHIFT and OCPBUGS
 - All created bugs are labeled with `microshift-ci-ai-generated` for tracking
-- The STRUCTURED SUMMARY block in job files is required — this is a contract with `/microshift-ci:prow-job`
+- Valid JSON format in job files is required — this is a contract with the `microshift-ci:prow-job-analyzer` agent
 - Machine-readable bug mapping files (`bugs/bug-matches-<source>.json`) are written per source in Step 2 (both dry-run and create modes). They serve two purposes: (1) consumed by `create-report.py` to show JIRA bug links in the HTML report, and (2) consumed by `--merge` in Step 2a for Jira-based deduplication across releases
 
 ## Related Skills
 
 - **microshift-ci:doctor**: Produces job analysis files consumed by this command
-- **microshift-ci:prow-job**: Command that produces individual job reports with STRUCTURED SUMMARY
+- **microshift-ci:prow-job**: Command that produces individual job reports as JSON
 - **jira:create-bug**: Single bug creation skill (not used here — we call MCP directly)
 - **microshift-ci:close-stale-bugs**: Closes stale unlinked bugs (should run after this skill)

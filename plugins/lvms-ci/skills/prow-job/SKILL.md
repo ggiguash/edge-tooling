@@ -137,17 +137,18 @@ The user argument is: `<ARGUMENTS>`
 
 2. **Scan for errors**: Start by scanning the top level `build-log.txt` file for errors and determine the step where the error occurred. Record each error with the filepath and line number for later reference.
 
-3. **Read context**: Iterate over each recorded error, locate the log file and line number, then read 50 lines before and 50 lines after the error. Use this information to characterize the error. Think about whether this error is transient and think about where in the stack the error occurs. Does it occur in the cloud infra, the openshift or prow ci-config, the hypervisor, or is it a legitimate test failure? If it is a legitimate test failure, determine what stage of the test failed: setup, testing, teardown.
+3. **Read context**: Iterate over each recorded error, locate the log file and line number, then read 50 lines before and 50 lines after the error. Use this information to characterize the error. Think about whether this error is transient and think about where in the stack the error occurs. Does it occur in the cloud infra, the openshift or prow ci-config, the hypervisor, or is it a legitimate test failure? If it is a legitimate test failure, determine what stage of the test failed: setup, testing, teardown. Record the filepath and line number of each piece of evidence — these become `causal_chain` entries in the output.
 
 4. **Analyze the error**: Based on the context of the error, think hard about whether this error caused the test to fail, is a transient error, or is a red herring.
 
     4.1 If it is a legitimate test error, analyze the test logs to determine the source of the error.
     4.2 If the source of the error appears to be related to the LVMS operator or its components (TopoLVM, LVMCluster), check the operator and controller logs in the step artifacts.
+    4.3 Assess `confidence` based on the strength of evidence: `high` when every causal link is directly evidenced, `medium` when inferred but consistent, `low` when evidence ran out. If `low`, populate `analysis_gaps` with what was missing (e.g. `"operator logs not available"`). Record any failing test scenario names for the `scenarios` field.
 
-5. **Produce a report**: Create a concise report of the error. The report MUST specify:
-   - Where in the pipeline the error occurred
-   - The specific step the error occurred in
-   - Whether the test failure was legitimate (i.e., a test failed) or due to an infrastructure failure (i.e., build image was not found, AWS infra failed due to quota, hypervisor failed to create test host VM, etc.)
+5. **Produce the output**: Populate the JSON fields for each independent failure. Each entry must specify:
+   - `stack_layer` and `step_name` for where in the pipeline the error occurred
+   - `infrastructure_failure` for whether the failure is due to CI infrastructure rather than LVMS code
+   - `causal_chain` linking the observed symptom to the underlying cause, with evidence file paths and quotes
 
 ## Prerequisites
 
@@ -163,7 +164,7 @@ The user argument is: `<ARGUMENTS>`
 
 ## Output Template
 
-Use this template for your error analysis reports:
+Your entire response must be a valid JSON array. No prose, no markdown fences, no explanation before or after. One object per independent failure (max 5). Single failures are still wrapped in a JSON array.
 
 ### Severity Guide
 
@@ -175,20 +176,9 @@ Use this template for your error analysis reports:
 | 4 | Genuine test failure in LVMS code | Integration test assertion failure, regression in operator logic |
 | 5 | LVMS operator or setup issue | LVMCluster not ready, operator subscription failure, storage class misconfiguration |
 
-```text
-Error Severity: {1-5, see Severity Guide above}
-Stack Layer: {AWS Infra, External Infrastructure, build phase, deploy phase, test setup phase, Test Configuration, test, teardown}
-Step Name: {The specific step where the error occurred}
-Error: {The exact error, including additional log context if it relates to the failure}
-Suggested Remediation: {Based on where the error occurs, think hard about how to correct the error ONLY if it requires fixing. Infrastructure failures may not require code changes.}
-```
+### JSON Schema
 
-After the human-readable report above, append a machine-readable JSON block for downstream automation. This block MUST appear at the very end of the report, after all prose and analysis. The block is a JSON array with one object per failure.
-
-**CRITICAL:** You MUST include BOTH the opening `--- STRUCTURED SUMMARY ---` marker AND the closing `--- END STRUCTURED SUMMARY ---` marker.
-
-```text
---- STRUCTURED SUMMARY ---
+```json
 [
   {
     "severity": 3,
@@ -202,10 +192,15 @@ After the human-readable report above, append a machine-readable JSON block for 
     "job_name": "periodic-ci-openshift-lvm-operator-main-e2e-aws-sno-qe-integration-tests",
     "release": "main",
     "remediation": "investigate TopoLVM node agent logs for volume group initialization errors",
-    "finished": "2026-06-01"
+    "finished": "2026-06-01",
+    "causal_chain": [
+      {"cause": "LVMCluster CR not ready after 600s", "evidence": "/tmp/lvms-ci-claude-workdir.260601/artifacts/123456/build-log.txt:1234", "quote": "LVMCluster not ready after 600s"}
+    ],
+    "confidence": "medium",
+    "analysis_gaps": [],
+    "scenarios": []
   }
 ]
---- END STRUCTURED SUMMARY ---
 ```
 
 **Field descriptions:**
@@ -222,6 +217,10 @@ After the human-readable report above, append a machine-readable JSON block for 
 - `release`: the release branch — extract from job_name (e.g. 4.22 from release-4.22), or from finished.json metadata repos field, or default to "main"
 - `remediation`: suggested fix or next step — what should be done to address this failure (~120 chars max). For infrastructure failures, state the infra action (e.g. "retry the job", "rotate AWS credentials"). For product bugs, state the code-level fix direction
 - `finished`: the job finish date in YYYY-MM-DD format, extracted from finished.json timestamp field or build log timestamps
+- `causal_chain`: array of links from observed symptom toward root cause. Each link: `{"cause": ..., "evidence": ..., "quote": ...}` where `evidence` is the **absolute** file path with a mandatory line number (`/absolute/path:lineNum`; use `:1` for binary files) and `quote` is a short verbatim excerpt from the cited line (empty for binary files). A SubagentStop hook validates that each cited file exists, the line number is in range, and the quote appears on the cited line
+- `confidence`: one of `high`, `medium`, `low` — `high` when every chain link is directly evidenced, `medium` when inferred but consistent, `low` when evidence ran out
+- `analysis_gaps`: array of strings naming evidence that was missing (e.g. `"no sosreport in artifacts"`). Empty array when nothing was skipped
+- `scenarios`: array of scenario names where this failure occurred. Empty array for non-scenario jobs and build/infra failures
 
 ### RAW_ERROR rules
 

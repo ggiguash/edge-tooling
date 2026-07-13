@@ -165,7 +165,7 @@ main() {
         release=$(echo "${basename_f}" | sed 's/release-//;s/-jobs\.json//')
 
         local job_reports
-        job_reports=$(find "${workdir}/jobs" -maxdepth 1 -name "release-${release}-job-*.txt" 2>/dev/null | wc -l)
+        job_reports=$(find "${workdir}/jobs" -maxdepth 1 -name "release-${release}-job-*.json" 2>/dev/null | wc -l)
         local has_summary=false
         [[ -f "${workdir}/jobs/release-${release}-summary.json" ]] && has_summary=true
         local has_bugs=false
@@ -183,7 +183,7 @@ main() {
     local prs_json="null"
     if [[ -f "${workdir}/jobs/prs-jobs.json" ]]; then
         local pr_reports
-        pr_reports=$(find "${workdir}/jobs" -maxdepth 1 -name "prs-job-*.txt" 2>/dev/null | wc -l)
+        pr_reports=$(find "${workdir}/jobs" -maxdepth 1 -name "prs-job-*.json" 2>/dev/null | wc -l)
         local pr_has_summary=false
         [[ -f "${workdir}/jobs/prs-summary.json" ]] && pr_has_summary=true
         prs_json=$(jq -n \

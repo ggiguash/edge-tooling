@@ -77,9 +77,10 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
    ```text
    Agent: subagent_type=general_purpose, prompt="Analyze this Prow job and save the report:
    1. Run /lvms-ci:prow-job <ARTIFACTS_DIR>
-   2. After the analysis completes, save the FULL report output (including the --- STRUCTURED SUMMARY --- block) to:
-      <WORKDIR>/jobs/release-<RELEASE>-job-<N>-<JOB_ID>.txt
-      Use the Write tool to save the file. The file must contain the complete analysis report."
+   2. After the analysis completes, extract only the JSON array from the output
+      and save it to:
+      <WORKDIR>/jobs/release-<RELEASE>-job-<N>-<JOB_ID>.json
+      Use the Write tool. The file must contain ONLY the valid JSON array — no prose, no markers."
    ```
 
 3. Launch **ALL** agents in a **single message** as **foreground** agents (do NOT use `run_in_background`). Foreground agents in the same message run concurrently — this is just as fast as background agents but keeps your turn active until all complete.

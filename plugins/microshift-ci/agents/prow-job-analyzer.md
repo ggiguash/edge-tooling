@@ -270,6 +270,6 @@ The `root_cause` field captures the underlying mechanism — used alongside `raw
 
 1. **One entry per independent failure** — failures are independent when they occur in different test scenarios with different root causes
 2. **Same root cause = one entry** — when multiple scenarios fail with the same root cause, produce ONE entry. Do NOT split them.
-3. **At most 5 entries per job** — if more than 5 independent failures exist, report the 5 most severe
+3. **At most 10 entries per job** — if more than 10 independent failures exist, report the 10 most severe
 4. **Cascading failures are NOT independent** — when one failure causes others, report only the root failure
 5. **Single failures are still an array** — even when there is only one failure, wrap it in a JSON array

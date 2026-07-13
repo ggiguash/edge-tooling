@@ -137,12 +137,12 @@ def build_pr_json(pr_jobs, timestamp):
 # ---------------------------------------------------------------------------
 
 def find_release_job_files(workdir, release):
-    pattern = os.path.join(workdir, "jobs", f"release-{release}-job-*.txt")
+    pattern = os.path.join(workdir, "jobs", f"release-{release}-job-*.json")
     return sorted(glob_mod.glob(pattern))
 
 
 def find_pr_job_files(workdir):
-    pattern = os.path.join(workdir, "jobs", "prs-job-*.txt")
+    pattern = os.path.join(workdir, "jobs", "prs-job-*.json")
     return sorted(glob_mod.glob(pattern))
 
 
@@ -215,7 +215,7 @@ def main():
         for filepath in files:
             summaries = parse_structured_summary(filepath)
             if not summaries:
-                print(f"  WARNING: no STRUCTURED SUMMARY in {os.path.basename(filepath)}", file=sys.stderr)
+                print(f"  WARNING: no valid JSON in {os.path.basename(filepath)}", file=sys.stderr)
                 continue
             jobs.extend(summaries)
 
@@ -243,7 +243,7 @@ def main():
             for filepath in files:
                 summaries = parse_structured_summary(filepath)
                 if not summaries:
-                    print(f"  WARNING: no STRUCTURED SUMMARY in {os.path.basename(filepath)}", file=sys.stderr)
+                    print(f"  WARNING: no valid JSON in {os.path.basename(filepath)}", file=sys.stderr)
                     continue
                 for summary in summaries:
                     summary["pr_title"] = ""
