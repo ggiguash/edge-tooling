@@ -21,7 +21,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent
 
 Given a list of releases or explicit JIRA bug keys, loads the merged candidates file produced by `/microshift-ci:create-bugs`, groups related bugs by shared root cause, evaluates eligibility, and attempts automated fixes in `test/`, `scripts/`, or `docs/` of openshift/microshift, opening one PR per group against `main` for human review. Changes to product code (`cmd/`, `pkg/`, `vendor/`, etc.) are never attempted.
 
-Operates in **dry-run mode by default** — shows which groups are eligible and what fixes would be attempted. Use `--fix` to perform actual fixes.
+Operates in **fix mode by default** — shows which groups are eligible and attempts fixes. Publishing (PRs, branch cleanup) is blocked when `MICROSHIFT_CI_DRY_RUN=1` is set (typically in CI) — this is enforced deterministically, not just by convention (see Notes).
 
 ## Arguments
 
@@ -66,7 +66,8 @@ Evaluated in order per **group** (a group is one merged candidate and all its JI
 
 1. Parse `<ARGUMENTS>` to determine mode (releases vs. explicit keys) and flags (`--fix`)
 2. Validate: if no releases and no keys provided, show error and stop
-3. Read `<WORKDIR>/bugs/bug-candidates-merged-*.json`. If no such file exists, report a **fatal error** and stop:
+3. If `--fix` was given, verify dry-run is not active: `[[ "${MICROSHIFT_CI_DRY_RUN:-}" == "1" ]] && echo blocked || echo ready`. If blocked, report a **fatal error** and stop — every `submit` in this session would be refused. Tell the user to unset `MICROSHIFT_CI_DRY_RUN` (or drop `--fix` to skip publishing).
+4. Read `<WORKDIR>/bugs/bug-candidates-merged-*.json`. If no such file exists, report a **fatal error** and stop:
 
    ```text
    Error: no merged candidates file found in <WORKDIR>/bugs/
@@ -75,11 +76,11 @@ Evaluated in order per **group** (a group is one merged candidate and all its JI
 
    If multiple files exist, read ALL of them and combine their candidates arrays.
 
-4. Build groups from candidates — each candidate with JIRA keys becomes one group:
+5. Build groups from candidates — each candidate with JIRA keys becomes one group:
    - If **releases** given (e.g., `4.22,5.0`): filter candidates to those whose `releases` array contains at least one of the specified release versions, AND whose `duplicates` array is non-empty. Each matching candidate = one group; the group's keys are the keys from `duplicates`.
    - If **explicit USHIFT keys**: scan all candidates' `duplicates` arrays to find which candidates contain any of the given keys. Multiple explicit keys mapping to the same candidate form one group. Keys not found in any candidate are an error — report them and stop.
 
-5. For each group, sort the keys by numeric suffix (ascending) and select the **primary key** — the first (lowest-numbered) USHIFT key. Pass the sorted keys to all `fix-test-bugs.sh` commands so the script's first-key extraction matches.
+6. For each group, sort the keys by numeric suffix (ascending) and select the **primary key** — the first (lowest-numbered) USHIFT key. Pass the sorted keys to all `fix-test-bugs.sh` commands so the script's first-key extraction matches.
 
 ### Step 1: Evaluate Eligibility
 
@@ -124,7 +125,7 @@ SUMMARY
 
 Save the report to `<WORKDIR>/report-fix-test-bugs.txt`.
 
-If no `--fix` flag, stop here.
+If no `--fix` flag, stop here. Publishing is enforced deterministically when `MICROSHIFT_CI_DRY_RUN=1` is set (see Notes for the two-layer design). `check`, `clone`, and `branch` remain allowed in both modes.
 
 ### Step 3: Attempt Fix (per eligible group)
 
@@ -136,7 +137,15 @@ Process eligible groups **sequentially** (one at a time — the single working t
    bash plugins/microshift-ci/scripts/fix-test-bugs.sh clone --workdir <WORKDIR>
    ```
 
-2. **Create branch**:
+2. **Clean up stale branches** (once, before first fix, after clone):
+
+   ```text
+   bash plugins/microshift-ci/scripts/fix-test-bugs.sh cleanup-stale-branches --workdir <WORKDIR>
+   ```
+
+   This deletes fork branches without an open PR — a publishing action, gated on `MICROSHIFT_CI_DRY_RUN`.
+
+3. **Create branch**:
 
    ```text
    bash plugins/microshift-ci/scripts/fix-test-bugs.sh branch --workdir <WORKDIR> --jira-keys USHIFT-XXXX,USHIFT-YYYY
@@ -144,7 +153,7 @@ Process eligible groups **sequentially** (one at a time — the single working t
 
    The branch is named after the primary (first) key.
 
-3. **Apply fix** (LLM step): Read the identified files in `<WORKDIR>/microshift/`, understand the failure from the candidate's `root_cause`, `raw_error`, and `remediation`, and make targeted edits. When the candidate has a `causal_chain`, read it first — the evidence quotes tell you what the analysis actually established; base the fix on the chain, not only on the one-line `root_cause`.
+4. **Apply fix** (LLM step): Read the identified files in `<WORKDIR>/microshift/`, understand the failure from the candidate's `root_cause`, `raw_error`, and `remediation`, and make targeted edits. When the candidate has a `causal_chain`, read it first — the evidence quotes tell you what the analysis actually established; base the fix on the chain, not only on the one-line `root_cause`.
 
    **Constraints** (MUST follow):
    - ONLY modify files under `test/`, `scripts/`, `docs/`
@@ -153,7 +162,7 @@ Process eligible groups **sequentially** (one at a time — the single working t
    - Preserve existing code style and conventions
    - Do NOT refactor, clean up, or improve surrounding code
 
-4. **Verify, commit, push, and create PR**:
+5. **Verify, commit, push, and create PR**:
 
    ```text
    bash plugins/microshift-ci/scripts/fix-test-bugs.sh submit --workdir <WORKDIR> --jira-keys USHIFT-XXXX,USHIFT-YYYY --summary "<short description>" --rationale "<explanation of why this fix was chosen>"
@@ -183,6 +192,11 @@ Save the report to `<WORKDIR>/report-fix-test-bugs.txt` (overwrites the dry-run 
 
 - All PRs target `main` — backporting to release branches is left to the human reviewer
 - The `fix-test-bugs.sh` script enforces safety guardrails deterministically: changes outside `test/`/`scripts/`/`docs/` are rejected, max 5 files
+- **Publishing enforcement** operates in two fail-closed layers keyed to `MICROSHIFT_CI_DRY_RUN=1` (typically set in CI; unset for interactive use):
+  - **Layer 1 (primary)**: The script's `submit` and `cleanup-stale-branches` subcommands refuse to run when the variable is set
+  - **Layer 2 (hook)**: A PreToolUse hook denies `fix-test-bugs.sh submit`, `git push`, and `gh pr create` commands plugin-wide when the variable is set
+  - The hook's regex patterns match canonical command spellings only (e.g. `git push`, not `git --no-pager push` or quoted variants); layer 1 is authoritative. In CI (where the hook is active), non-canonical spellings are unlikely
+  - `--fix` controls whether fixes are attempted; the dry-run variable controls whether publishing succeeds
 - Each group gets its own branch (named after the primary JIRA key), so fixes are independently reviewable
 - If a fix attempt fails (safety check, empty diff, push error), the script reverts all changes so the next group starts clean
 - The skill does NOT update JIRA issues — it only reads the merged candidates file
