@@ -15,6 +15,7 @@ import os
 import re
 import html as html_mod
 import glob as glob_mod
+import urllib.parse
 from datetime import datetime, timezone
 from filter_images import tag_matches_release
 
@@ -40,6 +41,24 @@ STOP_WORDS = frozenset({
 COMPONENT_TITLES = {
     "microshift": "MicroShift",
     "lvm-operator": "LVMS",
+}
+
+JIRA_BASE = "https://issues.redhat.com"
+
+# Per-component settings for the "Create Bug in JIRA" button shown next to
+# every issue for quick manual bug filing. Fields mirror what the component's
+# create-bugs skill would use, so manually filed bugs stay trackable by the
+# existing tooling (Bugs tab query, close-stale-bugs). Components without an
+# entry get no button.
+COMPONENT_JIRA_CREATE = {
+    "microshift": {
+        "pid": "10417",
+        "issuetype": "10016",
+        "component": "83330",
+        "labels": "microshift-ci-ai-generated",
+        "summary_prefix": "MicroShift CI: ",
+        "reporter": "712020:dc2a5866-d3bd-4f61-a413-4daef5b032b7",
+    },
 }
 
 
@@ -87,6 +106,7 @@ CSS = """\
         .bug-links .bug-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.85em; font-weight: 600; margin: 2px 4px 2px 0; text-decoration: none; }
         .bug-tag-open { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
         .bug-tag-regression { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .create-bug-btn { background: #198754; color: #fff; border: 1px solid #157347; }
         .no-bugs { color: #6c757d; font-style: italic; font-size: 0.85em; }
         .toc { background: white; border-radius: 8px; padding: 15px; margin: 15px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         .toc ul { list-style: none; padding-left: 0; }
@@ -1159,15 +1179,136 @@ def _badge_class(total_failed, has_critical=False):
     return "badge-issues"
 
 
-def _render_bug_links(bug_match):
-    if not bug_match:
-        return '<span class="no-bugs">No tracked bugs</span>'
-    has_dups = bool(bug_match.get("duplicates"))
-    has_regs = bool(bug_match.get("regressions"))
+def _jira_escape(text):
+    for ch in r'\{}[]|*^~_':
+        text = text.replace(ch, '\\' + ch)
+    return text
+
+
+def _create_bug_url(issue, source_label, jira_cfg):
+    """Build a JIRA create-issue URL prefilled with the issue's details.
+
+    Uses Jira wiki markup (not Markdown) since the URL bypasses MCP conversion.
+    The causal chain quotes are omitted to stay within browser URL length limits.
+    """
+    summary = f'{jira_cfg["summary_prefix"]}{issue.get("title", "")}'[:100]
+    root_cause = _jira_escape(issue.get("root_cause", ""))
+    next_steps = _jira_escape(issue.get("next_steps", ""))
+    severity = issue.get("severity", "UNKNOWN")
+    failure_type = issue.get("failure_type", "test")
+    confidence = issue.get("confidence", "")
+    scenarios = issue.get("scenarios", [])
+    causal_chain = issue.get("causal_chain", [])
+    jobs = issue.get("affected_jobs", [])[:5]
+
+    lines = [
+        "h2. Description of problem",
+        "",
+        f"CI job failures detected: {source_label}",
+        "",
+        root_cause or "",
+        "",
+        "h2. How reproducible",
+        "",
+        "N/A",
+        "",
+        "h2. Steps to Reproduce",
+        "",
+        "# Run the CI job(s) listed below",
+        f"# Observe failure in step: {failure_type}",
+        "",
+        "h2. Expected results",
+        "",
+        "CI job should pass successfully.",
+        "",
+        "h2. Additional info",
+        "",
+        f"*Error Severity:* {severity}",
+    ]
+    if confidence:
+        lines.append(f"*Analysis confidence:* {confidence}")
+    if scenarios:
+        lines.append(f"*Affected scenarios:* {', '.join(scenarios)}")
+    lines.append(f"*Number of affected jobs:* {issue.get('job_count', len(jobs))}")
+    if jobs:
+        last_date = max(j.get("date", "") for j in jobs)
+        if last_date:
+            lines.append(f"*Last observed:* {last_date}")
+
+    if causal_chain:
+        lines.append("")
+        lines.append("*Root cause chain:*")
+        for link in causal_chain:
+            if isinstance(link, dict) and link.get("cause"):
+                lines.append(f"# {_jira_escape(link['cause'])}")
+
+    if next_steps:
+        lines.append("")
+        lines.append(f"*Remediation:* {next_steps}")
+
+    if jobs:
+        lines.append("")
+        lines.append("*Affected Jobs:*")
+        for job in jobs:
+            name = job.get("name", "unknown")
+            url = job.get("url", "")
+            if url:
+                lines.append(f"- [{name}|{url}]")
+            else:
+                lines.append(f"- {name}")
+
+    lines.append("")
+    lines.append("Prefilled by the CI Doctor report.")
+
+    params = {
+        "pid": jira_cfg["pid"],
+        "issuetype": jira_cfg["issuetype"],
+        "components": jira_cfg["component"],
+        "labels": jira_cfg["labels"],
+        "reporter": jira_cfg.get("reporter", ""),
+        "summary": summary,
+        "description": "\n".join(lines),
+    }
+    params = {k: v for k, v in params.items() if v}
+    # ~4000 char practical limit for CreateIssueDetails URLs:
+    # - https://gitlab.com/gitlab-org/gitlab/-/issues/276896
+    # - https://jira.atlassian.com/browse/JRA-31774
+    max_url_len = 3800
+    base = f"{JIRA_BASE}/secure/CreateIssueDetails!init.jspa?"
+    qs = urllib.parse.urlencode(params)
+    url = base + qs
+    if len(url) > max_url_len and "description" in params:
+        over = len(url) - max_url_len
+        desc = params["description"]
+        suffix = "\n\n(truncated — open the bug to add more detail)"
+        params["description"] = desc[:max(0, len(desc) - over - len(suffix))] + suffix
+        url = base + urllib.parse.urlencode(params)
+    return url
+
+
+def _render_create_bug_button(issue, source_label, jira_cfg):
+    if not jira_cfg:
+        return ""
+    url = _create_bug_url(issue, source_label, jira_cfg)
+    return (
+        f'<a class="bug-tag create-bug-btn" href="{_e(url)}" '
+        'target="_blank">+ Create Bug in JIRA</a>'
+    )
+
+
+def _render_bug_links(bug_match, issue, source_label, jira_cfg=None):
+    has_dups = bool(bug_match) and bool(bug_match.get("duplicates"))
+    has_regs = bool(bug_match) and bool(bug_match.get("regressions"))
+
+    create_btn = _render_create_bug_button(issue, source_label, jira_cfg)
+
     if not has_dups and not has_regs:
-        return '<span class="no-bugs">No tracked bugs</span>'
+        no_bugs = '<span class="no-bugs">No tracked bugs</span>'
+        return f"{no_bugs} {create_btn}" if create_btn else no_bugs
 
     parts = []
+    if create_btn:
+        parts.append(f"{create_btn}<br>")
     if has_dups:
         parts.append("<strong>Bugs:</strong><br>")
         for d in bug_match["duplicates"]:
@@ -1197,7 +1338,7 @@ def _render_bug_links(bug_match):
 # HTML rendering
 # ---------------------------------------------------------------------------
 
-def render_release_section(version, rdata, bug_candidates, index_info=None):
+def render_release_section(version, rdata, bug_candidates, index_info=None, jira_cfg=None):
     if rdata is None:
         return (
             f'        <div class="release-section" id="release-{_e(version)}">\n'
@@ -1269,7 +1410,8 @@ def render_release_section(version, rdata, bug_candidates, index_info=None):
             conf_badge = _render_confidence_badge(issue)
             lines.append(f'                <div class="root-cause"><strong>Root Cause:</strong> {conf_badge} {_e(issue["root_cause"])}</div>')
         lines.extend(_render_investigation(issue))
-        lines.append(f'                <div class="bug-links">{_render_bug_links(bug_match)}</div>')
+        bug_links = _render_bug_links(bug_match, issue, f"Release {version}", jira_cfg)
+        lines.append(f'                <div class="bug-links">{bug_links}</div>')
         if issue.get("affected_jobs"):
             lines.append("                <p><strong>Affected Jobs:</strong></p><ul>")
             for job in issue["affected_jobs"]:
@@ -1284,7 +1426,7 @@ def render_release_section(version, rdata, bug_candidates, index_info=None):
     return "\n".join(lines)
 
 
-def render_pr_section(pr_data, bug_candidates, pr_status, pr_error=None):
+def render_pr_section(pr_data, bug_candidates, pr_status, pr_error=None, jira_cfg=None):
     """Render the Pull Requests tab.
 
     pr_data: analyzed PR summary (from aggregate), may be None.
@@ -1432,7 +1574,8 @@ def render_pr_section(pr_data, bug_candidates, pr_status, pr_error=None):
                     conf_badge = _render_confidence_badge(issue)
                     lines.append(f'                <div class="root-cause"><strong>Root Cause:</strong> {conf_badge} {_e(issue["root_cause"])}</div>')
                 lines.extend(_render_investigation(issue))
-                lines.append(f'                <div class="bug-links">{_render_bug_links(bug_match)}</div>')
+                bug_links = _render_bug_links(bug_match, issue, f'PR #{pr["number"]}', jira_cfg)
+                lines.append(f'                <div class="bug-links">{bug_links}</div>')
                 if issue.get("affected_jobs"):
                     lines.append("                <p><strong>Affected Jobs:</strong></p><ul>")
                     for job in issue["affected_jobs"]:
@@ -1447,7 +1590,7 @@ def render_pr_section(pr_data, bug_candidates, pr_status, pr_error=None):
     return "\n".join(toc_lines) + "\n\n" + "\n".join(lines)
 
 
-def generate_html(component_title, releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error=None, bugs_tab_data=None, images_tab_data=None, index_data=None):
+def generate_html(component_title, releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error=None, bugs_tab_data=None, images_tab_data=None, index_data=None, jira_cfg=None):
     date_str = timestamp.strftime("%Y-%m-%d")
     time_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1508,9 +1651,9 @@ def generate_html(component_title, releases_data, all_bug_candidates, pr_data, p
     sections = []
     _idx = index_data or {}
     for version, rdata in releases_data.items():
-        sections.append(render_release_section(version, rdata, all_bug_candidates, _idx.get(version)))
+        sections.append(render_release_section(version, rdata, all_bug_candidates, _idx.get(version), jira_cfg))
 
-    pr_section = render_pr_section(pr_data, all_bug_candidates, pr_status, pr_error)
+    pr_section = render_pr_section(pr_data, all_bug_candidates, pr_status, pr_error, jira_cfg)
     bugs_section = render_bugs_section(bugs_tab_data) if bugs_tab_data else ""
     images_section = render_images_section(images_tab_data)
 
@@ -1775,7 +1918,7 @@ def main():
 
     # Generate HTML
     timestamp = datetime.now(timezone.utc)
-    html_content = generate_html(component_title, releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error, bugs_tab_data, images_tab_data, index_data)
+    html_content = generate_html(component_title, releases_data, all_bug_candidates, pr_data, pr_status, timestamp, pr_error, bugs_tab_data, images_tab_data, index_data, COMPONENT_JIRA_CREATE.get(component))
 
     output_path = os.path.join(workdir, f"report-{component}-ci-doctor.html")
     with open(output_path, "w") as f:
