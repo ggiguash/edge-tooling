@@ -44,6 +44,11 @@ Analyze MicroShift CI failures, produce HTML reports, and create JIRA bugs.
 /microshift-ci:create-bugs 4.22 --create  # create/update bugs
 ```
 
+Note: The scheduled CI Doctor job runs `create-bugs` in dry-run mode only
+(for bug correlation in the HTML report). Bugs are created manually via the
+prefilled "Create Bug in JIRA" buttons in the report, or by running
+`create-bugs --create` explicitly.
+
 ## Requirements
 
 - `gsutil` CLI (uses anonymous access on public GCS buckets)
