@@ -293,9 +293,7 @@ def load_metrics(dashboard_dir):
                 vm_path = os.path.join(scenario_path, vm)
                 if not os.path.isdir(vm_path):
                     continue
-                metrics = load_vm_metrics(vm_path)
-                if metrics:
-                    vms[vm] = metrics
+                vms[vm] = load_vm_metrics(vm_path)
 
             if vms:
                 data.setdefault(build_id, {})[scenario] = vms
