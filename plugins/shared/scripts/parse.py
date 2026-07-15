@@ -41,13 +41,18 @@ def parse_structured_summary(filepath):
     try:
         entries = json.loads(content)
     except json.JSONDecodeError:
-        m = re.search(r'\[.*\]', content, re.DOTALL)
-        if m:
+        entries = None
+        for m in reversed(list(re.finditer(r'^\[', content, re.MULTILINE))):
+            tail = content[m.start():]
+            m2 = re.search(r'\][ \t]*$', tail, re.MULTILINE)
+            if not m2:
+                continue
             try:
-                entries = json.loads(m.group(0))
+                entries = json.loads(tail[:m2.end()].rstrip())
+                break
             except json.JSONDecodeError:
-                return []
-        else:
+                continue
+        if entries is None:
             return []
 
     if isinstance(entries, dict):

@@ -72,8 +72,8 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 The user argument is: `<ARGUMENTS>`
 
 0. **Determine input type and set up artifacts directory**:
-   - If `<ARGUMENTS>` is a **local directory path** (starts with `/` and contains `build-log.txt`): set `TMP` to that directory. Skip step 1.
-   - If `<ARGUMENTS>` is a **URL** (starts with `http`): create a temporary working directory with `mktemp -d <WORKDIR>/openshift-ci-analysis-XXXX`, set `TMP` to that directory, and proceed to step 1.
+   - If `<ARGUMENTS>` is a **local directory path** (starts with `/` and contains `build-log.txt`): set `TMP` to that directory. Skip step 1. Derive `JOB_URL` from the `build-log.txt` "Link to job on registry info site" line, and extract `JOB_NAME` from the URL path (the path segment before the numeric job ID).
+   - If `<ARGUMENTS>` is a **URL** (starts with `http`): set `JOB_URL` to `<ARGUMENTS>`. Extract `JOB_NAME` from the URL path (the path segment before the numeric job ID — e.g. `periodic-ci-openshift-microshift-release-4.22-periodics-e2e-aws-ovn-ocp-conformance-serial` from the URL). Create a temporary working directory with `mktemp -d <WORKDIR>/openshift-ci-analysis-XXXX`, set `TMP` to that directory, and proceed to step 1.
 
 1. **Download all artifacts** (skip if using pre-downloaded artifacts from step 0):
    Download all prow job artifacts using `gsutil -q -m cp -r` into the temporary working directory. Derive the GCS path by stripping the web prefix from the job URL (handles both Prow and GCS web URL formats):
@@ -98,6 +98,8 @@ The user argument is: `<ARGUMENTS>`
    ```text
    Analyze this prow job:
    artifacts_dir: /tmp/microshift-ci-claude-workdir.260710/artifacts/2075422415638237184
+   job_url: https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-microshift-release-4.22-periodics-e2e-aws-ovn-ocp-conformance-serial/2075422415638237184
+   job_name: periodic-ci-openshift-microshift-release-4.22-periodics-e2e-aws-ovn-ocp-conformance-serial
    graphs_dir: /tmp/microshift-ci-claude-workdir.260710/graphs/2075422415638237184
    source_dir: /tmp/microshift-ci-claude-workdir.260710/src/microshift-release-4.22
    ```

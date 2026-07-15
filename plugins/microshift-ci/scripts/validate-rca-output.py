@@ -35,7 +35,20 @@ VALID_STACK_LAYERS = {
 BINARY_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".tar.xz", ".gz", ".bz2", ".xz", ".zip")
 
 
-def validate_evidence(evidence, quote, prefix):
+def _read_lines(path, cache):
+    """Read file lines with caching to avoid re-reading large build logs."""
+    if path in cache:
+        return cache[path]
+    try:
+        with open(path, errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        lines = None
+    cache[path] = lines
+    return lines
+
+
+def validate_evidence(evidence, quote, prefix, file_cache):
     """Validate that a causal_chain evidence citation is real.
 
     Checks: format (absolute_path:line), file exists, line in range,
@@ -56,10 +69,8 @@ def validate_evidence(evidence, quote, prefix):
     if any(path.endswith(ext) for ext in BINARY_EXTENSIONS):
         return []
 
-    try:
-        with open(path, errors="replace") as f:
-            lines = f.readlines()
-    except OSError:
+    lines = _read_lines(path, file_cache)
+    if lines is None:
         return [f"{prefix}: evidence file could not be read: {path}"]
 
     if line_no < 1 or line_no > len(lines):
@@ -76,7 +87,7 @@ def validate_evidence(evidence, quote, prefix):
     return []
 
 
-def validate_entry(entry, index):
+def validate_entry(entry, index, file_cache):
     errors = []
 
     missing = REQUIRED_FIELDS - set(entry.keys())
@@ -128,7 +139,7 @@ def validate_entry(entry, index):
             if isinstance(evidence, str) and evidence:
                 errors.extend(validate_evidence(
                     evidence, quote,
-                    f"entry[{index}].causal_chain[{ci}]"))
+                    f"entry[{index}].causal_chain[{ci}]", file_cache))
 
     for field in ("analysis_gaps", "scenarios"):
         val = entry.get(field)
@@ -160,12 +171,13 @@ def validate_json_text(text):
     if not data:
         return ["JSON array is empty. Expected at least one failure entry."]
 
+    file_cache = {}
     all_errors = []
     for i, entry in enumerate(data):
         if not isinstance(entry, dict):
             all_errors.append(f"entry[{i}]: expected an object, got {type(entry).__name__}")
             continue
-        all_errors.extend(validate_entry(entry, i))
+        all_errors.extend(validate_entry(entry, i, file_cache))
 
     return all_errors
 
