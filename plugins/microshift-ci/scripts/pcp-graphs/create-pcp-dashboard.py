@@ -54,6 +54,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .stats-row { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 0.78em; color: #6c757d; }
 .stats-row span { white-space: nowrap; }
 .stats-row .val { font-weight: 600; color: #333; }
+.vm-tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid #e0e0e0; }
+.vm-tab { padding: 8px 16px; cursor: pointer; font-size: 0.88em; color: #6c757d; border: none; background: none; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color 0.15s, border-color 0.15s; }
+.vm-tab:hover { color: #333; }
+.vm-tab.active { color: #1a1a2e; border-bottom-color: #e94560; font-weight: 600; }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60vh; color: #6c757d; }
 .empty-state h2 { font-size: 1.3em; margin-bottom: 8px; }
 @media (max-width: 900px) {
@@ -129,13 +133,13 @@ JS_APP = """\
             el.classList.toggle('active', el.dataset.key === key);
         });
 
-        // Destroy existing charts
         activeCharts.forEach(function(c) { c.destroy(); });
         activeCharts = [];
 
         mainArea.innerHTML = '';
 
-        const metrics = DATA[bid][sc];
+        const vms = DATA[bid][sc];
+        const vmNames = Object.keys(vms).sort();
         const meta = (SCENARIOS[bid] || {})[sc] || {};
 
         // Header
@@ -150,13 +154,44 @@ JS_APP = """\
         infoRow.appendChild(infoCard(meta.tests !== undefined ? String(meta.tests) : '-', 'Tests', ''));
         infoRow.appendChild(infoCard(meta.failures !== undefined ? String(meta.failures) : '-', 'Failures', meta.failures > 0 ? 'fail' : ''));
         infoRow.appendChild(infoCard(meta.duration_sec !== undefined ? formatDuration(meta.duration_sec) : '-', 'Duration', ''));
-        infoRow.appendChild(infoCard(meta.vm_hosts ? meta.vm_hosts.join(', ') : '-', 'VM Host', ''));
+        infoRow.appendChild(infoCard(vmNames.join(', '), 'VMs', ''));
         mainArea.appendChild(infoRow);
 
-        // Chart grid
+        // VM tabs + chart area
+        var chartArea = document.createElement('div');
+        chartArea.id = 'chart-area';
+        if (vmNames.length > 1) {
+            var tabs = document.createElement('div');
+            tabs.className = 'vm-tabs';
+            vmNames.forEach(function(vm) {
+                var btn = document.createElement('button');
+                btn.className = 'vm-tab';
+                btn.textContent = vm;
+                btn.addEventListener('click', function() { renderVm(vms, vm, chartArea, tabs); });
+                tabs.appendChild(btn);
+            });
+            mainArea.appendChild(tabs);
+        }
+        mainArea.appendChild(chartArea);
+
+        renderVm(vms, vmNames[0], chartArea, mainArea.querySelector('.vm-tabs'));
+    }
+
+    function renderVm(vms, vm, chartArea, tabBar) {
+        activeCharts.forEach(function(c) { c.destroy(); });
+        activeCharts = [];
+        chartArea.innerHTML = '';
+
+        if (tabBar) {
+            tabBar.querySelectorAll('.vm-tab').forEach(function(btn) {
+                btn.classList.toggle('active', btn.textContent === vm);
+            });
+        }
+
+        var metrics = vms[vm];
         var grid = document.createElement('div');
         grid.className = 'chart-grid';
-        mainArea.appendChild(grid);
+        chartArea.appendChild(grid);
 
         if (metrics.cpu) pcpCharts.renderCpu(grid, metrics.cpu);
         if (metrics.mem) pcpCharts.renderMem(grid, metrics.mem);
@@ -167,7 +202,7 @@ JS_APP = """\
             var empty = document.createElement('div');
             empty.className = 'chart-card';
             empty.style.cssText = 'grid-column:1/-1;text-align:center;padding:40px;color:#6c757d;';
-            empty.textContent = 'No PCP metric data available for this scenario.';
+            empty.textContent = 'No PCP metric data available for this VM.';
             grid.appendChild(empty);
         }
     }
@@ -223,8 +258,23 @@ def load_pcp_charts_js():
         return f.read()
 
 
+def load_vm_metrics(vm_path):
+    """Load metric JSON files from a single VM directory."""
+    metrics = {}
+    for name, key in [("cpu.json", "cpu"), ("mem.json", "mem"),
+                       ("io.json", "io"), ("disk.json", "disk")]:
+        fpath = os.path.join(vm_path, name)
+        if os.path.isfile(fpath):
+            try:
+                with open(fpath) as f:
+                    metrics[key] = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
+    return metrics
+
+
 def load_metrics(dashboard_dir):
-    """Load all parsed metric JSON files, grouped by build_id and scenario."""
+    """Load all parsed metric JSON files, grouped by build_id, scenario, and VM."""
     data = {}
     if not os.path.isdir(dashboard_dir):
         return data
@@ -238,19 +288,17 @@ def load_metrics(dashboard_dir):
             if not os.path.isdir(scenario_path):
                 continue
 
-            metrics = {}
-            for name, key in [("cpu.json", "cpu"), ("mem.json", "mem"),
-                               ("io.json", "io"), ("disk.json", "disk")]:
-                fpath = os.path.join(scenario_path, name)
-                if os.path.isfile(fpath):
-                    try:
-                        with open(fpath) as f:
-                            metrics[key] = json.load(f)
-                    except (json.JSONDecodeError, IOError):
-                        pass
+            vms = {}
+            for vm in sorted(os.listdir(scenario_path)):
+                vm_path = os.path.join(scenario_path, vm)
+                if not os.path.isdir(vm_path):
+                    continue
+                metrics = load_vm_metrics(vm_path)
+                if metrics:
+                    vms[vm] = metrics
 
-            if metrics:
-                data.setdefault(build_id, {})[scenario] = metrics
+            if vms:
+                data.setdefault(build_id, {})[scenario] = vms
 
     return data
 
@@ -345,8 +393,9 @@ def main():
         f.write(html)
 
     total_scenarios = sum(len(v) for v in data.values())
+    total_vms = sum(len(vms) for bld in data.values() for vms in bld.values())
     print(f"Dashboard generated: {output} "
-          f"({total_scenarios} scenarios, {len(html)//1024}KB)",
+          f"({total_scenarios} scenarios, {total_vms} VMs, {len(html)//1024}KB)",
           file=sys.stderr)
 
 

@@ -167,7 +167,7 @@ process_tarball() {
         return 0
     fi
 
-    local output_dir="${WORKDIR}/pcp-dashboard/${BUILD_ID}/${SCENARIO}"
+    local output_dir="${WORKDIR}/pcp-dashboard/${BUILD_ID}/${SCENARIO}/${VM_HOST}"
     mkdir -p "${output_dir}"
 
     local tmp_dir
@@ -214,7 +214,7 @@ process_tarball() {
         filesys.used filesys.capacity filesys.mountdir \
         && ok=$((ok + 1))
 
-    echo "  ${BUILD_ID}/${SCENARIO}: ${ok}/4 metrics" >&2
+    echo "  ${BUILD_ID}/${SCENARIO}/${VM_HOST}: ${ok}/4 metrics" >&2
     rm -rf -- "${tmp_dir}"
 }
 
@@ -237,7 +237,7 @@ process_hypervisor_dir() {
         return 0
     fi
 
-    local output_dir="${WORKDIR}/pcp-dashboard/${build_id}/hypervisor"
+    local output_dir="${WORKDIR}/pcp-dashboard/${build_id}/hypervisor/hypervisor"
     mkdir -p "${output_dir}"
 
     local effective_dir="${pcp_dir}"
