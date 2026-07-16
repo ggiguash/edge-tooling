@@ -2,7 +2,7 @@
 """
 Prepare bug candidates from per-job analysis reports.
 
-Parses STRUCTURED SUMMARY blocks, groups by ERROR_SIGNATURE similarity,
+Parses per-job JSON report files, groups by ERROR_SIGNATURE similarity,
 extracts Jira search keywords, and writes a candidates JSON file for
 the create-bugs skill to search Jira against.
 
@@ -183,7 +183,7 @@ def find_job_files(workdir, source):
 
     # Release version
     if re.match(r"^(\d+\.\d+|main)$", source):
-        pattern = os.path.join(jobs_dir, f"release-{source}-job-*.txt")
+        pattern = os.path.join(jobs_dir, f"release-{source}-job-*.json")
         files = sorted(glob_mod.glob(pattern))
         return files, f"release {source}"
 
@@ -191,7 +191,7 @@ def find_job_files(workdir, source):
     m = re.match(r"^pr-?(\d+)$", source)
     if m:
         pr_num = m.group(1)
-        pattern = os.path.join(jobs_dir, f"prs-job-*-pr{pr_num}-*.txt")
+        pattern = os.path.join(jobs_dir, f"prs-job-*-pr{pr_num}-*.json")
         files = sorted(glob_mod.glob(pattern))
         return files, f"PR #{pr_num}"
 
@@ -216,7 +216,7 @@ def find_job_files(workdir, source):
                     if pr_num is not None:
                         rebase_pr_numbers.add(int(pr_num))
 
-        pattern = os.path.join(jobs_dir, "prs-job-*.txt")
+        pattern = os.path.join(jobs_dir, "prs-job-*.json")
         all_files = sorted(glob_mod.glob(pattern))
         files = []
         for filepath in all_files:
@@ -837,7 +837,7 @@ def main():
     for filepath in files:
         summaries = parse_structured_summary(filepath)
         if not summaries:
-            print(f"  WARNING: no STRUCTURED SUMMARY in {os.path.basename(filepath)}", file=sys.stderr)
+            print(f"  WARNING: no valid JSON in {os.path.basename(filepath)}", file=sys.stderr)
             skipped += 1
             continue
         jobs.extend(summaries)

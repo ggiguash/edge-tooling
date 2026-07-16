@@ -340,7 +340,7 @@ cmd_finalize() {
 
     # Aggregate PRs (if job files exist)
     local pr_files
-    pr_files=$(find "${WORKDIR}/jobs" -name 'prs-job-*.txt' 2>/dev/null | head -1)
+    pr_files=$(find "${WORKDIR}/jobs" -name 'prs-job-*.json' 2>/dev/null | head -1)
     if [[ -n "${pr_files}" ]]; then
         echo "=== Aggregating PRs ===" >&2
         python3 "${SCRIPT_DIR}/aggregate.py" \

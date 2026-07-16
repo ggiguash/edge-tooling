@@ -72,7 +72,7 @@ Downloads CI Doctor analysis artifacts (per-job reports, summaries, bug mappings
    - **Read individual job reports** for deeper investigation:
 
      ```text
-     <WORKDIR>/jobs/release-<VERSION>-job-<N>-<BUILD_ID>.txt
+     <WORKDIR>/jobs/release-<VERSION>-job-<N>-<BUILD_ID>.json
      ```
 
    - **Re-analyze a specific prow job** (downloads fresh artifacts):

@@ -85,54 +85,42 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
    - `4_disk_usage.png` — Disk usage by partition (% fill)
 3. If prerequisites are missing (`pcp2json`, `matplotlib`), the script errors and stops.
 
-### Step 2: Analyze Each Job Using /microshift-ci:prow-job
+### Step 2: Analyze Each Job Using microshift-ci:prow-job-analyzer Agent
 
 **Goal**: Get detailed root cause analysis for each failed job using pre-downloaded artifacts.
 
 **Actions**:
 
 1. Use the JSON summary output from Step 1 to build agent prompts. Do NOT read the job JSON files into the main conversation — the prepare script already printed all job details (artifacts_dir, build_id, job name) and agents receive artifacts_dir directly in their prompt.
-2. For **every** failed job across all releases and PRs, launch a separate **Agent** (using the `Agent` tool, NOT the `Skill` tool). For PR jobs, only launch agents for jobs with FAILURE status.
+2. For **every** failed job across all releases and PRs, launch a separate **Agent** (using the `Agent` tool, NOT the `Skill` tool) with `subagent_type=microshift-ci:prow-job-analyzer`. For PR jobs, only launch agents for jobs with FAILURE status.
 
    **For release jobs:**
 
    ```text
-   Agent: subagent_type=general_purpose, prompt="Analyze this Prow job and save the report:
-   Job: <JOB_NAME>
-   URL: <JOB_URL>
-   Performance graphs (if generated): <WORKDIR>/graphs/<JOB_ID>/
-   MicroShift source (if present): <WORKDIR>/src/microshift/ (for main) or <WORKDIR>/src/microshift-release-<RELEASE>/ (for release branches)
-   1. Run /microshift-ci:prow-job <ARTIFACTS_DIR>
-   2. Your goal is the UNDERLYING root cause, not the first error in the log — follow the
-      skill's drill-down and causal-chain requirements, consulting the sosreport and the
-      performance graphs when relevant.
-   3. After the analysis completes, save the FULL report output (including the --- STRUCTURED SUMMARY --- block) to:
-      <WORKDIR>/jobs/release-<RELEASE>-job-<N>-<JOB_ID>.txt
-      Use the Write tool to save the file. The file must contain the complete analysis report.
-   4. After saving, reply with EXACTLY one line: DONE <output-file-path>. Do NOT include the
-      report text in your reply."
+   Agent: subagent_type=microshift-ci:prow-job-analyzer, prompt="Analyze this prow job:
+   artifacts_dir: <ARTIFACTS_DIR>
+   graphs_dir: <WORKDIR>/graphs/<JOB_ID>
+   source_dir: <WORKDIR>/src/microshift-release-<RELEASE> (or <WORKDIR>/src/microshift for main)
+   job_url: <JOB_URL>
+   job_name: <JOB_NAME>"
    ```
 
    **For PR jobs:**
 
    ```text
-   Agent: subagent_type=general_purpose, prompt="Analyze this Prow job and save the report:
-   Job: <JOB_NAME> (PR #<PR>)
-   URL: <JOB_URL>
-   Performance graphs (if generated): <WORKDIR>/graphs/<BUILD_ID>/
-   MicroShift source (if present): <WORKDIR>/src/microshift/
-   1. Run /microshift-ci:prow-job <ARTIFACTS_DIR>
-   2. Your goal is the UNDERLYING root cause, not the first error in the log — follow the
-      skill's drill-down and causal-chain requirements, consulting the sosreport and the
-      performance graphs when relevant.
-   3. After the analysis completes, save the FULL report output (including the --- STRUCTURED SUMMARY --- block) to:
-      <WORKDIR>/jobs/prs-job-<N>-pr<PR>-<JOB_NAME_SUFFIX>.txt
-      Use the Write tool to save the file. The file must contain the complete analysis report.
-   4. After saving, reply with EXACTLY one line: DONE <output-file-path>. Do NOT include the
-      report text in your reply."
+   Agent: subagent_type=microshift-ci:prow-job-analyzer, prompt="Analyze this prow job:
+   artifacts_dir: <ARTIFACTS_DIR>
+   graphs_dir: <WORKDIR>/graphs/<BUILD_ID>
+   source_dir: <WORKDIR>/src/microshift
+   job_url: <JOB_URL>
+   job_name: <JOB_NAME>"
    ```
 
-   Substitute `<JOB_NAME>`, `<JOB_URL>`, and `<JOB_ID>`/`<BUILD_ID>` from the prepare script's JSON output (`job`, `url`, `build_id` fields).
+   Substitute `<ARTIFACTS_DIR>`, `<JOB_ID>`/`<BUILD_ID>`, `<RELEASE>`, `<JOB_URL>`, and `<JOB_NAME>` from the prepare script's JSON output (`artifacts_dir`, `build_id`, `release`, `url`, `job` fields). Only include `graphs_dir` and `source_dir` if those directories exist.
+
+   After each agent completes, save its JSON response to the corresponding file using the Write tool:
+   - Release jobs: `<WORKDIR>/jobs/release-<RELEASE>-job-<N>-<JOB_ID>.json`
+   - PR jobs: `<WORKDIR>/jobs/prs-job-<N>-pr<PR>-<JOB_NAME_SUFFIX>.json`
 
 3. Launch **ALL** agents (all releases + PRs) in a **single message** as **foreground** agents (do NOT use `run_in_background`). Foreground agents in the same message run concurrently — this is just as fast as background agents but keeps your turn active until all complete.
 4. Say "Analyzing N jobs in parallel..." in your message text alongside the Agent tool calls.
@@ -234,7 +222,7 @@ HTML report generated: <WORKDIR>/report-microshift-ci-doctor.html
 
 ## Related Skills
 
-- **microshift-ci:prow-job**: Single job analysis (used by Step 2 agents)
+- **microshift-ci:prow-job-analyzer** agent: Root cause analysis for a single job (used by Step 2 agents)
 - **microshift-ci:create-bugs**: Bug correlation and creation (used in Step 3; can also be run with `--create` after this command)
 - **microshift-ci:doctor-refresh**: Regenerate the HTML report from existing data (e.g., after `/microshift-ci:create-bugs --create`)
 
