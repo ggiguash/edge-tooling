@@ -12,15 +12,44 @@ set -euo pipefail
 #     - Clones openshift/microshift into DIR/microshift/
 #     - Sets up remotes: upstream = openshift, origin = user fork
 #
+#   fix-test-bugs.sh cleanup-stale-branches --workdir DIR
+#     - Deletes fork branches without an open PR (publishing action)
+#     - Refuses when MICROSHIFT_CI_DRY_RUN=1 is set
+#
 #   fix-test-bugs.sh branch --workdir DIR --jira-keys KEY1,KEY2,...
 #     - Creates branch microshift-ci/fix-test-bugs/KEY1 from upstream/main
 #
-#   fix-test-bugs.sh submit --workdir DIR --jira-keys KEY1,KEY2,... --summary TEXT
+#   fix-test-bugs.sh submit --workdir DIR --jira-keys KEY1,KEY2,... --summary TEXT --rationale TEXT
 #     - Safety checks, commit, push, create PR referencing all keys
+#     - Refuses when MICROSHIFT_CI_DRY_RUN=1 is set (typically in CI)
 
 ALLOWED_DIRS_RE='^(test|scripts|docs)/'
 BRANCH_PREFIX='microshift-ci/fix-test-bugs/'
 MAX_FILES=5
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+validate_option() {
+    local opt_name="${1}"
+    local opt_value="${2:-}"
+    shift 2
+
+    [[ ${#} -ge 2 && "${opt_value}" != -* ]] || {
+        echo "Error: ${opt_name} requires a value" >&2
+        return 1
+    }
+}
+
+require_not_dry_run() {
+    local action="${1}"
+    if [[ "${MICROSHIFT_CI_DRY_RUN:-}" == "1" ]]; then
+        echo "Error: dry-run mode is active — ${action} refused." >&2
+        echo "Unset MICROSHIFT_CI_DRY_RUN to allow ${action}." >&2
+        return 1
+    fi
+}
 
 # ---------------------------------------------------------------------------
 # cleanup_stale_branches — delete fork branches without an open PR
@@ -63,7 +92,7 @@ cmd_check() {
     while [[ ${#} -gt 0 ]]; do
         case "${1}" in
             --jira-keys)
-                [[ ${#} -ge 2 && "${2}" != -* ]] || { echo "Error: --jira-keys requires a value" >&2; return 1; }
+                validate_option "--jira-keys" "${2:-}" "${@}" || return 1
                 jira_keys="${2}"; shift 2 ;;
             -*) echo "Unknown option: ${1}" >&2; return 1 ;;
             *) echo "Unknown argument: ${1}" >&2; return 1 ;;
@@ -111,7 +140,9 @@ cmd_clone() {
 
     while [[ ${#} -gt 0 ]]; do
         case "${1}" in
-            --workdir) workdir="${2}"; shift 2 ;;
+            --workdir)
+                validate_option "--workdir" "${2:-}" "${@}" || return 1
+                workdir="${2}"; shift 2 ;;
             -*) echo "Unknown option: ${1}" >&2; return 1 ;;
             *) echo "Unknown argument: ${1}" >&2; return 1 ;;
         esac
@@ -123,7 +154,6 @@ cmd_clone() {
 
     if [[ -d "${repo_dir}" ]]; then
         echo "Repository already exists at ${repo_dir}, skipping clone." >&2
-        cleanup_stale_branches "${repo_dir}"
         jq -n --arg d "${repo_dir}" '{repo_dir: $d}'
         return 0
     fi
@@ -138,9 +168,34 @@ cmd_clone() {
     echo "Remotes configured: upstream=openshift/microshift, origin=$(git remote get-url origin)" >&2
     popd >/dev/null
 
-    cleanup_stale_branches "${repo_dir}"
-
     jq -n --arg d "${repo_dir}" '{repo_dir: $d}'
+}
+
+# ---------------------------------------------------------------------------
+# cleanup-stale-branches
+# ---------------------------------------------------------------------------
+
+cmd_cleanup_stale_branches() {
+    local workdir=""
+
+    while [[ ${#} -gt 0 ]]; do
+        case "${1}" in
+            --workdir)
+                validate_option "--workdir" "${2:-}" "${@}" || return 1
+                workdir="${2}"; shift 2 ;;
+            -*) echo "Unknown option: ${1}" >&2; return 1 ;;
+            *) echo "Unknown argument: ${1}" >&2; return 1 ;;
+        esac
+    done
+
+    [[ -z "${workdir}" ]] && { echo "Error: --workdir is required" >&2; return 1; }
+
+    require_not_dry_run "cleanup-stale-branches" || return 1
+
+    local repo_dir="${workdir}/microshift"
+    [[ -d "${repo_dir}" ]] || { echo "Error: repo not found at ${repo_dir} — run clone first" >&2; return 1; }
+
+    cleanup_stale_branches "${repo_dir}"
 }
 
 # ---------------------------------------------------------------------------
@@ -153,8 +208,12 @@ cmd_branch() {
 
     while [[ ${#} -gt 0 ]]; do
         case "${1}" in
-            --workdir) workdir="${2}"; shift 2 ;;
-            --jira-keys) jira_keys="${2}"; shift 2 ;;
+            --workdir)
+                validate_option "--workdir" "${2:-}" "${@}" || return 1
+                workdir="${2}"; shift 2 ;;
+            --jira-keys)
+                validate_option "--jira-keys" "${2:-}" "${@}" || return 1
+                jira_keys="${2}"; shift 2 ;;
             -*) echo "Unknown option: ${1}" >&2; return 1 ;;
             *) echo "Unknown argument: ${1}" >&2; return 1 ;;
         esac
@@ -205,10 +264,18 @@ cmd_submit() {
 
     while [[ ${#} -gt 0 ]]; do
         case "${1}" in
-            --workdir) workdir="${2}"; shift 2 ;;
-            --jira-keys) jira_keys="${2}"; shift 2 ;;
-            --summary) summary="${2}"; shift 2 ;;
-            --rationale) rationale="${2}"; shift 2 ;;
+            --workdir)
+                validate_option "--workdir" "${2:-}" "${@}" || return 1
+                workdir="${2}"; shift 2 ;;
+            --jira-keys)
+                validate_option "--jira-keys" "${2:-}" "${@}" || return 1
+                jira_keys="${2}"; shift 2 ;;
+            --summary)
+                validate_option "--summary" "${2:-}" "${@}" || return 1
+                summary="${2}"; shift 2 ;;
+            --rationale)
+                validate_option "--rationale" "${2:-}" "${@}" || return 1
+                rationale="${2}"; shift 2 ;;
             -*) echo "Unknown option: ${1}" >&2; return 1 ;;
             *) echo "Unknown argument: ${1}" >&2; return 1 ;;
         esac
@@ -218,6 +285,8 @@ cmd_submit() {
     [[ -z "${jira_keys}" ]] && { echo "Error: --jira-keys is required" >&2; return 1; }
     [[ -z "${summary}" ]] && { echo "Error: --summary is required" >&2; return 1; }
     [[ -z "${rationale}" ]] && { echo "Error: --rationale is required" >&2; return 1; }
+
+    require_not_dry_run "submit" || return 1
 
     local repo_dir="${workdir}/microshift"
     cd "${repo_dir}"
@@ -333,10 +402,11 @@ usage() {
 Usage: $(basename "$0") <command> [options]
 
 Commands:
-  check   --jira-keys KEY1,KEY2,...                      Batch check for existing PRs (JSON output)
-  clone   --workdir DIR                                Clone openshift/microshift and set up remotes
-  branch  --workdir DIR --jira-keys KEY1,KEY2,...       Create branch from upstream/main (named after first key)
-  submit  --workdir DIR --jira-keys KEY1,KEY2,... --summary TXT --rationale TXT  Verify, commit, push, and create PR
+  check                --jira-keys KEY1,KEY2,...                      Batch check for existing PRs (JSON output)
+  clone                --workdir DIR                                Clone openshift/microshift and set up remotes
+  cleanup-stale-branches --workdir DIR                              Delete fork branches without an open PR
+  branch               --workdir DIR --jira-keys KEY1,KEY2,...       Create branch from upstream/main (named after first key)
+  submit               --workdir DIR --jira-keys KEY1,KEY2,... --summary TXT --rationale TXT  Verify, commit, push, and create PR
 EOF
     exit 1
 }
@@ -350,10 +420,11 @@ main() {
     shift
 
     case "${cmd}" in
-        check)  cmd_check "${@}" ;;
-        clone)  cmd_clone "${@}" ;;
-        branch) cmd_branch "${@}" ;;
-        submit) cmd_submit "${@}" ;;
+        check)                  cmd_check "${@}" ;;
+        clone)                  cmd_clone "${@}" ;;
+        cleanup-stale-branches) cmd_cleanup_stale_branches "${@}" ;;
+        branch)                 cmd_branch "${@}" ;;
+        submit)                 cmd_submit "${@}" ;;
         *) echo "Unknown command: ${cmd}" >&2; usage ;;
     esac
 }
