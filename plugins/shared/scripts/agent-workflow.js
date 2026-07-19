@@ -1,13 +1,13 @@
 export const meta = {
-  name: 'doctor-analyze',
-  description: 'Analyze CI jobs in parallel via prow-job-analyzer agents',
+  name: 'parallel-agents',
+  description: 'Run agents in parallel and report success counts',
   phases: [
-    { title: 'Analyze', detail: 'Per-job root cause analysis via prow-job-analyzer' },
+    { title: 'Analyze', detail: 'Per-job agent execution' },
   ],
 }
 
 phase('Analyze')
-log('Analyzing ' + args.jobs.length + ' jobs in parallel...')
+log('Running ' + args.jobs.length + ' agents in parallel...')
 
 var promises = args.jobs.map(function (job) {
   return agent(job.prompt, {
@@ -19,6 +19,6 @@ var promises = args.jobs.map(function (job) {
 var results = await Promise.all(promises)
 
 var succeeded = results.filter(Boolean).length
-log('Analysis complete: ' + succeeded + '/' + args.jobs.length + ' jobs analyzed')
+log('Complete: ' + succeeded + '/' + args.jobs.length + ' agents succeeded')
 
 return { analyzed: succeeded, failed: args.jobs.length - succeeded, total: args.jobs.length }

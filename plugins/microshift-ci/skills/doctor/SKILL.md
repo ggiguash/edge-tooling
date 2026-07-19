@@ -129,7 +129,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 3. Call the **Workflow** tool with:
 
    ```text
-   Workflow: scriptPath="plugins/microshift-ci/scripts/doctor-workflow.js", args={agentType: "microshift-ci:prow-job-analyzer", jobs: [<jobs array>]}
+   Workflow: scriptPath="plugins/microshift-ci/scripts/agent-workflow.js", args={agentType: "microshift-ci:prow-job-analyzer", jobs: [<jobs array>]}
    ```
 
 4. When the workflow returns, report the analysis counts (analyzed/failed/total) and immediately proceed to Step 3. Do NOT stop or end your turn between Step 2 and Step 3.
