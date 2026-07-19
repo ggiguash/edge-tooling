@@ -19,6 +19,7 @@ Your prompt contains:
 - `job_name` (required): the full prow job name — use directly when provided instead of extracting
 - `graphs_dir` (optional): path to pre-generated PCP performance graph PNGs
 - `source_dir` (optional): path to MicroShift source checkout
+- `output_path` (optional): if provided, save your JSON output to this file using Bash before responding
 
 ## Output
 
@@ -145,6 +146,8 @@ Use the Read tool to view these PNGs during the drill-down phase whenever the fa
 
      Derive `FINISHED_DATE` from the job's `finished.json` timestamp. Drop `--paths` to see all changes. Name candidate commits in the causal chain when their timing and touched paths match the failure.
    - If multiple scenarios in this job failed, decide cascade vs independent using the **timeline** (which failed first; did the earlier failure poison shared state?), not just error-text similarity.
+
+5. **Save the output**: If `output_path` was provided, use Bash to write your JSON output to that file before responding.
 
 ## Tips
 
