@@ -3,7 +3,7 @@ name: lvms-ci:doctor
 argument-hint: [release1,release2,...]
 description: Analyze CI for LVMS periodic jobs and produce an HTML summary
 user-invocable: true
-allowed-tools: Skill, Bash, Read, Write, Glob, Grep, Agent
+allowed-tools: Bash, Read, Write, Glob, Grep, Workflow, Skill
 ---
 
 # lvms-ci:doctor
@@ -65,27 +65,36 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 - If a release has no failed jobs, its jobs JSON will be an empty array — skip analysis for that release
 - If a release has an `"error"` field in the JSON summary, data collection failed for that release — report the error to the user but continue with other releases
 
-### Step 2: Analyze Each Job Using /lvms-ci:prow-job
+### Step 2: Analyze Each Job Using Workflow
 
-**Goal**: Get detailed root cause analysis for each failed job using pre-downloaded artifacts.
+**Goal**: Get detailed root cause analysis for each failed job using pre-downloaded artifacts. Uses the Workflow tool to guarantee parallel execution.
 
 **Actions**:
 
-1. Use the JSON summary output from Step 1 to build agent prompts. Do NOT read the job JSON files into the main conversation — the prepare script already printed all job details (artifacts_dir, build_id, job name) and agents receive artifacts_dir directly in their prompt.
-2. For **every** failed job across all releases, launch a separate **Agent** (using the `Agent` tool, NOT the `Skill` tool):
+1. Use the JSON summary output from Step 1 to build a `jobs` array. Do NOT read the job JSON files into the main conversation — the prepare script already printed all job details (artifacts_dir, build_id, job name).
+2. For **every** failed job across all releases, create a job object with `prompt` and `label` fields.
+
+   **Prompt template:**
 
    ```text
-   Agent: subagent_type=general_purpose, prompt="Analyze this Prow job and save the report:
    1. Run /lvms-ci:prow-job <ARTIFACTS_DIR>
    2. After the analysis completes, extract only the JSON array from the output
       and save it to:
       <WORKDIR>/jobs/release-<RELEASE>-job-<N>-<JOB_ID>.json
-      Use the Write tool. The file must contain ONLY the valid JSON array — no prose, no markers."
+      Use the Write tool. The file must contain ONLY the valid JSON array — no prose, no markers.
    ```
 
-3. Launch **ALL** agents in a **single message** as **foreground** agents (do NOT use `run_in_background`). Foreground agents in the same message run concurrently — this is just as fast as background agents but keeps your turn active until all complete.
-4. Say "Analyzing N jobs in parallel..." in your message text alongside the Agent tool calls.
-5. When all agents return, immediately proceed to Step 3 in the same turn. Do NOT stop or end your turn between Step 2 and Step 3.
+   Substitute `<ARTIFACTS_DIR>`, `<JOB_ID>`, `<RELEASE>`, `<JOB_URL>`, and `<JOB_NAME>` from the prepare script's JSON output (`artifacts_dir`, `build_id`, `release`, `url`, `job` fields).
+
+   **Label**: Use a short identifier like `<RELEASE>/<JOB_NAME_SUFFIX>` (e.g., `main/e2e-aws-sno-qe-integration-tests`).
+
+3. Call the **Workflow** tool with:
+
+   ```text
+   Workflow: scriptPath="plugins/lvms-ci/scripts/doctor-workflow.js", args={agentType: "general-purpose", jobs: [<jobs array>]}
+   ```
+
+4. When the workflow returns, report the analysis counts (analyzed/failed/total) and immediately proceed to Step 3. Do NOT stop or end your turn between Step 2 and Step 3.
 
 ### Step 3: Finalize — Aggregate and Generate HTML Report
 
@@ -146,13 +155,13 @@ HTML report generated: <WORKDIR>/report-lvm-operator-ci-doctor.html
 
 ## Related Skills
 
-- **lvms-ci:prow-job**: Single job analysis (used by Step 2 agents)
+- **lvms-ci:prow-job**: Single job analysis (used by Step 2 workflow agents, also standalone)
 
 ## Notes
 
 - **Deterministic scripts** handle: data collection, artifact download, aggregation, HTML generation
 - **LLM agents** handle: per-job root cause analysis (Step 2)
-- All agents are launched in a single parallel wave
+- Step 2 uses the Workflow tool to guarantee parallel agent execution — all agents run concurrently
 - The `prepare` script downloads all artifacts upfront so prow-job agents use local paths (no redundant downloads)
 - The `finalize` script runs aggregation and HTML generation in one call
 - All intermediate files use prescribed filenames in `<WORKDIR>` — no improvised names
