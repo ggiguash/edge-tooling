@@ -1438,7 +1438,7 @@ def render_pr_section(pr_data, bug_candidates, pr_status, pr_error=None, jira_cf
         return (
             '        <div class="release-section">\n'
             '            <div class="release-header">\n'
-            "                <h2>Rebase Pull Requests</h2>\n"
+            "                <h2>Pull Requests</h2>\n"
             '                <span class="badge badge-nodata">collection error</span>\n'
             "            </div>\n"
             f'            <pre>Data collection failed: {_e(pr_error)}</pre>\n'
@@ -1486,10 +1486,10 @@ def render_pr_section(pr_data, bug_candidates, pr_status, pr_error=None, jira_cf
         return (
             '        <div class="release-section">\n'
             '            <div class="release-header">\n'
-            "                <h2>Rebase Pull Requests</h2>\n"
+            "                <h2>Pull Requests</h2>\n"
             '                <span class="badge badge-ok">0 failures</span>\n'
             "            </div>\n"
-            "            <p>No open rebase pull requests found.</p>\n"
+            "            <p>No open pull requests found.</p>\n"
             "        </div>"
         )
 
@@ -1627,7 +1627,7 @@ def generate_html(component_title, releases_data, all_bug_candidates, pr_data, p
     cards.append(
         '        <div class="overview-card">\n'
         f'            <div class="number {pr_css}">{pr_failed_count}</div>\n'
-        f'            <div class="label">Rebase PRs</div>\n'
+        f'            <div class="label">Pull Requests</div>\n'
         "        </div>"
     )
 
