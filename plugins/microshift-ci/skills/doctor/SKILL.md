@@ -42,7 +42,7 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 2. Run the prepare script:
 
    ```text
-   bash plugins/microshift-ci/scripts/doctor.sh prepare --component microshift --workdir <WORKDIR> <ARGUMENTS> --rebase --repo openshift/microshift
+   bash plugins/microshift-ci/scripts/doctor.sh prepare --component microshift --workdir <WORKDIR> <ARGUMENTS> --pull-requests --repo openshift/microshift
    ```
 
 3. The script deterministically:

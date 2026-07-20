@@ -7,7 +7,7 @@ set -euo pipefail
 #
 # Two phases called by the doctor skill with LLM steps in between:
 #
-#   doctor.sh prepare --component <component> --workdir DIR <releases> [--rebase]
+#   doctor.sh prepare --component <component> --workdir DIR <releases> [--pull-requests]
 #     - Collects failed jobs for each release
 #     - Downloads all artifacts in parallel
 #     - Writes per-release and PR jobs JSON files to ${WORKDIR}/jobs/
@@ -39,14 +39,14 @@ _component_repos() {
 
 cmd_prepare() {
     local releases_arg=""
-    local do_rebase=false
+    local do_prs=false
     local repo=""
 
     while [[ ${#} -gt 0 ]]; do
         case "${1}" in
             --workdir) WORKDIR="${2}"; shift 2 ;;
             --component) COMPONENT="${2}"; shift 2 ;;
-            --rebase) do_rebase=true; shift ;;
+            --pull-requests) do_prs=true; shift ;;
             --repo)
                 if [[ -z "${2:-}" || "${2:-}" == -* ]]; then
                     echo "Error: --repo requires an org/name argument" >&2; return 1
@@ -63,7 +63,7 @@ cmd_prepare() {
 
     if [[ -z "${releases_arg}" ]]; then
         echo "Error: releases argument required" >&2
-        echo "Usage: $(basename "$0") prepare --component <component> [--workdir DIR] <release1,release2,...> [--rebase]" >&2
+        echo "Usage: $(basename "$0") prepare --component <component> [--workdir DIR] <release1,release2,...> [--pull-requests]" >&2
         return 1
     fi
 
@@ -121,26 +121,30 @@ cmd_prepare() {
         echo "  Done: ${jobs_file}" >&2
     done
 
-    # Collect and download for rebase PRs
-    if ${do_rebase}; then
-        echo "=== Rebase Pull Requests ===" >&2
+    # Collect and download for pull requests
+    if ${do_prs}; then
+        echo "=== Pull Requests ===" >&2
 
         local prs_file="${WORKDIR}/jobs/prs-jobs.json"
         local prs_status_file="${WORKDIR}/jobs/prs-status.json"
 
-        echo "  Collecting rebase PRs..." >&2
+        echo "  Collecting PRs..." >&2
         local pr_json pr_err
         pr_err=$(mktemp)
         local prs_error=""
-        if ! pr_json=$(bash "${SCRIPT_DIR}/prow-jobs-for-pull-requests.sh" \
-            --mode detail --author "microshift-rebase-script[bot]" 2>"${pr_err}"); then
-            echo "  ERROR: failed to collect rebase PRs:" >&2
+        local -a pr_args=(--component "${COMPONENT}" --mode detail)
+        case "${COMPONENT}" in
+            microshift)    pr_args+=(--author "microshift-rebase-script[bot]") ;;
+            lvm-operator)  pr_args+=(--base "release-management") ;;
+        esac
+        if ! pr_json=$(bash "${SCRIPT_DIR}/prow-jobs-for-pull-requests.sh" "${pr_args[@]}" 2>"${pr_err}"); then
+            echo "  ERROR: failed to collect PRs:" >&2
             prs_error=$(cat "${pr_err}")
             echo "${prs_error}" >&2
             rm -f "${pr_err}"
             echo "[]" > "${prs_file}"
             echo "[]" > "${prs_status_file}"
-            echo "${prs_error:-rebase PR collection failed}" > "${WORKDIR}/jobs/prs-error.txt"
+            echo "${prs_error:-PR collection failed}" > "${WORKDIR}/jobs/prs-error.txt"
         else
             rm -f "${pr_err}"
 
@@ -148,7 +152,7 @@ cmd_prepare() {
             pr_count=$(echo "${pr_json}" | jq 'length')
 
             if [[ "${pr_count}" -eq 0 ]]; then
-                echo "  No rebase PRs found" >&2
+                echo "  No PRs found" >&2
                 echo "[]" > "${prs_file}"
                 echo "[]" > "${prs_status_file}"
             else
@@ -160,7 +164,7 @@ cmd_prepare() {
                     pending: [.jobs[] | select(.status != "SUCCESS" and .status != "FAILURE")] | length,
                     total:   (.jobs | length)
                 }]' > "${prs_status_file}"
-                echo "  Saved status for ${pr_count} rebase PRs" >&2
+                echo "  Saved status for ${pr_count} PRs" >&2
 
                 # Filter to PRs with failed jobs for artifact download
                 local failed_prs
@@ -266,11 +270,11 @@ cmd_prepare() {
     result=$(jq -n --arg w "${WORKDIR}" --argjson rel "${releases_json}" \
         '{workdir: $w, releases: $rel}')
 
-    if ${do_rebase}; then
+    if ${do_prs}; then
         local prs_file="${WORKDIR}/jobs/prs-jobs.json"
         local pr_job_count=0
         if [[ -f "${prs_file}" ]]; then
-            pr_job_count=$(jq 'length' "${prs_file}")
+            pr_job_count=$(jq 'length' "${prs_file}" 2>/dev/null || echo 0)
         fi
         if [[ -n "${prs_error:-}" ]]; then
             result=$(echo "${result}" | jq \
@@ -329,7 +333,7 @@ cmd_finalize() {
 
     IFS=',' read -ra RELEASES <<< "${releases_arg}"
 
-    # Aggregate each release
+    # Aggregate job files for each release
     for release in "${RELEASES[@]}"; do
         release=$(echo "${release}" | xargs)
         echo "=== Aggregating release ${release} ===" >&2
@@ -491,7 +495,7 @@ usage() {
     echo "Usage: $(basename "$0") <command> --component <component> [--workdir DIR] [options]" >&2
     echo "" >&2
     echo "Commands:" >&2
-    echo "  prepare  --component C [--workdir DIR] <releases> [--rebase] [--repo ORG/NAME]  Collect jobs, download artifacts, optional source checkout" >&2
+    echo "  prepare  --component C [--workdir DIR] <releases> [--pull-requests] [--repo ORG/NAME]  Collect jobs, download artifacts, optional source checkout" >&2
     echo "  graphs   --component C [--workdir DIR] [--timezone TZ]       Generate PCP performance graphs" >&2
     echo "  finalize --component C [--workdir DIR] <releases>             Aggregate results and generate HTML" >&2
     echo "  refresh  --component C [--workdir DIR] [--ignore KEY1,KEY2,...] <releases>  Regenerate HTML from existing workdir data" >&2

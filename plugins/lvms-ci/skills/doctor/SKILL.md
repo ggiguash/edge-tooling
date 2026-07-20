@@ -43,11 +43,12 @@ Compute once at the start by running `date +%y%m%d` and substituting into the pa
 2. Run the prepare script:
 
    ```text
-   bash plugins/lvms-ci/scripts/doctor.sh prepare --component lvm-operator --workdir <WORKDIR> <ARGUMENTS>
+   bash plugins/lvms-ci/scripts/doctor.sh prepare --component lvm-operator --workdir <WORKDIR> <ARGUMENTS> --pull-requests
    ```
 
 3. The script deterministically:
    - For each release: fetches failed periodic jobs, downloads artifacts, writes `<WORKDIR>/jobs/release-<version>-jobs.json`
+   - Collects open z-stream PRs targeting `release-management` and fetches their presubmit results
    - Outputs a JSON summary listing all releases, job counts, and file paths
 4. Read the JSON output to know which releases have jobs to analyze and how many
 
@@ -143,6 +144,10 @@ HTML report generated: <WORKDIR>/report-lvm-operator-ci-doctor.html
 - `gsutil` CLI must be installed for GCS access (uses anonymous access on public buckets)
 - Internet access to fetch job data from Prow/GCS
 - Bash shell, Python 3
+
+### Z-Stream PR Results
+
+Z-stream test results are collected automatically when `--pull-requests` is passed to the prepare command. The `--pull-requests` flag queries open PRs targeting the `release-management` branch on `openshift/lvm-operator` and fetches their Prow presubmit results from GCS. These results appear in the **Pull Requests** tab of the HTML report.
 
 ## Related Skills
 

@@ -9,23 +9,34 @@ set -euo pipefail
 GCS_API="https://storage.googleapis.com/storage/v1/b/test-platform-results/o"
 GCS_BASE="https://storage.googleapis.com/test-platform-results"
 PROW_VIEW="https://prow.ci.openshift.org/view/gs/test-platform-results"
-GH_REPO="openshift/microshift"
-GCS_PR_PREFIX="pr-logs/pull/openshift_microshift"
+GH_REPO=""
+GCS_PR_PREFIX=""
 SIGNATURE=$'\n'"*Added by $(basename "${0}")* :robot:"$'\n'
 SCRIPT_TMPDIR=$(mktemp -d)
 trap 'rm -rf "${SCRIPT_TMPDIR}"' EXIT
 
+_set_component() {
+    case "${1}" in
+        microshift)    GH_REPO="openshift/microshift" ;;
+        lvm-operator)  GH_REPO="openshift/lvm-operator" ;;
+        *) echo "Error: unknown component '${1}'" >&2; return 1 ;;
+    esac
+    GCS_PR_PREFIX="pr-logs/pull/$(echo "${GH_REPO}" | tr '/' '_')"
+}
+
 # Get open PRs as JSON array
-# Args: filter, author, extra_fields (comma-separated, appended to default fields)
+# Args: filter, author, base, extra_fields (comma-separated, appended to default fields)
 fetch_open_prs() {
     local filter="${1:-}"
     local author="${2:-}"
-    local extra_fields="${3:-}"
+    local base="${3:-}"
+    local extra_fields="${4:-}"
     local fields="number,title,url"
     [[ -n "${extra_fields}" ]] && fields+=",${extra_fields}"
     local -a gh_args=(--repo "${GH_REPO}" --state open --limit 100 --json "${fields}")
 
     [[ -n "${author}" ]] && gh_args+=(--author "${author}")
+    [[ -n "${base}" ]] && gh_args+=(--base "${base}")
 
     local pr_data
     pr_data=$(gh pr list "${gh_args[@]}")
@@ -54,12 +65,12 @@ get_latest_build() {
     build_id=$(curl -s --max-time 60 --retry 3 --retry-delay 5 "${GCS_BASE}/${GCS_PR_PREFIX}/${pr}/${job}/latest-build.txt" 2>/dev/null) || return 1
     [[ -z "${build_id}" || "${build_id}" == *"<"* ]] && return 1
 
-    local url="${PROW_VIEW}/pr-logs/pull/openshift_microshift/${pr}/${job}/${build_id}"
+    local url="${PROW_VIEW}/${GCS_PR_PREFIX}/${pr}/${job}/${build_id}"
 
     finished_json=$(curl -s --max-time 60 --retry 3 --retry-delay 5 "${GCS_BASE}/${GCS_PR_PREFIX}/${pr}/${job}/${build_id}/finished.json" 2>/dev/null)
 
+    # Job still running — no finished.json yet
     if [[ -z "${finished_json}" || "${finished_json}" == *"NoSuchKey"* || "${finished_json}" == *"<"* ]]; then
-        # Job still running — no finished.json yet
         jq -nc --arg job "${job}" --arg url "${url}" --arg build_id "${build_id}" \
             '{job: $job, status: "PENDING", url: $url, build_id: $build_id, finished: null}'
         return 0
@@ -111,11 +122,11 @@ collect_jobs_json() {
 
 # Summary mode: JSON array of PRs with pass/fail counts
 mode_summary() {
-    local filter="${1:-}" author="${2:-}"
+    local filter="${1:-}" author="${2:-}" base="${3:-}"
     local pr_data output_tmp
 
     echo "Fetching open PRs..." >&2
-    pr_data=$(fetch_open_prs "${filter}" "${author}")
+    pr_data=$(fetch_open_prs "${filter}" "${author}" "${base}")
     [[ "$(echo "${pr_data}" | jq 'length')" -eq 0 ]] && { echo "[]"; return; }
 
     echo "Fetching job results..." >&2
@@ -156,11 +167,11 @@ mode_summary() {
 
 # Detail mode: JSON array of PRs with full job lists
 mode_detail() {
-    local filter="${1:-}" author="${2:-}"
+    local filter="${1:-}" author="${2:-}" base="${3:-}"
     local pr_data output_tmp
 
     echo "Fetching open PRs..." >&2
-    pr_data=$(fetch_open_prs "${filter}" "${author}")
+    pr_data=$(fetch_open_prs "${filter}" "${author}" "${base}")
     [[ "$(echo "${pr_data}" | jq 'length')" -eq 0 ]] && { echo "[]"; return; }
 
     echo "Fetching job results..." >&2
@@ -189,12 +200,12 @@ mode_detail() {
 
 # Approve mode: add /verified to PRs where all jobs pass
 mode_approve() {
-    local filter="${1:-}" author="${2:-}" execute="${3:-false}"
+    local filter="${1:-}" author="${2:-}" base="${3:-}" execute="${4:-false}"
     local pr_data had_error=0
 
     ${execute} || echo "[DRY-RUN] Use --execute to actually post comments" >&2
     echo "Fetching open PRs..." >&2
-    pr_data=$(fetch_open_prs "${filter}" "${author}")
+    pr_data=$(fetch_open_prs "${filter}" "${author}" "${base}")
     [[ "$(echo "${pr_data}" | jq 'length')" -eq 0 ]] && { echo "No open pull requests found."; return; }
 
     echo "Fetching job results..." >&2
@@ -246,12 +257,12 @@ mode_approve() {
 
 # Restart mode: comment /test for each failed job
 mode_restart() {
-    local filter="${1:-}" author="${2:-}" execute="${3:-false}"
+    local filter="${1:-}" author="${2:-}" base="${3:-}" execute="${4:-false}"
     local pr_data had_error=0
 
     ${execute} || echo "[DRY-RUN] Use --execute to actually post comments" >&2
     echo "Fetching open PRs..." >&2
-    pr_data=$(fetch_open_prs "${filter}" "${author}")
+    pr_data=$(fetch_open_prs "${filter}" "${author}" "${base}")
     [[ "$(echo "${pr_data}" | jq 'length')" -eq 0 ]] && { echo "No open pull requests found."; return; }
 
     echo "Fetching job results..." >&2
@@ -279,7 +290,6 @@ mode_restart() {
             continue
         fi
 
-        # Fetch short /test names from prowjob.json for each failed job
         local comment=""
         for job in "${failed_jobs[@]}"; do
             local build_id short_name
@@ -317,11 +327,11 @@ mode_restart() {
 # Groups PRs by target branch. Within each group, keeps the newest
 # PR (highest number) and closes older ones.
 mode_close_duplicates() {
-    local filter="${1:-}" author="${2:-}" execute="${3:-false}" had_error=0
+    local filter="${1:-}" author="${2:-}" base="${3:-}" execute="${4:-false}" had_error=0
 
     if [[ -z "${filter}" || -z "${author}" ]]; then
         echo "Error: --filter and --author are required for close-duplicates mode" >&2
-        echo "Example: --mode close-duplicates --filter 'rebase-release-' --author 'microshift-rebase-script[bot]'" >&2
+        echo "Example: --mode close-duplicates --component microshift --filter 'rebase-release-' --author 'microshift-rebase-script[bot]'" >&2
         return 1
     fi
 
@@ -329,7 +339,7 @@ mode_close_duplicates() {
 
     echo "Fetching open PRs (author: ${author}, filter: ${filter})..." >&2
     local pr_data
-    pr_data=$(fetch_open_prs "${filter}" "${author}" "baseRefName")
+    pr_data=$(fetch_open_prs "${filter}" "${author}" "${base}" "baseRefName")
 
     [[ "$(echo "${pr_data}" | jq 'length')" -eq 0 ]] && { echo "No matching PRs found."; return; }
 
@@ -389,7 +399,8 @@ mode_close_duplicates() {
 }
 
 usage() {
-    echo "Usage: ${0} [--mode MODE] [--filter STRING] [--author USER] [--execute]" >&2
+    echo "Usage: ${0} --component COMPONENT [--mode MODE] [--filter STRING] [--author USER] [--base BRANCH] [--execute]" >&2
+    echo "  --component COMP:  Component name (microshift, lvm-operator)" >&2
     echo "  --mode MODE:       Operation mode (default: summary)" >&2
     echo "    summary:           JSON array of PRs with pass/fail counts" >&2
     echo "    detail:            JSON array of PRs with full job lists" >&2
@@ -400,18 +411,24 @@ usage() {
     echo "                       target branch; the newest PR in each group is kept, older ones are closed" >&2
     echo "  --filter STRING:   Only include PRs whose title contains STRING" >&2
     echo "  --author USER:     Only include PRs authored by USER" >&2
+    echo "  --base BRANCH:     Only include PRs targeting BRANCH" >&2
     echo "  --execute:         Actually post comments/close PRs (action modes). Without this flag, only shows what would be done." >&2
     exit 1
 }
 
 main() {
     local mode="summary"
+    local component=""
     local filter=""
     local author=""
+    local base=""
     local execute=false
 
     while [[ ${#} -gt 0 ]]; do
         case "${1}" in
+            --component)
+                [[ ${#} -lt 2 ]] && { echo "Error: component requires an argument" >&2; usage; }
+                component="${2}"; shift 2 ;;
             --mode)
                 [[ ${#} -lt 2 ]] && { echo "Error: mode requires an argument" >&2; usage; }
                 mode="${2}"; shift 2 ;;
@@ -421,6 +438,9 @@ main() {
             --author)
                 [[ ${#} -lt 2 ]] && { echo "Error: author requires an argument" >&2; usage; }
                 author="${2}"; shift 2 ;;
+            --base)
+                [[ ${#} -lt 2 ]] && { echo "Error: base requires an argument" >&2; usage; }
+                base="${2}"; shift 2 ;;
             --execute)
                 execute=true; shift ;;
             -*) echo "Unknown option: ${1}" >&2; usage ;;
@@ -428,12 +448,15 @@ main() {
         esac
     done
 
+    [[ -z "${component}" ]] && { echo "Error: --component is required" >&2; usage; }
+    _set_component "${component}"
+
     case "${mode}" in
-        summary) mode_summary "${filter}" "${author}" ;;
-        detail)  mode_detail "${filter}" "${author}" ;;
-        approve) mode_approve "${filter}" "${author}" "${execute}" ;;
-        restart) mode_restart "${filter}" "${author}" "${execute}" ;;
-        close-duplicates) mode_close_duplicates "${filter}" "${author}" "${execute}" ;;
+        summary) mode_summary "${filter}" "${author}" "${base}" ;;
+        detail)  mode_detail "${filter}" "${author}" "${base}" ;;
+        approve) mode_approve "${filter}" "${author}" "${base}" "${execute}" ;;
+        restart) mode_restart "${filter}" "${author}" "${base}" "${execute}" ;;
+        close-duplicates) mode_close_duplicates "${filter}" "${author}" "${base}" "${execute}" ;;
         *) echo "Error: Unknown mode '${mode}'" >&2; usage ;;
     esac
 }
