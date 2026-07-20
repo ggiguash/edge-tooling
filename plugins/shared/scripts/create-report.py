@@ -1941,12 +1941,12 @@ def main():
     elif pr_status:
         pr_total_failed = sum(p.get("failed", 0) for p in pr_status)
         pr_total_pending = sum(p.get("pending", 0) for p in pr_status)
-        parts = [f"{len(pr_status)} rebase PRs", f"{pr_total_failed} failed jobs"]
+        parts = [f"{len(pr_status)} PRs", f"{pr_total_failed} failed jobs"]
         if pr_total_pending:
             parts.append(f"{pr_total_pending} running")
         print(f"    {', '.join(parts)}")
     elif pr_data and pr_data.get("has_content"):
-        print(f"    {len(pr_data['prs'])} rebase PRs with {pr_data['total_failed']} total failed jobs")
+        print(f"    {len(pr_data['prs'])} PRs with {pr_data['total_failed']} total failed jobs")
     else:
         print("    No PR data")
     print("  Bugs:")
