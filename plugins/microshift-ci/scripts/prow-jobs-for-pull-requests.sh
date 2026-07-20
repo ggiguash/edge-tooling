@@ -1,0 +1,1 @@
+../../shared/scripts/prow-jobs-for-pull-requests.sh
