@@ -11,7 +11,7 @@ set -euo pipefail
 # Usage:
 #   prow-jobs-for-release.sh 4.22 | download-jobs.sh --workdir DIR
 #   prow-jobs-for-release.sh 4.22 | download-jobs.sh --workdir DIR --parallel 4
-#   prow-jobs-for-pull-requests.sh --mode detail | download-jobs.sh --workdir DIR
+#   prow-jobs-for-pull-requests.sh --component microshift --mode detail | download-jobs.sh --workdir DIR
 #
 # Output (stdout): JSON array of job objects with "artifacts_dir" added:
 #   [{"job":"...","url":"...","build_id":"...","artifacts_dir":"/tmp/.../artifacts/BUILD_ID"}, ...]
@@ -74,7 +74,7 @@ usage() {
     echo "" >&2
     echo "Accepts JSON on stdin from:" >&2
     echo "  prow-jobs-for-release.sh (flat job array)" >&2
-    echo "  prow-jobs-for-pull-requests.sh --mode detail (nested PR array)" >&2
+    echo "  prow-jobs-for-pull-requests.sh --component <comp> --mode detail (nested PR array)" >&2
     exit 1
 }
 
